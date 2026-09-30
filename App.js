@@ -1373,6 +1373,191 @@ export default function App() {
     );
   };
 
+  // 16. MATERIALS SCREEN
+  const renderMaterialsScreen = () => {
+    const userMaterials = materials.filter(
+      (m) => m.userId === currentUser?.id
+    );
+
+    return (
+      <ScrollView style={styles.scrollContent}>
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={styles.sectionTitle}>Study Materials</Text>
+            <Text style={styles.sectionSubtitle}>
+              Kelola materi kuliah dan pahami materi dengan bantuan AI.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.btnPrimary}
+            onPress={() => {
+              setMaterialModalMode('add');
+              setEditingMaterialId(null);
+              setMaterialForm({
+                courseId: courses[0]?.id || '',
+                meeting: '1',
+                title: '',
+                description: '',
+                fileType: 'PDF',
+                fileName: '',
+              });
+              setMaterialModalVisible(true);
+            }}
+          >
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.btnPrimaryText}>Tambah</Text>
+          </TouchableOpacity>
+        </View>
+
+        {userMaterials.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="book-outline" size={42} color={COLORS.textMuted} />
+            <Text style={styles.emptyStateTitle}>Belum ada materi</Text>
+            <Text style={styles.emptyStateText}>
+              Tambahkan materi kuliah untuk mulai belajar.
+            </Text>
+          </View>
+        ) : (
+          userMaterials.map((material) => (
+            <View key={material.id} style={styles.courseCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{material.title}</Text>
+
+                <Text style={styles.cardSubtitle}>
+                  {material.courseName || 'Mata Kuliah'} • Pertemuan {material.meeting}
+                </Text>
+
+                <Text style={styles.cardDescription}>
+                  {material.description}
+                </Text>
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={styles.btnSecondary}
+                    onPress={() => {
+                      setActiveAiMaterial(material);
+                      setAiSubTab('summary');
+                      setAiModalVisible(true);
+                    }}
+                  >
+                    <Ionicons name="sparkles-outline" size={15} color={COLORS.primary} />
+                    <Text style={styles.btnSecondaryText}>AI Study</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.btnSecondary}
+                    onPress={() => toggleMaterialStudied(material.id)}
+                  >
+                    <Ionicons
+                      name={material.isStudied ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                      size={15}
+                      color={material.isStudied ? COLORS.emerald : COLORS.primary}
+                    />
+                    <Text style={styles.btnSecondaryText}>
+                      {material.isStudied ? 'Sudah Dipelajari' : 'Tandai Selesai'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          ))
+        )}
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    );
+  };
+
+  // 17. TASKS SCREEN
+  const renderTasksScreen = () => {
+    const userTasks = tasks.filter(
+      (t) => t.userId === currentUser?.id
+    );
+
+    return (
+      <ScrollView style={styles.scrollContent}>
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={styles.sectionTitle}>Tasks / Assignments</Text>
+            <Text style={styles.sectionSubtitle}>
+              Kelola tugas dan deadline perkuliahanmu.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.btnPrimary}
+            onPress={() => {
+              setTaskModalMode('add');
+              setEditingTaskId(null);
+              setTaskForm({
+                courseId: courses[0]?.id || '',
+                title: '',
+                deadline: '',
+                priority: 'Sedang',
+                description: '',
+              });
+              setTaskModalVisible(true);
+            }}
+          >
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.btnPrimaryText}>Tambah</Text>
+          </TouchableOpacity>
+        </View>
+
+        {userTasks.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="checkbox-outline" size={42} color={COLORS.textMuted} />
+            <Text style={styles.emptyStateTitle}>Belum ada tugas</Text>
+            <Text style={styles.emptyStateText}>
+              Tambahkan tugas dan deadline kamu di sini.
+            </Text>
+          </View>
+        ) : (
+          userTasks.map((task) => (
+            <View key={task.id} style={styles.courseCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{task.title}</Text>
+
+                <Text style={styles.cardSubtitle}>
+                  {task.courseName || 'Mata Kuliah'}
+                </Text>
+
+                <Text style={styles.cardDescription}>
+                  Deadline: {task.deadline}
+                </Text>
+
+                <Text style={styles.cardDescription}>
+                  Prioritas: {task.priority}
+                </Text>
+
+                <TouchableOpacity
+                  style={[
+                    styles.btnSecondary,
+                    { marginTop: 10 },
+                  ]}
+                  onPress={() => toggleTaskCompleted(task.id)}
+                >
+                  <Ionicons
+                    name={task.isCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                    size={16}
+                    color={task.isCompleted ? COLORS.emerald : COLORS.primary}
+                  />
+                  <Text style={styles.btnSecondaryText}>
+                    {task.isCompleted ? 'Tugas Selesai' : 'Tandai Selesai'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    );
+  };
+
+
   // =================================================================
   // 19. MAIN APP RETURN WITH BOTTOM TABS & MODALS
   // =================================================================
