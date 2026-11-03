@@ -331,6 +331,1255 @@ const INITIAL_NOTIFICATIONS = [
 // 3. REUSABLE ATOMIC & MOLECULAR UI COMPONENTS
 // =================================================================
 
+// Reusable Header Component with Safe Status Bar Handling (Anggota 1)
+const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload }) => (
+  <View style={styles.headerContainer}>
+    <View style={styles.headerTextGroup}>
+      <Text style={styles.headerSubtitle} numberOfLines={1}>
+        {subtitle || 'Halo Mahasiswa! 👋'}
+      </Text>
+      <Text style={styles.headerTitle} numberOfLines={1}>
+        {title || 'StudyMate'}
+      </Text>
+    </View>
+    <View style={styles.headerActions}>
+      {onOpenScheduleUpload && (
+        <TouchableOpacity
+          style={styles.headerIconButton}
+          onPress={onOpenScheduleUpload}
+          accessibilityLabel="Unggah Jadwal Kuliah"
+          activeOpacity={0.7}
+        >
+          <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity
+        style={styles.headerIconButton}
+        onPress={onOpenNotif}
+        accessibilityLabel="Pusat Notifikasi"
+        activeOpacity={0.7}
+      >
+        <Ionicons name="notifications-outline" size={20} color={COLORS.textPrimary} />
+        {unreadCount > 0 && (
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{unreadCount}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
+// Reusable Badge Chip
+const Badge = ({ label, color, bg, icon }) => (
+  <View style={[styles.badgeContainer, { backgroundColor: bg || COLORS.primaryLight }]}>
+    {icon && <Ionicons name={icon} size={11} color={color || COLORS.primary} style={{ marginRight: 4 }} />}
+    <Text style={[styles.badgeText, { color: color || COLORS.primary }]} numberOfLines={1}>
+      {label}
+    </Text>
+  </View>
+);
+
+// Dynamic Stat Card for Dashboard (Anggota 1)
+const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth }) => (
+  <View style={[styles.statCard, { width: cardWidth, borderLeftColor: iconColor, borderLeftWidth: 4 }]}>
+    <View style={[styles.statIconBox, { backgroundColor: bgColor }]}>
+      <Ionicons name={icon} size={20} color={iconColor} />
+    </View>
+    <View style={styles.statContentCol}>
+      <Text style={styles.statValue} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.statTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text style={styles.statSubtitle} numberOfLines={1}>
+          {subtitle}
+        </Text>
+      ) : null}
+    </View>
+  </View>
+);
+
+// Material Card Component (Anggota 2)
+const MaterialCard = ({
+  material,
+  onPress,
+  onToggleStudied,
+  onOpenAi,
+  onOpenNotes,
+  onDelete,
+}) => {
+  const getFileBadge = (type) => {
+    switch (type) {
+      case 'PDF':
+        return { color: COLORS.rose, bg: COLORS.roseLight, icon: 'document-text' };
+      case 'PPT':
+        return { color: COLORS.amber, bg: COLORS.amberLight, icon: 'easel' };
+      case 'DOC':
+      default:
+        return { color: COLORS.secondary, bg: COLORS.secondaryLight, icon: 'newspaper' };
+    }
+  };
+
+  const badgeInfo = getFileBadge(material.fileType);
+
+  return (
+    <View style={styles.materialCard}>
+      {/* Top Meta Header */}
+      <View style={styles.materialCardTop}>
+        <View style={styles.materialMetaRow}>
+          <Badge
+            label={material.fileType}
+            color={badgeInfo.color}
+            bg={badgeInfo.bg}
+            icon={badgeInfo.icon}
+          />
+          <Badge
+            label={`Pertemuan ${material.meetingNumber}`}
+            color={COLORS.textSecondary}
+            bg={COLORS.inputBackground}
+          />
+          <Text style={styles.materialCourseTag} numberOfLines={1}>
+            {material.courseName}
+          </Text>
+        </View>
+
+        {/* Studied Toggle Button */}
+        <TouchableOpacity
+          onPress={() => onToggleStudied(material.id)}
+          style={styles.checkCircleButton}
+          accessibilityLabel="Tandai Sudah Dipelajari"
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={material.isStudied ? 'checkmark-circle' : 'ellipse-outline'}
+            size={24}
+            color={material.isStudied ? COLORS.emerald : COLORS.textMuted}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Main Material Title & Topic */}
+      <TouchableOpacity activeOpacity={0.75} onPress={() => onPress(material)}>
+        <Text style={styles.materialTitle} numberOfLines={2}>
+          {material.title}
+        </Text>
+        <Text style={styles.materialTopicText} numberOfLines={1}>
+          📌 {material.meetingTopic}
+        </Text>
+        <Text style={styles.materialFileMeta} numberOfLines={1}>
+          {material.fileName} • {material.fileSize || 'Ukuran normal'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Action Footer */}
+      <View style={styles.materialCardFooter}>
+        <TouchableOpacity
+          style={styles.actionPillAi}
+          onPress={() => onOpenAi(material)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="sparkles" size={13} color="#7C3AED" />
+          <Text style={styles.actionPillAiText}>StudyMate AI</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionPillNotes}
+          onPress={() => onOpenNotes(material)}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={material.userNotes ? 'document-text' : 'create-outline'}
+            size={13}
+            color={COLORS.primary}
+          />
+          <Text style={styles.actionPillNotesText}>
+            {material.userNotes ? 'Lihat Catatan' : '+ Catatan'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionDeleteButton}
+          onPress={() => onDelete(material.id)}
+          activeOpacity={0.7}
+          accessibilityLabel="Hapus Materi"
+        >
+          <Ionicons name="trash-outline" size={17} color={COLORS.textMuted} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// Course Card Component (Anggota 2)
+const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
+  const progressPercent =
+    materialCount > 0 ? Math.round((studiedCount / materialCount) * 100) : 0;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[styles.courseCard, { borderTopColor: course.color, borderTopWidth: 4 }]}
+      onPress={() => onPress(course)}
+    >
+      <View style={styles.courseCardTop}>
+        <View style={styles.courseMainInfo}>
+          <View style={styles.courseBadgeRow}>
+            <Text style={[styles.courseCodeBadge, { backgroundColor: course.color + '18', color: course.color }]}>
+              {course.code}
+            </Text>
+            <Text style={styles.courseSksText}>{course.sks} SKS</Text>
+          </View>
+          <Text style={styles.courseNameText} numberOfLines={2}>
+            {course.name}
+          </Text>
+          <Text style={styles.courseLecturerText} numberOfLines={1}>
+            👨‍🏫 {course.lecturer}
+          </Text>
+        </View>
+
+        <View style={styles.courseSchedulePill}>
+          <Text style={styles.courseDayText}>{course.day}</Text>
+          <Text style={styles.courseTimeText}>{course.time}</Text>
+          <Text style={styles.courseRoomText} numberOfLines={1}>
+            📍 {course.room}
+          </Text>
+        </View>
+      </View>
+
+      {/* Progress Bar Material Organizer */}
+      <View style={styles.courseProgressContainer}>
+        <View style={styles.courseProgressRow}>
+          <Text style={styles.courseProgressLabel}>Progres Materi Terpelajari</Text>
+          <Text style={styles.courseProgressValue}>
+            {studiedCount}/{materialCount} ({progressPercent}%)
+          </Text>
+        </View>
+        <View style={styles.progressBarBg}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${Math.min(100, Math.max(0, progressPercent))}%`, backgroundColor: course.color },
+            ]}
+          />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// Task Item Component (Anggota 2)
+const TaskItem = ({ task, onToggle, onDelete }) => (
+  <View style={[styles.taskItemCard, task.completed && styles.taskItemCardCompleted]}>
+    <TouchableOpacity
+      style={styles.taskCheckboxTouch}
+      onPress={() => onToggle(task.id)}
+      accessibilityLabel="Selesaikan Tugas"
+      activeOpacity={0.7}
+    >
+      <Ionicons
+        name={task.completed ? 'checkmark-circle' : 'square-outline'}
+        size={24}
+        color={task.completed ? COLORS.emerald : COLORS.textMuted}
+      />
+    </TouchableOpacity>
+
+    <View style={styles.taskDetailsCol}>
+      <Text
+        style={[
+          styles.taskTitle,
+          task.completed && styles.taskTitleCompleted,
+        ]}
+        numberOfLines={2}
+      >
+        {task.title}
+      </Text>
+      <Text style={styles.taskCourseSubtitle} numberOfLines={1}>
+        {task.courseName}
+      </Text>
+      {task.description ? (
+        <Text style={styles.taskDescText} numberOfLines={1}>
+          {task.description}
+        </Text>
+      ) : null}
+
+      <View style={styles.taskMetaRow}>
+        <Badge
+          label={`Deadline: ${task.deadline}`}
+          color={task.completed ? COLORS.textMuted : COLORS.rose}
+          bg={task.completed ? COLORS.inputBackground : COLORS.roseLight}
+          icon="calendar-outline"
+        />
+        <Badge
+          label={`Prioritas: ${task.priority}`}
+          color={
+            task.priority === 'Tinggi'
+              ? COLORS.rose
+              : task.priority === 'Sedang'
+              ? COLORS.amber
+              : COLORS.emerald
+          }
+          bg={
+            task.priority === 'Tinggi'
+              ? COLORS.roseLight
+              : task.priority === 'Sedang'
+              ? COLORS.amberLight
+              : COLORS.emeraldLight
+          }
+        />
+      </View>
+    </View>
+
+    <TouchableOpacity
+      style={styles.taskDeleteTouch}
+      onPress={() => onDelete(task.id)}
+      accessibilityLabel="Hapus Tugas"
+      activeOpacity={0.7}
+    >
+      <Ionicons name="trash-outline" size={18} color={COLORS.textMuted} />
+    </TouchableOpacity>
+  </View>
+);
+
+// Empty State View
+const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
+  <View style={styles.emptyContainer}>
+    <View style={styles.emptyIconCircle}>
+      <Ionicons name={icon || 'folder-open-outline'} size={36} color={COLORS.primary} />
+    </View>
+    <Text style={styles.emptyTitle}>{title}</Text>
+    <Text style={styles.emptySubtitle}>{subtitle}</Text>
+    {actionText && (
+      <TouchableOpacity style={styles.emptyActionButton} onPress={onAction} activeOpacity={0.8}>
+        <Text style={styles.emptyActionText}>{actionText}</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
+
+// =================================================================
+// 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
+// =================================================================
+function StudyMateApp() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  // Responsive flags
+  const isSmallScreen = width < 360;
+  const isTabletOrLandscape = width > 600;
+
+  // Dynamic bottom padding to ensure zero bottom-nav overlap (Anggota 3)
+  const bottomNavHeight = 58 + Math.max(insets.bottom, 8);
+  const scrollContentPaddingBottom = bottomNavHeight + 16;
+
+  // Stat card dynamic width
+  const statCardWidth = useMemo(() => {
+    if (isTabletOrLandscape) {
+      return (width - 32 - 36) / 4; // 4 columns
+    }
+    return (width - 32 - 12) / 2; // 2 columns
+  }, [width, isTabletOrLandscape]);
+
+  // Navigation Tabs: 'Home' | 'Courses' | 'Materials' | 'Tasks' | 'Schedule'
+  const [currentTab, setCurrentTab] = useState('Home');
+
+  // Core Data States
+  const [courses, setCourses] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [userProfile, setUserProfile] = useState({
+    name: 'Ahmad Faiz Pratama',
+    nim: '2201010199',
+    major: 'Teknik Informatika - Semester 5',
+    campus: 'Universitas Indonesia',
+    studyStreakDays: 14,
+  });
+
+  // Loading & Filter States
+  const [isLoading, setIsLoading] = useState(true);
+  const [materialSearchQuery, setMaterialSearchQuery] = useState('');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
+  const [selectedMeetingFilter, setSelectedMeetingFilter] = useState('ALL');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
+
+  // Modals Visibility
+  const [materialModalVisible, setMaterialModalVisible] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState(null);
+
+  const [courseModalVisible, setCourseModalVisible] = useState(false);
+  const [editingCourse, setEditingCourse] = useState(null);
+
+  const [taskModalVisible, setTaskModalVisible] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+
+  const [notesModalVisible, setNotesModalVisible] = useState(false);
+  const [activeNotesMaterial, setActiveNotesMaterial] = useState(null);
+  const [currentNoteText, setCurrentNoteText] = useState('');
+
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [activeAiMaterial, setActiveAiMaterial] = useState(null);
+  const [aiSubTab, setAiSubTab] = useState('summary');
+  const [quizRevealedMap, setQuizRevealedMap] = useState({});
+
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [isParsingSchedule, setIsParsingSchedule] = useState(false);
+
+  const [notifModalVisible, setNotifModalVisible] = useState(false);
+
+  // Settings State
+  const [settings, setSettings] = useState({
+    notifyBeforeClass: true,
+    notifyDeadlines: true,
+    autoSummarizeAi: true,
+  });
+
+  // =================================================================
+  // 5. DATA PERSISTENCE & INITIALIZATION
+  // =================================================================
+  useEffect(() => {
+    loadAllData();
+  }, []);
+
+  const loadAllData = async () => {
+    try {
+      setIsLoading(true);
+      const [storedCourses, storedMaterials, storedTasks, storedNotifs, storedSettings, storedProfile] =
+        await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.COURSES),
+          AsyncStorage.getItem(STORAGE_KEYS.MATERIALS),
+          AsyncStorage.getItem(STORAGE_KEYS.TASKS),
+          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
+          AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
+          AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
+        ]);
+
+      if (storedCourses) {
+        setCourses(JSON.parse(storedCourses));
+      } else {
+        setCourses(INITIAL_COURSES);
+        await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(INITIAL_COURSES));
+      }
+
+      if (storedMaterials) {
+        setMaterials(JSON.parse(storedMaterials));
+      } else {
+        setMaterials(INITIAL_MATERIALS);
+        await AsyncStorage.setItem(STORAGE_KEYS.MATERIALS, JSON.stringify(INITIAL_MATERIALS));
+      }
+
+      if (storedTasks) {
+        setTasks(JSON.parse(storedTasks));
+      } else {
+        setTasks(INITIAL_TASKS);
+        await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
+      }
+
+      if (storedNotifs) {
+        setNotifications(JSON.parse(storedNotifs));
+      } else {
+        setNotifications(INITIAL_NOTIFICATIONS);
+        await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
+      }
+
+      if (storedSettings) setSettings(JSON.parse(storedSettings));
+      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
+    } catch (error) {
+      console.error('Error loading StudyMate storage:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const persistData = async (key, data) => {
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+      console.warn('Failed to persist to AsyncStorage:', key, e);
+    }
+  };
+
+  // =================================================================
+  // 6. ACTION HANDLERS (MATERIAL, NOTES, AI, TASKS, SCHEDULE)
+  // =================================================================
+  const handleToggleMaterialStudied = async (materialId) => {
+    const updated = materials.map((m) =>
+      m.id === materialId ? { ...m, isStudied: !m.isStudied } : m
+    );
+    setMaterials(updated);
+    await persistData(STORAGE_KEYS.MATERIALS, updated);
+  };
+
+  const handleDeleteMaterial = (materialId) => {
+    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = materials.filter((m) => m.id !== materialId);
+          setMaterials(updated);
+          await persistData(STORAGE_KEYS.MATERIALS, updated);
+        },
+      },
+    ]);
+  };
+
+  const handleSaveMaterial = async (formData) => {
+    let updated;
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
+
+    const generatedSummary =
+      formData.summary ||
+      `Ringkasan cerdas oleh StudyMate AI untuk mata kuliah ${courseObj.name} pada pertemuan ke-${formData.meetingNumber}. Mencakup fondasi teori, arsitektur, dan penerapan praktis untuk mendukung pembelajaran mandiri mahasiswa.`;
+
+    const generatedKeyPoints = formData.keyPoints || [
+      `Fokus utama topik adalah penguasaan ${formData.meetingTopic}.`,
+      `Pahami implementasi dan pola penulisan kode pada materi pertemuan ke-${formData.meetingNumber}.`,
+      'Gunakan catatan pribadi untuk mencatat penjelasan spesifik dari dosen pengampu.',
+    ];
+
+    const generatedQuiz = formData.quiz || [
+      {
+        question: `Apa konsep inti yang dibahas pada ${formData.title}?`,
+        options: ['Pemahaman fondasi dan implementasi praktis', 'Hafalan tanpa latihan', 'Menunggu arahan asisten lab', 'Kompilasi tanpa pengujian'],
+        correctIndex: 0,
+        explanation: 'Pemahaman konsep dasar dan implementasi mandiri adalah kunci retensi materi kuliah jangka panjang.',
+      },
+    ];
+
+    if (editingMaterial) {
+      updated = materials.map((m) =>
+        m.id === editingMaterial.id
+          ? {
+              ...m,
+              ...formData,
+              courseName: courseObj.name,
+              summary: generatedSummary,
+              keyPoints: generatedKeyPoints,
+              quiz: generatedQuiz,
+            }
+          : m
+      );
+    } else {
+      const newMaterial = {
+        id: `mat_${Date.now()}`,
+        ...formData,
+        courseName: courseObj.name,
+        dateAdded: new Date().toISOString().split('T')[0],
+        isStudied: false,
+        userNotes: '',
+        summary: generatedSummary,
+        keyPoints: generatedKeyPoints,
+        quiz: generatedQuiz,
+      };
+      updated = [newMaterial, ...materials];
+    }
+
+    setMaterials(updated);
+    await persistData(STORAGE_KEYS.MATERIALS, updated);
+    setMaterialModalVisible(false);
+    setEditingMaterial(null);
+  };
+
+  const handleOpenNotes = (material) => {
+    setActiveNotesMaterial(material);
+    setCurrentNoteText(material.userNotes || '');
+    setNotesModalVisible(true);
+  };
+
+  const handleSaveNotes = async () => {
+    if (!activeNotesMaterial) return;
+    const updated = materials.map((m) =>
+      m.id === activeNotesMaterial.id ? { ...m, userNotes: currentNoteText } : m
+    );
+    setMaterials(updated);
+    await persistData(STORAGE_KEYS.MATERIALS, updated);
+    setNotesModalVisible(false);
+    setActiveNotesMaterial(null);
+  };
+
+  const handleOpenAiAssistant = (material) => {
+    setActiveAiMaterial(material);
+    setAiSubTab('summary');
+    setQuizRevealedMap({});
+    setAiModalVisible(true);
+  };
+
+  const handleToggleTaskCompleted = async (taskId) => {
+    const updated = tasks.map((t) =>
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    setTasks(updated);
+    await persistData(STORAGE_KEYS.TASKS, updated);
+  };
+
+  const handleDeleteTask = (taskId) => {
+    Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = tasks.filter((t) => t.id !== taskId);
+          setTasks(updated);
+          await persistData(STORAGE_KEYS.TASKS, updated);
+        },
+      },
+    ]);
+  };
+
+  const handleSaveTask = async (formData) => {
+    let updated;
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
+
+    if (editingTask) {
+      updated = tasks.map((t) =>
+        t.id === editingTask.id ? { ...t, ...formData, courseName: courseObj.name } : t
+      );
+    } else {
+      const newTask = {
+        id: `tsk_${Date.now()}`,
+        ...formData,
+        courseName: courseObj.name,
+        completed: false,
+      };
+      updated = [newTask, ...tasks];
+    }
+
+    setTasks(updated);
+    await persistData(STORAGE_KEYS.TASKS, updated);
+    setTaskModalVisible(false);
+    setEditingTask(null);
+  };
+
+  const handlePickScheduleImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile('Screenshot_Jadwal_KRS.png');
+      }
+    } catch (err) {
+      processScheduleFile('Screenshot_Jadwal_Kuliah_Semester.png');
+    }
+  };
+
+  const handlePickScheduleDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile(result.assets[0].name || 'Jadwal_KRS_Akademik.pdf');
+      }
+    } catch (err) {
+      processScheduleFile('Jadwal_Kuliah_Semester_Ganjil.pdf');
+    }
+  };
+
+  const processScheduleFile = (fileName) => {
+    setIsParsingSchedule(true);
+    setTimeout(async () => {
+      setIsParsingSchedule(false);
+      Alert.alert(
+        'Jadwal Berhasil Dianalisis! 🚀',
+        `StudyMate telah mendeteksi 4 Mata Kuliah dari dokumen "${fileName}" dan menyelaraskannya dengan jadwal belajar harian Anda.`
+      );
+      const newNotif = {
+        id: `notif_${Date.now()}`,
+        title: 'Jadwal Berhasil Disinkronkan',
+        message: `Mata kuliah telah disesuaikan dengan berkas ${fileName}. Materi kini terhubung dengan hari kuliah.`,
+        time: 'Baru saja',
+        read: false,
+        type: 'schedule',
+      };
+      const updatedNotifs = [newNotif, ...notifications];
+      setNotifications(updatedNotifs);
+      await persistData(STORAGE_KEYS.NOTIFICATIONS, updatedNotifs);
+      setScheduleModalVisible(false);
+    }, 1400);
+  };
+
+  // =================================================================
+  // 7. COMPUTED DATA & DASHBOARD STATS
+  // =================================================================
+  const totalMaterials = materials.length;
+  const studiedMaterialsCount = materials.filter((m) => m.isStudied).length;
+  const unstudiedMaterialsCount = totalMaterials - studiedMaterialsCount;
+  const studyProgressPercent =
+    totalMaterials > 0 ? Math.round((studiedMaterialsCount / totalMaterials) * 100) : 0;
+
+  const activeTasksCount = tasks.filter((t) => !t.completed).length;
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+
+  const filteredMaterials = useMemo(() => {
+    return materials.filter((item) => {
+      const query = materialSearchQuery.toLowerCase().trim();
+      const matchSearch =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        item.courseName.toLowerCase().includes(query) ||
+        item.meetingTopic.toLowerCase().includes(query);
+
+      const matchCourse =
+        selectedCourseFilter === 'ALL' || item.courseId === selectedCourseFilter;
+
+      const matchMeeting =
+        selectedMeetingFilter === 'ALL' ||
+        String(item.meetingNumber) === String(selectedMeetingFilter);
+
+      const matchStatus =
+        selectedStatusFilter === 'ALL' ||
+        (selectedStatusFilter === 'STUDIED' && item.isStudied) ||
+        (selectedStatusFilter === 'UNSTUDIED' && !item.isStudied);
+
+      return matchSearch && matchCourse && matchMeeting && matchStatus;
+    });
+  }, [
+    materials,
+    materialSearchQuery,
+    selectedCourseFilter,
+    selectedMeetingFilter,
+    selectedStatusFilter,
+  ]);
+
+  const todayCourse = useMemo(() => {
+    const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const currentDay = daysMap[new Date().getDay()];
+    const found = courses.find((c) => c.day.toLowerCase() === currentDay.toLowerCase());
+    return found || courses[0];
+  }, [courses]);
+
+  const recommendedMaterial = useMemo(() => {
+    if (!todayCourse) return materials[0];
+    const unread = materials.find(
+      (m) => m.courseId === todayCourse.id && !m.isStudied
+    );
+    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0];
+  }, [todayCourse, materials]);
+
+  // =================================================================
+  // 8. SCREEN RENDERERS WITH OPTIMAL SCROLLING & RESPONSIVENESS
+  // =================================================================
+
+  // SCREEN 1: DASHBOARD AKTIVITAS BELAJAR (Anggota 1)
+  const renderHomeScreen = () => (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: scrollContentPaddingBottom },
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
+      <AppHeader
+        title="Dashboard Belajar"
+        subtitle={`Semangat, ${userProfile.name.split(' ')[0]}! 🔥`}
+        unreadCount={unreadNotifCount}
+        onOpenNotif={() => setNotifModalVisible(true)}
+        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+      />
+
+      {/* Hero Progress Banner */}
+      <View style={styles.heroBanner}>
+        <View style={styles.heroBannerContent}>
+          <View style={styles.heroStreakRow}>
+            <Ionicons name="flame" size={18} color="#F59E0B" />
+            <Text style={styles.heroStreakText}>
+              {userProfile.studyStreakDays} Hari Belajar Berturut-turut!
+            </Text>
+          </View>
+          <Text style={styles.heroTitle}>Progres Semester Ini</Text>
+          <Text style={styles.heroSubtitle}>
+            {studiedMaterialsCount} dari {totalMaterials} materi telah kamu kuasai ({studyProgressPercent}%)
+          </Text>
+
+          <View style={styles.heroProgressBarBg}>
+            <View
+              style={[
+                styles.heroProgressBarFill,
+                { width: `${Math.min(100, Math.max(0, studyProgressPercent))}%` },
+              ]}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* Responsive Stats Grid */}
+      <View style={styles.statsGrid}>
+        <StatCard
+          title="Total Materi"
+          value={totalMaterials}
+          subtitle="Tersimpan di Cloud"
+          icon="library-outline"
+          iconColor={COLORS.primary}
+          bgColor={COLORS.primaryLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Sudah Dibaca"
+          value={studiedMaterialsCount}
+          subtitle="Tuntas dipahami"
+          icon="checkmark-done-circle-outline"
+          iconColor={COLORS.emerald}
+          bgColor={COLORS.emeraldLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Belum Dipelajari"
+          value={unstudiedMaterialsCount}
+          subtitle="Perlu di-review"
+          icon="time-outline"
+          iconColor={COLORS.amber}
+          bgColor={COLORS.amberLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Tugas Aktif"
+          value={activeTasksCount}
+          subtitle="Perlu diselesaikan"
+          icon="alarm-outline"
+          iconColor={COLORS.rose}
+          bgColor={COLORS.roseLight}
+          cardWidth={statCardWidth}
+        />
+      </View>
+
+      {/* Responsive Quick Action Bar */}
+      <View style={styles.quickActionBar}>
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            setEditingMaterial(null);
+            setMaterialModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight }]}>
+            <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Upload Materi
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => setScheduleModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.secondaryLight }]}>
+            <Ionicons name="scan-outline" size={20} color={COLORS.secondary} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Upload Jadwal
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            setEditingTask(null);
+            setTaskModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.amberLight }]}>
+            <Ionicons name="add-circle-outline" size={20} color={COLORS.amber} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Tambah Tugas
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            if (materials.length > 0) handleOpenAiAssistant(materials[0]);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.accentLight }]}>
+            <Ionicons name="sparkles" size={20} color={COLORS.accent} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            AI Assistant
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Recommended Today's Study Section */}
+      <View style={styles.sectionHeaderRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            Rekomendasi Belajar Hari Ini 🎯
+          </Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>
+            Sesuai jadwal: {todayCourse?.name} ({todayCourse?.day})
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
+          <Text style={styles.sectionActionText}>Semua</Text>
+        </TouchableOpacity>
+      </View>
+
+      {recommendedMaterial ? (
+        <MaterialCard
+          material={recommendedMaterial}
+          onPress={(m) => handleOpenAiAssistant(m)}
+          onToggleStudied={handleToggleMaterialStudied}
+          onOpenAi={handleOpenAiAssistant}
+          onOpenNotes={handleOpenNotes}
+          onDelete={handleDeleteMaterial}
+        />
+      ) : (
+        <EmptyState
+          title="Belum ada materi untuk hari ini"
+          subtitle="Tambahkan materi kuliah agar StudyMate dapat menghubungkan jadwalmu."
+        />
+      )}
+
+      {/* Urgent Tasks Section */}
+      <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            Tugas Mendekati Deadline ⏳
+          </Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>
+            Kumpulkan sebelum batas waktu berakhir
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setCurrentTab('Tasks')} activeOpacity={0.7}>
+          <Text style={styles.sectionActionText}>Semua</Text>
+        </TouchableOpacity>
+      </View>
+
+      {tasks
+        .filter((t) => !t.completed)
+        .slice(0, 2)
+        .map((t) => (
+          <TaskItem
+            key={t.id}
+            task={t}
+            onToggle={handleToggleTaskCompleted}
+            onDelete={handleDeleteTask}
+          />
+        ))}
+
+      {activeTasksCount === 0 && (
+        <View style={styles.allClearCard}>
+          <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
+          <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
+          <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+
+  // SCREEN 2: DAFTAR MATA KULIAH & DETAIL PERTEMUAN (Anggota 2)
+  const renderCoursesScreen = () => (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: scrollContentPaddingBottom },
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
+      <AppHeader
+        title="Mata Kuliah"
+        subtitle="Semester Ganjil 2026/2027"
+        unreadCount={unreadNotifCount}
+        onOpenNotif={() => setNotifModalVisible(true)}
+        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+      />
+
+      <View style={styles.screenBannerRow}>
+        <Text style={styles.screenBannerText}>
+          Kelola materi perkuliahan berdasarkan mata kuliah dan pertemuan 1-16 secara terstruktur.
+        </Text>
+        <TouchableOpacity
+          style={styles.primaryAddButton}
+          onPress={() => {
+            setEditingCourse(null);
+            setCourseModalVisible(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={18} color="#FFFFFF" />
+          <Text style={styles.primaryAddButtonText}>Tambah</Text>
+        </TouchableOpacity>
+      </View>
+
+      {courses.map((course) => {
+        const courseMaterials = materials.filter((m) => m.courseId === course.id);
+        const studied = courseMaterials.filter((m) => m.isStudied).length;
+
+        return (
+          <CourseCard
+            key={course.id}
+            course={course}
+            materialCount={courseMaterials.length}
+            studiedCount={studied}
+            onPress={() => {
+              setSelectedCourseFilter(course.id);
+              setCurrentTab('Materials');
+            }}
+          />
+        );
+      })}
+
+      {courses.length === 0 && (
+        <EmptyState
+          title="Belum Ada Mata Kuliah"
+          subtitle="Tambahkan mata kuliah atau unggah jadwal kuliah untuk membuat otomatis."
+          actionText="+ Tambah Mata Kuliah"
+          onAction={() => setCourseModalVisible(true)}
+        />
+      )}
+    </ScrollView>
+  );
+
+  // SCREEN 3: KATALOG MATERI - SEARCH & FILTER (Anggota 2)
+  const renderMaterialsScreen = () => {
+    const meetingNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+    return (
+      <View style={styles.screenContainer}>
+        {/* Fixed Header & Search Section to maintain high performance */}
+        <View style={styles.materialsHeaderWrapper}>
+          <AppHeader
+            title="Katalog Materi"
+            subtitle="Organisasi per Matkul & Pertemuan"
+            unreadCount={unreadNotifCount}
+            onOpenNotif={() => setNotifModalVisible(true)}
+            onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+          />
+
+          {/* Search Bar */}
+          <View style={styles.searchBarContainer}>
+            <Ionicons name="search" size={18} color={COLORS.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Cari modul, topik pertemuan, mata kuliah..."
+              placeholderTextColor={COLORS.textMuted}
+              value={materialSearchQuery}
+              onChangeText={setMaterialSearchQuery}
+            />
+            {materialSearchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setMaterialSearchQuery('')}>
+                <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Status Filter Chips */}
+          <View style={styles.filterPillRow}>
+            <TouchableOpacity
+              style={[
+                styles.statusFilterPill,
+                selectedStatusFilter === 'ALL' && styles.statusFilterPillActive,
+              ]}
+              onPress={() => setSelectedStatusFilter('ALL')}
+            >
+              <Text
+                style={[
+                  styles.statusFilterText,
+                  selectedStatusFilter === 'ALL' && styles.statusFilterTextActive,
+                ]}
+              >
+                Semua ({materials.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.statusFilterPill,
+                selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterPillActive,
+              ]}
+              onPress={() => setSelectedStatusFilter('UNSTUDIED')}
+            >
+              <Text
+                style={[
+                  styles.statusFilterText,
+                  selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterTextActive,
+                ]}
+              >
+                Belum Dibaca ({unstudiedMaterialsCount})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.statusFilterPill,
+                selectedStatusFilter === 'STUDIED' && styles.statusFilterPillActive,
+              ]}
+              onPress={() => setSelectedStatusFilter('STUDIED')}
+            >
+              <Text
+                style={[
+                  styles.statusFilterText,
+                  selectedStatusFilter === 'STUDIED' && styles.statusFilterTextActive,
+                ]}
+              >
+                Selesai ({studiedMaterialsCount})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Horizontal Course Filters */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.horizontalFilterScroll}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.courseFilterChip,
+                selectedCourseFilter === 'ALL' && styles.courseFilterChipActive,
+              ]}
+              onPress={() => setSelectedCourseFilter('ALL')}
+            >
+              <Text
+                style={[
+                  styles.courseFilterChipText,
+                  selectedCourseFilter === 'ALL' && styles.courseFilterChipTextActive,
+                ]}
+              >
+                Semua Matkul
+              </Text>
+            </TouchableOpacity>
+
+            {courses.map((crs) => (
+              <TouchableOpacity
+                key={crs.id}
+                style={[
+                  styles.courseFilterChip,
+                  selectedCourseFilter === crs.id && styles.courseFilterChipActive,
+                  selectedCourseFilter === crs.id && { backgroundColor: crs.color },
+                ]}
+                onPress={() => setSelectedCourseFilter(crs.id)}
+              >
+                <Text
+                  style={[
+                    styles.courseFilterChipText,
+                    selectedCourseFilter === crs.id && styles.courseFilterChipTextActive,
+                  ]}
+                >
+                  {crs.code}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Horizontal Meeting Filters */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.meetingFilterScroll}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.meetingFilterChip,
+                selectedMeetingFilter === 'ALL' && styles.meetingFilterChipActive,
+              ]}
+              onPress={() => setSelectedMeetingFilter('ALL')}
+            >
+              <Text
+                style={[
+                  styles.meetingFilterChipText,
+                  selectedMeetingFilter === 'ALL' && styles.meetingFilterChipTextActive,
+                ]}
+              >
+                Semua Pertemuan
+              </Text>
+            </TouchableOpacity>
+            {meetingNumbers.slice(0, 8).map((num) => (
+              <TouchableOpacity
+                key={num}
+                style={[
+                  styles.meetingFilterChip,
+                  selectedMeetingFilter === String(num) && styles.meetingFilterChipActive,
+                ]}
+                onPress={() => setSelectedMeetingFilter(String(num))}
+              >
+                <Text
+                  style={[
+                    styles.meetingFilterChipText,
+                    selectedMeetingFilter === String(num) && styles.meetingFilterChipTextActive,
+                  ]}
+                >
+                  Pertemuan {num}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Scrollable Materials List with bottom padding */}
+        <ScrollView
+          style={{ flex: 1, paddingHorizontal: 16 }}
+          contentContainerStyle={{
+            paddingTop: 8,
+            paddingBottom: scrollContentPaddingBottom,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.listCountText}>
+              Menampilkan {filteredMaterials.length} materi
+            </Text>
+            <TouchableOpacity
+              style={styles.addMaterialSmallBtn}
+              onPress={() => {
+                setEditingMaterial(null);
+                setMaterialModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={15} color="#FFFFFF" />
+              <Text style={styles.addMaterialSmallBtnText}>Upload Materi</Text>
+            </TouchableOpacity>
+          </View>
+
+          {filteredMaterials.map((item) => (
+            <MaterialCard
+              key={item.id}
+              material={item}
+              onPress={(m) => handleOpenAiAssistant(m)}
+              onToggleStudied={handleToggleMaterialStudied}
+              onOpenAi={handleOpenAiAssistant}
+              onOpenNotes={handleOpenNotes}
+              onDelete={handleDeleteMaterial}
+            />
+          ))}
+
+          {filteredMaterials.length === 0 && (
+            <EmptyState
+              title="Tidak ada materi yang cocok"
+              subtitle="Coba ubah kata kunci pencarian atau reset filter pertemuan."
+              actionText="+ Upload Materi Baru"
+              onAction={() => {
+                setEditingMaterial(null);
+                setMaterialModalVisible(true);
+              }}
+            />
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
 
   // SCREEN 4: PENGELOLAAN TUGAS DAN DEADLINE (Anggota 2)
   const renderTasksScreen = () => {
@@ -1008,6 +2257,629 @@ const INITIAL_NOTIFICATIONS = [
     </Modal>
   );
 
+  // =================================================================
+  // 10. BOTTOM NAVIGATION BAR (Anggota 3)
+  // =================================================================
+  const renderBottomNav = () => {
+    const tabs = [
+      { id: 'Home', label: 'Beranda', iconActive: 'home', iconInactive: 'home-outline' },
+      { id: 'Courses', label: 'Matkul', iconActive: 'book', iconInactive: 'book-outline' },
+      { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
+      { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
+      { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+    ];
+
+    return (
+      <View
+        style={[
+          styles.bottomNavContainer,
+          {
+            paddingBottom: Math.max(insets.bottom, 8),
+            height: 58 + Math.max(insets.bottom, 8),
+          },
+        ]}
+      >
+        {tabs.map((tab) => {
+          const isActive = currentTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={styles.bottomNavItem}
+              onPress={() => setCurrentTab(tab.id)}
+              accessibilityLabel={`Menu ${tab.label}`}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.iconInactive}
+                size={22}
+                color={isActive ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.bottomNavLabel,
+                  isActive && styles.bottomNavLabelActive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
+              {isActive && <View style={styles.bottomNavActiveDot} />}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // Loading Screen Fallback
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.screenContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ marginTop: 12, color: COLORS.textSecondary, fontWeight: '600' }}>
+          Menyiapkan StudyMate...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeAreaContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      <View style={styles.mainContentFlex}>
+        {currentTab === 'Home' && renderHomeScreen()}
+        {currentTab === 'Courses' && renderCoursesScreen()}
+        {currentTab === 'Materials' && renderMaterialsScreen()}
+        {currentTab === 'Tasks' && renderTasksScreen()}
+        {currentTab === 'Schedule' && renderScheduleProfileScreen()}
+      </View>
+
+      {/* Persistent Bottom Navigation with Safe Area Padding */}
+      {renderBottomNav()}
+
+      {/* All Sub-Modals */}
+      <MaterialFormModal
+        visible={materialModalVisible}
+        editingMaterial={editingMaterial}
+        courses={courses}
+        insets={insets}
+        onClose={() => setMaterialModalVisible(false)}
+        onSave={handleSaveMaterial}
+      />
+
+      <CourseFormModal
+        visible={courseModalVisible}
+        editingCourse={editingCourse}
+        insets={insets}
+        onClose={() => setCourseModalVisible(false)}
+        onSave={async (formData) => {
+          let updated;
+          if (editingCourse) {
+            updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
+          } else {
+            const newCourse = {
+              id: `crs_${Date.now()}`,
+              ...formData,
+              color: formData.color || COLORS.primary,
+            };
+            updated = [...courses, newCourse];
+          }
+          setCourses(updated);
+          await persistData(STORAGE_KEYS.COURSES, updated);
+          setCourseModalVisible(false);
+          setEditingCourse(null);
+        }}
+      />
+
+      <TaskFormModal
+        visible={taskModalVisible}
+        editingTask={editingTask}
+        courses={courses}
+        insets={insets}
+        onClose={() => setTaskModalVisible(false)}
+        onSave={handleSaveTask}
+      />
+
+      {renderNotesModal()}
+      {renderAiModal()}
+      {renderScheduleModal()}
+      {renderNotificationModal()}
+    </SafeAreaView>
+  );
+}
+
+// =================================================================
+// 11. MODAL FORMS SUB-COMPONENTS
+// =================================================================
+
+// Form Modal Tambah / Edit Materi
+function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0]?.id || '');
+  const [meetingNumber, setMeetingNumber] = useState('1');
+  const [meetingTopic, setMeetingTopic] = useState('');
+  const [fileType, setFileType] = useState('PDF');
+  const [fileName, setFileName] = useState('');
+  const [fileSize, setFileSize] = useState('3.8 MB');
+
+  useEffect(() => {
+    if (editingMaterial) {
+      setTitle(editingMaterial.title);
+      setCourseId(editingMaterial.courseId);
+      setMeetingNumber(String(editingMaterial.meetingNumber || 1));
+      setMeetingTopic(editingMaterial.meetingTopic || '');
+      setFileType(editingMaterial.fileType || 'PDF');
+      setFileName(editingMaterial.fileName || '');
+      setFileSize(editingMaterial.fileSize || '3.5 MB');
+    } else {
+      setTitle('');
+      setCourseId(courses[0]?.id || '');
+      setMeetingNumber('1');
+      setMeetingTopic('');
+      setFileType('PDF');
+      setFileName('');
+      setFileSize('3.2 MB');
+    }
+  }, [editingMaterial, visible, courses]);
+
+  const handlePickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setFileName(res.assets[0].name);
+        setFileSize('4.5 MB');
+        if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (e) {
+      setFileName('Materi_Kuliah_Pertemuan.pdf');
+    }
+  };
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
+      return;
+    }
+    onSave({
+      title: title.trim(),
+      courseId,
+      meetingNumber: parseInt(meetingNumber, 10) || 1,
+      meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
+      fileType,
+      fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
+      fileSize,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
+            <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
+            <Text style={styles.filePickerButtonTitle}>
+              {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
+            </Text>
+            <Text style={styles.filePickerButtonSub}>
+              Mendukung format PDF, PPT, PPTX, dan Dokumen
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.formLabel}>Judul Materi</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Modul 3 - React Navigation"
+            placeholderTextColor={COLORS.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
+
+          <Text style={styles.formLabel}>Mata Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {courses.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.formCourseOption,
+                  courseId === c.id && styles.formCourseOptionActive,
+                  courseId === c.id && { borderColor: c.color },
+                ]}
+                onPress={() => setCourseId(c.id)}
+              >
+                <Text
+                  style={[
+                    styles.formCourseOptionText,
+                    courseId === c.id && { color: c.color, fontWeight: '700' },
+                  ]}
+                >
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Pertemuan Ke-</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="1 - 16"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="numeric"
+                value={meetingNumber}
+                onChangeText={setMeetingNumber}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Format Berkas</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {['PDF', 'PPT', 'DOC'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.fileTypeChoice,
+                      fileType === type && styles.fileTypeChoiceActive,
+                    ]}
+                    onPress={() => setFileType(type)}
+                  >
+                    <Text
+                      style={[
+                        styles.fileTypeChoiceText,
+                        fileType === type && styles.fileTypeChoiceTextActive,
+                      ]}
+                    >
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <Text style={styles.formLabel}>Topik Pertemuan</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Komponen UI & Layouting Flexbox"
+            placeholderTextColor={COLORS.textMuted}
+            value={meetingTopic}
+            onChangeText={setMeetingTopic}
+          />
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// Form Modal Tambah / Edit Tugas
+function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0]?.id || '');
+  const [deadline, setDeadline] = useState('2026-11-10');
+  const [priority, setPriority] = useState('Sedang');
+  const [description, setDescription] = useState('');
+
+  useEffect(() => {
+    if (editingTask) {
+      setTitle(editingTask.title);
+      setCourseId(editingTask.courseId);
+      setDeadline(editingTask.deadline);
+      setPriority(editingTask.priority);
+      setDescription(editingTask.description || '');
+    } else {
+      setTitle('');
+      setCourseId(courses[0]?.id || '');
+      setDeadline('2026-11-10');
+      setPriority('Sedang');
+      setDescription('');
+    }
+  }, [editingTask, visible, courses]);
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Perhatian', 'Harap isi judul tugas.');
+      return;
+    }
+    onSave({
+      title: title.trim(),
+      courseId,
+      deadline,
+      priority,
+      description: description.trim(),
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingTask ? 'Edit Tugas' : 'Tambah Tugas Baru'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.formLabel}>Judul Tugas</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Buat Laporan Praktikum Modul 2"
+            placeholderTextColor={COLORS.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
+
+          <Text style={styles.formLabel}>Mata Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {courses.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.formCourseOption,
+                  courseId === c.id && styles.formCourseOptionActive,
+                  courseId === c.id && { borderColor: c.color },
+                ]}
+                onPress={() => setCourseId(c.id)}
+              >
+                <Text
+                  style={[
+                    styles.formCourseOptionText,
+                    courseId === c.id && { color: c.color, fontWeight: '700' },
+                  ]}
+                >
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.formLabel}>Tenggat Waktu (Deadline: YYYY-MM-DD)</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="2026-11-10"
+            placeholderTextColor={COLORS.textMuted}
+            value={deadline}
+            onChangeText={setDeadline}
+          />
+
+          <Text style={styles.formLabel}>Prioritas</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+            {['Tinggi', 'Sedang', 'Rendah'].map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[
+                  styles.priorityOptionBtn,
+                  priority === p && styles.priorityOptionBtnActive,
+                ]}
+                onPress={() => setPriority(p)}
+              >
+                <Text
+                  style={[
+                    styles.priorityOptionBtnText,
+                    priority === p && styles.priorityOptionBtnTextActive,
+                  ]}
+                >
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.formLabel}>Catatan Tambahan / Deskripsi</Text>
+          <TextInput
+            style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
+            multiline
+            placeholder="Detail instruksi tugas atau tautan pengumpulan..."
+            placeholderTextColor={COLORS.textMuted}
+            value={description}
+            onChangeText={setDescription}
+          />
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Tugas</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// Form Modal Tambah / Edit Mata Kuliah
+function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [lecturer, setLecturer] = useState('');
+  const [day, setDay] = useState('Senin');
+  const [time, setTime] = useState('08:00 - 10:30');
+  const [room, setRoom] = useState('Lab 1');
+  const [sks, setSks] = useState('3');
+
+  const daysList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+  useEffect(() => {
+    if (editingCourse) {
+      setName(editingCourse.name);
+      setCode(editingCourse.code);
+      setLecturer(editingCourse.lecturer);
+      setDay(editingCourse.day);
+      setTime(editingCourse.time);
+      setRoom(editingCourse.room);
+      setSks(String(editingCourse.sks || 3));
+    } else {
+      setName('');
+      setCode('');
+      setLecturer('');
+      setDay('Senin');
+      setTime('08:00 - 10:30');
+      setRoom('Lab 1');
+      setSks('3');
+    }
+  }, [editingCourse, visible]);
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      Alert.alert('Perhatian', 'Harap isi nama mata kuliah.');
+      return;
+    }
+    onSave({
+      name: name.trim(),
+      code: code.trim() || 'IF101',
+      lecturer: lecturer.trim() || 'Dosen Pengampu',
+      day,
+      time: time.trim() || '08:00 - 10:30',
+      room: room.trim() || 'Ruang Kuliah',
+      sks: parseInt(sks, 10) || 3,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingCourse ? 'Edit Mata Kuliah' : 'Tambah Mata Kuliah'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.formLabel}>Nama Mata Kuliah</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Interaksi Manusia dan Komputer"
+            placeholderTextColor={COLORS.textMuted}
+            value={name}
+            onChangeText={setName}
+          />
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Kode Matkul</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="IF3201"
+                placeholderTextColor={COLORS.textMuted}
+                value={code}
+                onChangeText={setCode}
+              />
+            </View>
+            <View style={{ width: 100 }}>
+              <Text style={styles.formLabel}>SKS</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="3"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="numeric"
+                value={sks}
+                onChangeText={setSks}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.formLabel}>Dosen Pengampu</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Nama Dosen dan Gelar"
+            placeholderTextColor={COLORS.textMuted}
+            value={lecturer}
+            onChangeText={setLecturer}
+          />
+
+          <Text style={styles.formLabel}>Hari Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {daysList.map((d) => (
+              <TouchableOpacity
+                key={d}
+                style={[styles.dayChoiceBtn, day === d && styles.dayChoiceBtnActive]}
+                onPress={() => setDay(d)}
+              >
+                <Text style={[styles.dayChoiceBtnText, day === d && styles.dayChoiceBtnTextActive]}>
+                  {d}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Jam Kuliah</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="08:00 - 10:30"
+                placeholderTextColor={COLORS.textMuted}
+                value={time}
+                onChangeText={setTime}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Ruangan</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Lab 203"
+                placeholderTextColor={COLORS.textMuted}
+                value={room}
+                onChangeText={setRoom}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Mata Kuliah</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// =================================================================
+// 12. ROOT EXPORT DENGAN SAFE AREA PROVIDER (Anggota 3)
+// =================================================================
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StudyMateApp />
+    </SafeAreaProvider>
+  );
+}
 
 // =================================================================
 // 13. STYLESHEET (CLEAN, RESPONSIVE, WCAG AAA ACCESSIBLE)
