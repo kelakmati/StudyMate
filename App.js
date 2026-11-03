@@ -442,6 +442,9 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
 
 // Reusable Header Component with Safe Status Bar Handling (Anggota 1)
 const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload }) => (
+<<<<<<< HEAD
+>>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
+=======
 >>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
   <View style={styles.headerContainer}>
     <View style={styles.headerTextGroup}>
@@ -453,6 +456,7 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
       </Text>
     </View>
     <View style={styles.headerActions}>
+<<<<<<< HEAD
 <<<<<<< HEAD
       {onOpenSecurityModal && (
         <TouchableOpacity
@@ -466,6 +470,8 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
       )}
 =======
 >>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
+=======
+>>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
       {onOpenScheduleUpload && (
         <TouchableOpacity
           style={styles.headerIconButton}
@@ -474,7 +480,11 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
           activeOpacity={0.7}
         >
 <<<<<<< HEAD
+<<<<<<< HEAD
           <Ionicons name="calendar-outline" size={19} color={COLORS.primary} />
+=======
+          <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+>>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
 =======
           <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
 >>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
@@ -486,7 +496,10 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
         accessibilityLabel="Pusat Notifikasi"
         activeOpacity={0.7}
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
       >
         <Ionicons name="notifications-outline" size={20} color={COLORS.textPrimary} />
         {unreadCount > 0 && (
@@ -4387,6 +4400,327 @@ function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose,
   );
 }
 
+<<<<<<< HEAD
+=======
+  // =================================================================
+  // 10. BOTTOM NAVIGATION BAR (Anggota 3)
+  // =================================================================
+  const renderBottomNav = () => {
+    const tabs = [
+      { id: 'Home', label: 'Beranda', iconActive: 'home', iconInactive: 'home-outline' },
+      { id: 'Courses', label: 'Matkul', iconActive: 'book', iconInactive: 'book-outline' },
+      { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
+      { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
+      { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+    ];
+
+    return (
+      <View
+        style={[
+          styles.bottomNavContainer,
+          {
+            paddingBottom: Math.max(insets.bottom, 8),
+            height: 58 + Math.max(insets.bottom, 8),
+          },
+        ]}
+      >
+        {tabs.map((tab) => {
+          const isActive = currentTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={styles.bottomNavItem}
+              onPress={() => setCurrentTab(tab.id)}
+              accessibilityLabel={`Menu ${tab.label}`}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.iconInactive}
+                size={22}
+                color={isActive ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.bottomNavLabel,
+                  isActive && styles.bottomNavLabelActive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
+              {isActive && <View style={styles.bottomNavActiveDot} />}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // Loading Screen Fallback
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.screenContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ marginTop: 12, color: COLORS.textSecondary, fontWeight: '600' }}>
+          Menyiapkan StudyMate...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeAreaContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      <View style={styles.mainContentFlex}>
+        {currentTab === 'Home' && renderHomeScreen()}
+        {currentTab === 'Courses' && renderCoursesScreen()}
+        {currentTab === 'Materials' && renderMaterialsScreen()}
+        {currentTab === 'Tasks' && renderTasksScreen()}
+        {currentTab === 'Schedule' && renderScheduleProfileScreen()}
+      </View>
+
+      {/* Persistent Bottom Navigation with Safe Area Padding */}
+      {renderBottomNav()}
+
+      {/* All Sub-Modals */}
+      <MaterialFormModal
+        visible={materialModalVisible}
+        editingMaterial={editingMaterial}
+        courses={courses}
+        insets={insets}
+        onClose={() => setMaterialModalVisible(false)}
+        onSave={handleSaveMaterial}
+      />
+
+      <CourseFormModal
+        visible={courseModalVisible}
+        editingCourse={editingCourse}
+        insets={insets}
+        onClose={() => setCourseModalVisible(false)}
+        onSave={async (formData) => {
+          let updated;
+          if (editingCourse) {
+            updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
+          } else {
+            const newCourse = {
+              id: `crs_${Date.now()}`,
+              ...formData,
+              color: formData.color || COLORS.primary,
+            };
+            updated = [...courses, newCourse];
+          }
+          setCourses(updated);
+          await persistData(STORAGE_KEYS.COURSES, updated);
+          setCourseModalVisible(false);
+          setEditingCourse(null);
+        }}
+      />
+
+      <TaskFormModal
+        visible={taskModalVisible}
+        editingTask={editingTask}
+        courses={courses}
+        insets={insets}
+        onClose={() => setTaskModalVisible(false)}
+        onSave={handleSaveTask}
+      />
+
+      {renderNotesModal()}
+      {renderAiModal()}
+      {renderScheduleModal()}
+      {renderNotificationModal()}
+    </SafeAreaView>
+  );
+}
+
+// =================================================================
+// 11. MODAL FORMS SUB-COMPONENTS
+// =================================================================
+
+// Form Modal Tambah / Edit Materi
+function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0]?.id || '');
+  const [meetingNumber, setMeetingNumber] = useState('1');
+  const [meetingTopic, setMeetingTopic] = useState('');
+  const [fileType, setFileType] = useState('PDF');
+  const [fileName, setFileName] = useState('');
+  const [fileSize, setFileSize] = useState('3.8 MB');
+
+  useEffect(() => {
+    if (editingMaterial) {
+      setTitle(editingMaterial.title);
+      setCourseId(editingMaterial.courseId);
+      setMeetingNumber(String(editingMaterial.meetingNumber || 1));
+      setMeetingTopic(editingMaterial.meetingTopic || '');
+      setFileType(editingMaterial.fileType || 'PDF');
+      setFileName(editingMaterial.fileName || '');
+      setFileSize(editingMaterial.fileSize || '3.5 MB');
+    } else {
+      setTitle('');
+      setCourseId(courses[0]?.id || '');
+      setMeetingNumber('1');
+      setMeetingTopic('');
+      setFileType('PDF');
+      setFileName('');
+      setFileSize('3.2 MB');
+    }
+  }, [editingMaterial, visible, courses]);
+
+  const handlePickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setFileName(res.assets[0].name);
+        setFileSize('4.5 MB');
+        if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (e) {
+      setFileName('Materi_Kuliah_Pertemuan.pdf');
+    }
+  };
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
+      return;
+    }
+    onSave({
+      title: title.trim(),
+      courseId,
+      meetingNumber: parseInt(meetingNumber, 10) || 1,
+      meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
+      fileType,
+      fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
+      fileSize,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
+            <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
+            <Text style={styles.filePickerButtonTitle}>
+              {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
+            </Text>
+            <Text style={styles.filePickerButtonSub}>
+              Mendukung format PDF, PPT, PPTX, dan Dokumen
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.formLabel}>Judul Materi</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Modul 3 - React Navigation"
+            placeholderTextColor={COLORS.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
+
+          <Text style={styles.formLabel}>Mata Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {courses.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.formCourseOption,
+                  courseId === c.id && styles.formCourseOptionActive,
+                  courseId === c.id && { borderColor: c.color },
+                ]}
+                onPress={() => setCourseId(c.id)}
+              >
+                <Text
+                  style={[
+                    styles.formCourseOptionText,
+                    courseId === c.id && { color: c.color, fontWeight: '700' },
+                  ]}
+                >
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Pertemuan Ke-</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="1 - 16"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="numeric"
+                value={meetingNumber}
+                onChangeText={setMeetingNumber}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Format Berkas</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {['PDF', 'PPT', 'DOC'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.fileTypeChoice,
+                      fileType === type && styles.fileTypeChoiceActive,
+                    ]}
+                    onPress={() => setFileType(type)}
+                  >
+                    <Text
+                      style={[
+                        styles.fileTypeChoiceText,
+                        fileType === type && styles.fileTypeChoiceTextActive,
+                      ]}
+                    >
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <Text style={styles.formLabel}>Topik Pertemuan</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Komponen UI & Layouting Flexbox"
+            placeholderTextColor={COLORS.textMuted}
+            value={meetingTopic}
+            onChangeText={setMeetingTopic}
+          />
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+>>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
 // Form Modal Tambah / Edit Tugas
 function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
   const [title, setTitle] = useState('');
@@ -4681,6 +5015,20 @@ function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
     </Modal>
   );
 }
+<<<<<<< HEAD
+=======
+
+// =================================================================
+// 12. ROOT EXPORT DENGAN SAFE AREA PROVIDER (Anggota 3)
+// =================================================================
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StudyMateApp />
+    </SafeAreaProvider>
+  );
+}
+>>>>>>> ff2adeda3550242a63cd5b15184784ec597b3448
 
 // =================================================================
 // 12. ROOT EXPORT DENGAN SAFE AREA PROVIDER (Anggota 3)
