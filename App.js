@@ -60,6 +60,380 @@ const COLORS = {
 };
 
 // =================================================================
+// =================================================================
+// PART 2 – ANGGOTA 2: LOCAL DATA SECURITY (STORAGE & VAULT ENGINE)
+// =================================================================
+// =================================================================
+// Penjelasan: Anggota 2 bertanggung jawab memisahkan data sensitif
+// (SecureStore) dan data non-sensitif (AsyncStorage), hashing password
+// satu arah (SHA-256), serta isolasi data multi-user berbasis userId.
+// =================================================================
+
+// 1. Storage Keys Definition
+const SECURE_KEYS = {
+  TOKEN: 'studymate_secure_token',
+  SESSION_USER: 'studymate_secure_user_session',
+  USERS_VAULT: 'studymate_secure_vault_registered_users',
+};
+
+const getAsyncUserKey = (prefix, userId) => `@studymate_${prefix}_usr_${userId}`;
+
+// 2. Cross-Platform SecureStore Wrapper with Web Fallback
+const isNativeSecureSupported = Platform.OS === 'ios' || Platform.OS === 'android';
+
+const secureStorage = {
+  async setItem(key, value) {
+    try {
+      if (isNativeSecureSupported) {
+        await SecureStore.setItemAsync(key, value);
+      } else {
+        await AsyncStorage.setItem(`@vault_${key}`, value);
+      }
+      return true;
+    } catch (e) {
+      console.warn(`[SecureStore Error] Gagal simpan ${key}:`, e);
+      return false;
+    }
+  },
+
+  async getItem(key) {
+    try {
+      if (isNativeSecureSupported) {
+        return await SecureStore.getItemAsync(key);
+      } else {
+        return await AsyncStorage.getItem(`@vault_${key}`);
+      }
+    } catch (e) {
+      console.warn(`[SecureStore Error] Gagal baca ${key}:`, e);
+      return null;
+    }
+  },
+
+  async deleteItem(key) {
+    try {
+      if (isNativeSecureSupported) {
+        await SecureStore.deleteItemAsync(key);
+      } else {
+        await AsyncStorage.removeItem(`@vault_${key}`);
+      }
+      return true;
+    } catch (e) {
+      console.warn(`[SecureStore Error] Gagal hapus ${key}:`, e);
+      return false;
+    }
+  },
+};
+
+// 3. Cryptographic Pure JS SHA-256 Hashing Algorithm
+// Menghindari penyimpanan password dalam plain text tanpa dependensi binary native
+function hashSha256(ascii) {
+  function rightRotate(value, amount) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const maxWord = Math.pow(2, 32);
+  let i, j;
+  let result = '';
+  const words = [];
+  const asciiBitLength = ascii.length * 8;
+  const hash = [];
+  const k = [];
+  let primeCounter = 0;
+  const isComposite = {};
+  for (let candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) {
+        isComposite[i] = candidate;
+      }
+      hash[primeCounter] = (Math.pow(candidate, 0.5) * maxWord) | 0;
+      k[primeCounter++] = (Math.pow(candidate, 1 / 3) * maxWord) | 0;
+    }
+  }
+  ascii += '\x80';
+  while ((ascii.length % 64) - 56) ascii += '\x00';
+  for (i = 0; i < ascii.length; i++) {
+    j = ascii.charCodeAt(i);
+    words[i >> 2] |= j << ((3 - (i % 4)) * 8);
+  }
+  words[words.length] = (asciiBitLength / maxWord) | 0;
+  words[words.length] = asciiBitLength;
+  for (j = 0; j < words.length;) {
+    const w = words.slice(j, (j += 16));
+    const oldHash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      const w15 = w[i - 15],
+        w2 = w[i - 2];
+      const a = hash[0],
+        e = hash[4];
+      const temp1 =
+        hash[7] +
+        (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+        ((e & hash[5]) ^ (~e & hash[6])) +
+        k[i] +
+        (w[i] =
+          i < 16
+            ? w[i]
+            : (w[i - 16] +
+              (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+              w[i - 7] +
+              (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
+            0);
+      const temp2 =
+        (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+        ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash.unshift((temp1 + temp2) | 0);
+      hash[4] = (hash[4] + temp1) | 0;
+    }
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i]) | 0;
+    }
+  }
+  for (i = 0; i < 8; i++) {
+    for (let i2 = 3; i2 >= 0; i2--) {
+      const b = (hash[i] >> (i2 * 8)) & 255;
+      result += (b < 16 ? '0' : '') + b.toString(16);
+    }
+  }
+  return result;
+}
+
+const secureHashPassword = (password, salt) => {
+  return hashSha256(`${password}_studymate_salt_${salt}`);
+};
+
+// 4. Default Seed Starter Templates for Newly Registered Users
+const getInitialCourseTemplates = (userId) => [
+  {
+    id: `crs_1_${userId}`,
+    userId,
+    code: 'IF3101',
+    name: 'Pemrograman Mobile',
+    lecturer: 'Dr. Ir. Hendra Wijaya, M.Kom',
+    day: 'Senin',
+    time: '08:00 - 10:30',
+    room: 'Lab Komputasi 3',
+    sks: 3,
+    color: '#4F46E5',
+  },
+  {
+    id: `crs_2_${userId}`,
+    userId,
+    code: 'IF3102',
+    name: 'Basis Data Lanjut',
+    lecturer: 'Prof. Sri Rahayu, Ph.D',
+    day: 'Selasa',
+    time: '10:45 - 13:15',
+    room: 'R. Seminar 204',
+    sks: 3,
+    color: '#0EA5E9',
+  },
+  {
+    id: `crs_3_${userId}`,
+    userId,
+    code: 'IF3103',
+    name: 'Kecerdasan Buatan (AI)',
+    lecturer: 'Budi Santoso, S.T., M.Sc',
+    day: 'Rabu',
+    time: '13:30 - 16:00',
+    room: 'Gd. Fasilkom 301',
+    sks: 3,
+    color: '#8B5CF6',
+  },
+  {
+    id: `crs_4_${userId}`,
+    userId,
+    code: 'IF3104',
+    name: 'Rekayasa Perangkat Lunak',
+    lecturer: 'Dewi Lestari, M.T',
+    day: 'Kamis',
+    time: '08:00 - 10:30',
+    room: 'Ruang Teori 102',
+    sks: 3,
+    color: '#10B981',
+  },
+];
+
+const getInitialMaterialTemplates = (userId) => [
+  {
+    id: `mat_1_${userId}`,
+    userId,
+    courseId: `crs_1_${userId}`,
+    courseName: 'Pemrograman Mobile',
+    meetingNumber: 1,
+    meetingTopic: 'Pengenalan React Native & Expo Ecosystem',
+    title: 'Modul 1: React Native Architecture & Setup',
+    fileType: 'PDF',
+    fileName: 'Modul_01_ReactNative_Setup.pdf',
+    fileSize: '4.2 MB',
+    dateAdded: '2026-10-12',
+    isStudied: true,
+    userNotes: 'Catatan pribadi: Gunakan SafeAreaProvider dan useSafeAreaInsets agar tidak bertabrakan dengan status bar.',
+    summary: 'Materi ini membahas arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer), perbedaan cross-platform, serta setup Expo Go.',
+    keyPoints: [
+      'React Native menggunakan konsep declarative UI dengan komponen native di iOS & Android.',
+      'Expo Go mengemas dependensi native siap pakai tanpa build Gradle berat.',
+      'State & Props adalah fondasi manajemen data komponen React.',
+    ],
+    quiz: [
+      {
+        question: 'Apa peran Fabric Renderer di arsitektur React Native modern?',
+        options: ['Mengubah PDF menjadi teks', 'Merender UI langsung ke thread native secara efisien', 'Mengompres foto galeri', 'Menghubungkan WiFi'],
+        correctIndex: 1,
+        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JS thread dan native view thread sehingga UI berjalan 60 FPS.',
+      },
+    ],
+  },
+  {
+    id: `mat_2_${userId}`,
+    userId,
+    courseId: `crs_1_${userId}`,
+    courseName: 'Pemrograman Mobile',
+    meetingNumber: 2,
+    meetingTopic: 'Komponen UI, Flexbox & Responsive Layout',
+    title: 'Slide Kuliah: Flexbox Responsive & State React',
+    fileType: 'PPT',
+    fileName: 'Pertemuan_2_Flexbox_State.pptx',
+    fileSize: '12.8 MB',
+    dateAdded: '2026-10-19',
+    isStudied: true,
+    userNotes: 'Default flexDirection di React Native adalah column (vertikal).',
+    summary: 'Membahas perancangan layout mobile fleksibel menggunakan Flexbox, alignItems, justifyContent, serta Hook useState.',
+    keyPoints: [
+      'Default flexDirection adalah column.',
+      'justifyContent mengatur perataan sepanjang main axis.',
+      'alignItems mengatur perataan cross axis.',
+    ],
+    quiz: [
+      {
+        question: 'Nilai default flexDirection di React Native adalah?',
+        options: ['row', 'column', 'grid', 'flex-start'],
+        correctIndex: 1,
+        explanation: 'Berbeda dari web CSS yang default-nya row, React Native secara default adalah column.',
+      },
+    ],
+  },
+];
+
+const getInitialTaskTemplates = (userId) => [
+  {
+    id: `tsk_1_${userId}`,
+    userId,
+    courseId: `crs_1_${userId}`,
+    courseName: 'Pemrograman Mobile',
+    title: 'Tugas 1: Integrasi Autentikasi & SecureStore StudyMate',
+    deadline: '2026-11-06',
+    priority: 'Tinggi',
+    completed: false,
+    description: 'Selesaikan pemisahan SecureStore untuk token dan AsyncStorage untuk data materi.',
+  },
+  {
+    id: `tsk_2_${userId}`,
+    userId,
+    courseId: `crs_2_${userId}`,
+    courseName: 'Basis Data Lanjut',
+    title: 'Praktikum SQL: Analisis Indexing B-Tree',
+    deadline: '2026-11-08',
+    priority: 'Sedang',
+    completed: true,
+    description: 'Bandingkan waktu eksekusi query sebelum dan sesudah dibuatkan index.',
+  },
+];
+
+// User-Scoped Local Data Operations (AsyncStorage with Try-Catch)
+const localDataService = {
+  async loadUserData(userId) {
+    try {
+      const coursesKey = getAsyncUserKey('courses', userId);
+      const materialsKey = getAsyncUserKey('materials', userId);
+      const tasksKey = getAsyncUserKey('tasks', userId);
+      const settingsKey = getAsyncUserKey('settings', userId);
+
+      const [storedCourses, storedMaterials, storedTasks, storedSettings] =
+        await Promise.all([
+          AsyncStorage.getItem(coursesKey),
+          AsyncStorage.getItem(materialsKey),
+          AsyncStorage.getItem(tasksKey),
+          AsyncStorage.getItem(settingsKey),
+        ]);
+
+      let courses = storedCourses ? JSON.parse(storedCourses) : null;
+      let materials = storedMaterials ? JSON.parse(storedMaterials) : null;
+      let tasks = storedTasks ? JSON.parse(storedTasks) : null;
+      let settings = storedSettings
+        ? JSON.parse(storedSettings)
+        : {
+          notifyBeforeClass: true,
+          notifyDeadlines: true,
+          autoSummarizeAi: true,
+        };
+
+      // Inisialisasi awal jika akun belum memiliki data
+      if (!courses || courses.length === 0) {
+        courses = getInitialCourseTemplates(userId);
+        await AsyncStorage.setItem(coursesKey, JSON.stringify(courses));
+      }
+      if (!materials || materials.length === 0) {
+        materials = getInitialMaterialTemplates(userId);
+        await AsyncStorage.setItem(materialsKey, JSON.stringify(materials));
+      }
+      if (!tasks || tasks.length === 0) {
+        tasks = getInitialTaskTemplates(userId);
+        await AsyncStorage.setItem(tasksKey, JSON.stringify(tasks));
+      }
+
+      return { courses, materials, tasks, settings };
+    } catch (error) {
+      console.error('[LocalDataService] Gagal memuat data akun:', error);
+      return {
+        courses: getInitialCourseTemplates(userId),
+        materials: getInitialMaterialTemplates(userId),
+        tasks: getInitialTaskTemplates(userId),
+        settings: { notifyBeforeClass: true, notifyDeadlines: true, autoSummarizeAi: true },
+      };
+    }
+  },
+
+  async saveCourses(userId, courses) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('courses', userId), JSON.stringify(courses));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan courses:', e);
+      return false;
+    }
+  },
+
+  async saveMaterials(userId, materials) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('materials', userId), JSON.stringify(materials));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan materials:', e);
+      return false;
+    }
+  },
+
+  async saveTasks(userId, tasks) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('tasks', userId), JSON.stringify(tasks));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan tasks:', e);
+      return false;
+    }
+  },
+
+  async saveSettings(userId, settings) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('settings', userId), JSON.stringify(settings));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan settings:', e);
+      return false;
+    }
+  },
+};
+
+// =================================================================
 // REUSABLE UI COMPONENTS (SHARED ATOMIC DESIGN)
 // =================================================================
 // ==========================================
@@ -137,6 +511,98 @@ const fetchApiReferencesService = async () => {
 // END OF PART 1 - ANGGOTA 1
 // ==========================================
 
+
+// ==========================================
+// PART 2 - ANGGOTA 2
+// DATA MAPPING & DYNAMIC UI
+// ==========================================
+/**
+ * TANGGUNG JAWAB ANGGOTA 2:
+ * 1. Melakukan Data Mapping dari raw JSON response ke format DTO StudyMate.
+ * 2. Transformasi struktur:
+ *      Raw Server: { userId: number, id: number, title: string, body: string }
+ *      Target DTO: { id: number, title: string, description: string, authorId: number }
+ * 3. Menghindari penambahan field fiktif (seperti image atau status palsu) yang tidak ada pada response.
+ * 4. Membangun Reusable Component: ApiReferenceCard dengan tampilan visual yang rapi dan konsisten.
+ * 5. Menyiapkan elemen UI dinamis untuk state Loading, Error, Empty, dan Populated.
+ */
+
+/**
+ * mapApiResponseToDto:
+ * Mengubah array data mentah API menjadi struktur DTO StudyMate yang bersih.
+ * @param {Array} rawItems Array hasil JSON parsing dari REST API
+ * @returns {Array} Array objek sesuai DTO StudyMate
+ */
+const mapApiResponseToDto = (rawItems) => {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems.map((item) => ({
+    id: Number(item.id),
+    title: String(item.title || '').trim(),
+    description: String(item.body || '').trim(),
+    authorId: Number(item.userId),
+  }));
+};
+
+/**
+ * Reusable Component: ApiReferenceCard
+ * Komponen kartu untuk menampilkan data referensi eksternal dari REST API secara dinamis.
+ */
+const ApiReferenceCard = ({ reference, onPress }) => {
+  if (!reference) return null;
+
+  return (
+    <View style={styles.apiCardContainer}>
+      {/* Top Meta Row */}
+      <View style={styles.apiCardHeader}>
+        <View style={styles.apiBadgeRow}>
+          <View style={styles.apiIdBadge}>
+            <Ionicons name="document-text-outline" size={12} color={COLORS.primary} />
+            <Text style={styles.apiIdBadgeText}>Ref #{reference.id}</Text>
+          </View>
+          <View style={styles.apiAuthorBadge}>
+            <Ionicons name="person-outline" size={11} color={COLORS.secondary} />
+            <Text style={styles.apiAuthorBadgeText}>Author ID: {reference.authorId}</Text>
+          </View>
+        </View>
+        <View style={styles.apiSourcePill}>
+          <Text style={styles.apiSourcePillText}>REST API</Text>
+        </View>
+      </View>
+
+      {/* Title */}
+      <Text style={styles.apiCardTitle} numberOfLines={2}>
+        {reference.title}
+      </Text>
+
+      {/* Description */}
+      <Text style={styles.apiCardDescription} numberOfLines={3}>
+        {reference.description}
+      </Text>
+
+      {/* Bottom Footer */}
+      <View style={styles.apiCardFooter}>
+        <View style={styles.apiStatusIndicator}>
+          <View style={styles.apiStatusDot} />
+          <Text style={styles.apiStatusText}>JSONPlaceholder Public Feed</Text>
+        </View>
+        {onPress && (
+          <TouchableOpacity
+            style={styles.apiDetailLink}
+            onPress={() => onPress(reference)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.apiDetailLinkText}>Pelajari</Text>
+            <Ionicons name="arrow-forward" size={12} color={COLORS.primary} />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+};
+// ==========================================
+// END OF PART 2 - ANGGOTA 2
+// ==========================================
 
 const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload, onOpenSecurityModal }) => (
   <View style={styles.headerContainer}>
@@ -514,2278 +980,223 @@ function StudyMateApp() {
   const [isParsingSchedule, setIsParsingSchedule] = useState(false);
   const [notifModalVisible, setNotifModalVisible] = useState(false);
 
+  
+
   // =============================================================
-  // PART 1 – ANGGOTA 1: REGISTER HANDLER & VALIDATION
+  // PART 2 & 3: APP DATA CRUD OPERATIONS (USER-SCOPED)
   // =============================================================
-  const validateRegisterInput = (name, email, password, confirmPassword) => {
-    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
-      return 'Semua field wajib diisi.';
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      return 'Format email tidak valid. Masukkan email yang benar.';
-    }
-    if (password.length < 6) {
-      return 'Kata sandi minimal harus 6 karakter demi keamanan.';
-    }
-    if (password !== confirmPassword) {
-      return 'Konfirmasi kata sandi tidak cocok dengan kata sandi.';
-    }
-    return null;
+  const handleToggleMaterialStudied = async (materialId) => {
+    if (!currentUser) return;
+    const updated = materials.map((m) =>
+      m.id === materialId ? { ...m, isStudied: !m.isStudied } : m
+    );
+    setMaterials(updated);
+    await localDataService.saveMaterials(currentUser.id, updated);
   };
 
-  const handleRegister = async () => {
-    setAuthErrorMsg('');
-    const validationError = validateRegisterInput(regName, regEmail, regPassword, regConfirmPassword);
-    if (validationError) {
-      setAuthErrorMsg(validationError);
-      return;
-    }
-
-    setIsAuthSubmitting(true);
-    try {
-      const normalizedEmail = regEmail.trim().toLowerCase();
-      // Baca vault user yang tersimpan di SecureStore
-      const vaultStr = await secureStorage.getItem(SECURE_KEYS.USERS_VAULT);
-      const userVault = vaultStr ? JSON.parse(vaultStr) : [];
-
-      // Cek apakah email sudah terdaftar
-      const isExisting = userVault.some((u) => u.email.toLowerCase() === normalizedEmail);
-      if (isExisting) {
-        setAuthErrorMsg('Email sudah terdaftar. Silakan gunakan email lain atau masuk.');
-        setIsAuthSubmitting(false);
-        return;
-      }
-
-      // Generate salt acak & hash password (tidak simpan plain text)
-      const salt = Math.random().toString(36).substring(2, 10);
-      const passwordHash = secureHashPassword(regPassword, salt);
-
-      const newUser = {
-        id: `usr_${Date.now()}`,
-        name: regName.trim(),
-        email: normalizedEmail,
-        nim: regNim.trim() || '2201010001',
-        major: 'Teknik Informatika',
-        campus: 'Universitas Indonesia',
-        studyStreakDays: 1,
-        salt,
-        passwordHash, // Terenkripsi hash satu arah
-        createdAt: new Date().toISOString(),
-      };
-
-      // Simpan akun ke Secure Vault
-      userVault.push(newUser);
-      await secureStorage.setItem(SECURE_KEYS.USERS_VAULT, JSON.stringify(userVault));
-
-      Alert.alert(
-        'Pendaftaran Berhasil! 🎉',
-        `Akun ${newUser.name} berhasil dibuat dengan perlindungan credential terenkripsi. Silakan login.`,
-        [{ text: 'Masuk Sekarang', onPress: () => setAuthFlow('login') }]
-      );
-
-      // Reset form register
-      setRegName('');
-      setRegEmail('');
-      setRegNim('');
-      setRegPassword('');
-      setRegConfirmPassword('');
-      setLoginEmail(normalizedEmail);
-      setAuthFlow('login');
-    } catch (error) {
-      console.error('[Register Error]:', error);
-      setAuthErrorMsg('Terjadi kesalahan saat menyimpan akun. Silakan coba lagi.');
-    } finally {
-      setIsAuthSubmitting(false);
-    }
-  };
-
-  // =============================================================
-  // PART 1 – ANGGOTA 1: LOGIN HANDLER & CREDENTIAL CHECK
-  // =============================================================
-  const handleLogin = async () => {
-    setAuthErrorMsg('');
-    if (!loginEmail.trim() || !loginPassword) {
-      setAuthErrorMsg('Email dan kata sandi wajib diisi.');
-      return;
-    }
-
-    setIsAuthSubmitting(true);
-    try {
-      const normalizedEmail = loginEmail.trim().toLowerCase();
-      const vaultStr = await secureStorage.getItem(SECURE_KEYS.USERS_VAULT);
-      const userVault = vaultStr ? JSON.parse(vaultStr) : [];
-
-      // Cari akun
-      const user = userVault.find((u) => u.email.toLowerCase() === normalizedEmail);
-      if (!user) {
-        setAuthErrorMsg('Akun dengan email tersebut tidak ditemukan.');
-        setIsAuthSubmitting(false);
-        return;
-      }
-
-      // Verifikasi hash password
-      const calculatedHash = secureHashPassword(loginPassword, user.salt);
-      if (calculatedHash !== user.passwordHash) {
-        setAuthErrorMsg('Kata sandi yang Anda masukkan salah.');
-        setIsAuthSubmitting(false);
-        return;
-      }
-
-      // Buat token autentikasi sesi aman
-      const sessionToken = `tok_studymate_${user.id}_${Date.now()}`;
-      await secureStorage.setItem(SECURE_KEYS.TOKEN, sessionToken);
-
-      // Simpan session user aman (tanpa passwordHash)
-      const sessionUser = {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        nim: user.nim,
-        major: user.major,
-        campus: user.campus,
-        studyStreakDays: user.studyStreakDays || 14,
-      };
-      await secureStorage.setItem(SECURE_KEYS.SESSION_USER, JSON.stringify(sessionUser));
-
-      // Load data non-sensitif milik akun ini (Multi-User Scoped)
-      const userData = await localDataService.loadUserData(user.id);
-      setCourses(userData.courses);
-      setMaterials(userData.materials);
-      setTasks(userData.tasks);
-      setSettings(userData.settings);
-
-      setCurrentUser(sessionUser);
-      setLoginPassword('');
-      setAuthFlow('authenticated');
-    } catch (error) {
-      console.error('[Login Error]:', error);
-      setAuthErrorMsg('Gagal memproses autentikasi. Silakan periksa kembali perangkat Anda.');
-    } finally {
-      setIsAuthSubmitting(false);
-    }
-  };
-
-  // =============================================================
-  // PART 1 & 3: LOGOUT HANDLER (SESSION TERMINATION)
-  // =============================================================
-  const handleLogout = () => {
-    Alert.alert(
-      'Konfirmasi Keluar',
-      'Apakah kamu yakin ingin mengakhiri sesi? Data materi perkuliahan Anda tetap tersimpan aman di perangkat.',
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Keluar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Hapus token sesi dan sesi aktif dari SecureStore
-              await secureStorage.deleteItem(SECURE_KEYS.TOKEN);
-              await secureStorage.deleteItem(SECURE_KEYS.SESSION_USER);
-
-              // Reset in-memory state
-              setCurrentUser(null);
-              setCourses([]);
-              setMaterials([]);
-              setTasks([]);
-              setAuthFlow('login');
-              Alert.alert('Sesi Berakhir', 'Anda telah berhasil logout.');
-            } catch (err) {
-              console.error('[Logout Error]:', err);
-            }
-          },
+  const handleDeleteMaterial = (materialId) => {
+    if (!currentUser) return;
+    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = materials.filter((m) => m.id !== materialId);
+          setMaterials(updated);
+          await localDataService.saveMaterials(currentUser.id, updated);
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const totalMaterials = materials.length;
-  const studiedMaterialsCount = materials.filter((m) => m.isStudied).length;
-  const unstudiedMaterialsCount = totalMaterials - studiedMaterialsCount;
-  const studyProgressPercent =
-    totalMaterials > 0 ? Math.round((studiedMaterialsCount / totalMaterials) * 100) : 0;
-
-  const activeTasksCount = tasks.filter((t) => !t.completed).length;
-  const unreadNotifCount = notifications.filter((n) => !n.read).length;
-
-  const filteredMaterials = useMemo(() => {
-    return materials.filter((item) => {
-      const query = materialSearchQuery.toLowerCase().trim();
-      const matchSearch =
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        item.courseName.toLowerCase().includes(query) ||
-        item.meetingTopic.toLowerCase().includes(query);
-
-      const matchCourse =
-        selectedCourseFilter === 'ALL' || item.courseId === selectedCourseFilter;
-
-      const matchMeeting =
-        selectedMeetingFilter === 'ALL' ||
-        String(item.meetingNumber) === String(selectedMeetingFilter);
-
-      const matchStatus =
-        selectedStatusFilter === 'ALL' ||
-        (selectedStatusFilter === 'STUDIED' && item.isStudied) ||
-        (selectedStatusFilter === 'UNSTUDIED' && !item.isStudied);
-
-      return matchSearch && matchCourse && matchMeeting && matchStatus;
-    });
-  }, [
-    materials,
-    materialSearchQuery,
-    selectedCourseFilter,
-    selectedMeetingFilter,
-    selectedStatusFilter,
-  ]);
-
-  const todayCourse = useMemo(() => {
-    const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const currentDay = daysMap[new Date().getDay()];
-    const found = courses.find((c) => c.day.toLowerCase() === currentDay.toLowerCase());
-    return found || courses[0];
-  }, [courses]);
-
-  const recommendedMaterial = useMemo(() => {
-    if (!todayCourse) return materials[0];
-    const unread = materials.find((m) => m.courseId === todayCourse.id && !m.isStudied);
-    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0];
-  }, [todayCourse, materials]);
-
-  // =============================================================
-  // PART 1 – ANGGOTA 1: AUTHENTICATION UI (LOGIN & REGISTER SCREEN)
-  // =============================================================
-  if (authFlow === 'checking') {
-    return (
-      <SafeAreaView style={[styles.screenContainer, { justifyContent: 'center', alignItems: 'center' }]}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-        <View style={styles.splashLogoBox}>
-          <Ionicons name="book" size={44} color="#FFFFFF" />
-        </View>
-        <Text style={styles.splashBrandTitle}>StudyMate</Text>
-        <Text style={styles.splashBrandTagline}>Personal Study Material Organizer</Text>
-        <ActivityIndicator size="small" color={COLORS.primary} style={{ marginTop: 24 }} />
-        <Text style={{ marginTop: 8, fontSize: 12, color: COLORS.textMuted }}>
-          Memeriksa sesi login terenkripsi...
-        </Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (authFlow === 'login' || authFlow === 'register') {
-    const isRegister = authFlow === 'register';
-
-    return (
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safeAreaContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
-        >
-          <ScrollView
-            contentContainerStyle={styles.authScrollContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Auth Brand Header */}
-            <View style={styles.authBrandBox}>
-              <View style={styles.authLogoIcon}>
-                <Ionicons name="school" size={32} color="#FFFFFF" />
-              </View>
-              <Text style={styles.authBrandTitle}>StudyMate</Text>
-              <Text style={styles.authBrandSubtitle}>
-                {isRegister
-                  ? 'Daftar akun untuk mengorganisasi materi perkuliahan'
-                  : 'Masuk untuk mengakses materi & catatan perkuliahanmu'}
-              </Text>
-              <View style={styles.authSecurityPill}>
-                <Ionicons name="lock-closed" size={12} color={COLORS.primary} />
-                <Text style={styles.authSecurityPillText}>
-                  Protected by Expo SecureStore & SHA-256
-                </Text>
-              </View>
-            </View>
-
-            {/* Auth Mode Switcher */}
-            <View style={styles.authTabSwitch}>
-              <TouchableOpacity
-                style={[styles.authTabSwitchBtn, !isRegister && styles.authTabSwitchBtnActive]}
-                onPress={() => {
-                  setAuthErrorMsg('');
-                  setAuthFlow('login');
-                }}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.authTabSwitchBtnText,
-                    !isRegister && styles.authTabSwitchBtnTextActive,
-                  ]}
-                >
-                  Masuk
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.authTabSwitchBtn, isRegister && styles.authTabSwitchBtnActive]}
-                onPress={() => {
-                  setAuthErrorMsg('');
-                  setAuthFlow('register');
-                }}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.authTabSwitchBtnText,
-                    isRegister && styles.authTabSwitchBtnTextActive,
-                  ]}
-                >
-                  Daftar Akun
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Error Message Alert Box */}
-            {authErrorMsg ? (
-              <View style={styles.authErrorAlertBox}>
-                <Ionicons name="alert-circle" size={18} color={COLORS.rose} />
-                <Text style={styles.authErrorAlertText}>{authErrorMsg}</Text>
-              </View>
-            ) : null}
-
-            {/* Auth Input Form */}
-            <View style={styles.authCard}>
-              {isRegister && (
-                <>
-                  <Text style={styles.authInputLabel}>Nama Lengkap Mahasiswa</Text>
-                  <View style={styles.authInputWrapper}>
-                    <Ionicons name="person-outline" size={18} color={COLORS.textMuted} />
-                    <TextInput
-                      style={styles.authTextInput}
-                      placeholder="Contoh: Ahmad Faiz Pratama"
-                      placeholderTextColor={COLORS.textMuted}
-                      value={regName}
-                      onChangeText={setRegName}
-                      autoCapitalize="words"
-                    />
-                  </View>
-
-                  <Text style={styles.authInputLabel}>NIM (Nomor Induk Mahasiswa)</Text>
-                  <View style={styles.authInputWrapper}>
-                    <Ionicons name="card-outline" size={18} color={COLORS.textMuted} />
-                    <TextInput
-                      style={styles.authTextInput}
-                      placeholder="Contoh: 2201010199"
-                      placeholderTextColor={COLORS.textMuted}
-                      value={regNim}
-                      onChangeText={setRegNim}
-                      keyboardType="numeric"
-                    />
-                  </View>
-                </>
-              )}
-
-              <Text style={styles.authInputLabel}>Alamat Email Kampus / Pribadi</Text>
-              <View style={styles.authInputWrapper}>
-                <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
-                <TextInput
-                  style={styles.authTextInput}
-                  placeholder="nama@mahasiswa.ac.id"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={isRegister ? regEmail : loginEmail}
-                  onChangeText={isRegister ? setRegEmail : setLoginEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
-              </View>
-
-              <Text style={styles.authInputLabel}>Kata Sandi (Password)</Text>
-              <View style={styles.authInputWrapper}>
-                <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
-                <TextInput
-                  style={styles.authTextInput}
-                  placeholder="Minimal 6 karakter"
-                  placeholderTextColor={COLORS.textMuted}
-                  secureTextEntry={isRegister ? !showRegPassword : !showLoginPassword}
-                  value={isRegister ? regPassword : loginPassword}
-                  onChangeText={isRegister ? setRegPassword : setLoginPassword}
-                />
-                <TouchableOpacity
-                  onPress={() =>
-                    isRegister
-                      ? setShowRegPassword(!showRegPassword)
-                      : setShowLoginPassword(!showLoginPassword)
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={
-                      (isRegister ? showRegPassword : showLoginPassword)
-                        ? 'eye-off-outline'
-                        : 'eye-outline'
-                    }
-                    size={20}
-                    color={COLORS.textMuted}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {isRegister && (
-                <>
-                  <Text style={styles.authInputLabel}>Konfirmasi Kata Sandi</Text>
-                  <View style={styles.authInputWrapper}>
-                    <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.textMuted} />
-                    <TextInput
-                      style={styles.authTextInput}
-                      placeholder="Ketik ulang kata sandi"
-                      placeholderTextColor={COLORS.textMuted}
-                      secureTextEntry={!showRegPassword}
-                      value={regConfirmPassword}
-                      onChangeText={setRegConfirmPassword}
-                    />
-                  </View>
-                </>
-              )}
-
-              {/* Submit Button */}
-              <TouchableOpacity
-                style={styles.authSubmitBtn}
-                onPress={isRegister ? handleRegister : handleLogin}
-                disabled={isAuthSubmitting}
-                activeOpacity={0.8}
-              >
-                {isAuthSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.authSubmitBtnText}>
-                      {isRegister ? 'Buat Akun StudyMate' : 'Masuk ke Dashboard'}
-                    </Text>
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* Quick Demo Credentials Info for Evaluator */}
-            {!isRegister && (
-              <View style={styles.authDemoCallout}>
-                <Ionicons name="information-circle-outline" size={18} color={COLORS.primary} />
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.authDemoCalloutTitle}>Petunjuk Evaluasi / Penguji:</Text>
-                  <Text style={styles.authDemoCalloutText}>
-                    Silakan gunakan tombol "Daftar Akun" untuk membuat akun baru dengan perlindungan enkripsi, atau gunakan akun demo terdaftar setelah registrasi.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View style={{ height: 30 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  }
-
-  // =============================================================
-  // AUTHENTICATED STATE: MAIN APPLICATION LAYOUT
-  // =============================================================
-
-  // SCREEN 1: DASHBOARD
-  const renderHomeScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Dashboard Belajar"
-        subtitle={`Halo, ${currentUser?.name ? currentUser.name.split(' ')[0] : 'Mahasiswa'}! 👋`}
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
-        onOpenSecurityModal={() => {
-          runSecurityAuditTests();
-          setSecurityModalVisible(true);
-        }}
-      />
-
-      {/* Hero Banner */}
-      <View style={styles.heroBanner}>
-        <View style={styles.heroBannerContent}>
-          <View style={styles.heroStreakRow}>
-            <Ionicons name="flame" size={18} color="#F59E0B" />
-            <Text style={styles.heroStreakText}>
-              {currentUser?.studyStreakDays || 14} Hari Belajar Berturut-turut!
-            </Text>
-          </View>
-          <Text style={styles.heroTitle}>Progres Semester Ini</Text>
-          <Text style={styles.heroSubtitle}>
-            {studiedMaterialsCount} dari {totalMaterials} materi telah kamu kuasai ({studyProgressPercent}%)
-          </Text>
-
-          <View style={styles.heroProgressBarBg}>
-            <View
-              style={[
-                styles.heroProgressBarFill,
-                { width: `${Math.min(100, Math.max(0, studyProgressPercent))}%` },
-              ]}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* Stats Grid */}
-      <View style={styles.statsGrid}>
-        <StatCard
-          title="Total Materi"
-          value={totalMaterials}
-          subtitle="Tersimpan di Cloud"
-          icon="library-outline"
-          iconColor={COLORS.primary}
-          bgColor={COLORS.primaryLight}
-          cardWidth={statCardWidth}
-        />
-        <StatCard
-          title="Sudah Dibaca"
-          value={studiedMaterialsCount}
-          subtitle="Tuntas dipahami"
-          icon="checkmark-done-circle-outline"
-          iconColor={COLORS.emerald}
-          bgColor={COLORS.emeraldLight}
-          cardWidth={statCardWidth}
-        />
-        <StatCard
-          title="Belum Dipelajari"
-          value={unstudiedMaterialsCount}
-          subtitle="Perlu di-review"
-          icon="time-outline"
-          iconColor={COLORS.amber}
-          bgColor={COLORS.amberLight}
-          cardWidth={statCardWidth}
-        />
-        <StatCard
-          title="Tugas Aktif"
-          value={activeTasksCount}
-          subtitle="Perlu diselesaikan"
-          icon="alarm-outline"
-          iconColor={COLORS.rose}
-          bgColor={COLORS.roseLight}
-          cardWidth={statCardWidth}
-        />
-      </View>
-
-      {/* Quick Action Bar */}
-      <View style={styles.quickActionBar}>
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => {
-            setEditingMaterial(null);
-            setMaterialModalVisible(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight }]}>
-            <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            Upload Materi
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => setScheduleModalVisible(true)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.secondaryLight }]}>
-            <Ionicons name="scan-outline" size={20} color={COLORS.secondary} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            Upload Jadwal
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => {
-            setEditingTask(null);
-            setTaskModalVisible(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.amberLight }]}>
-            <Ionicons name="add-circle-outline" size={20} color={COLORS.amber} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            Tambah Tugas
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => {
-            if (materials.length > 0) handleOpenAiAssistant(materials[0]);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.accentLight }]}>
-            <Ionicons name="sparkles" size={20} color={COLORS.accent} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            AI Assistant
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Recommended Today's Study */}
-      <View style={styles.sectionHeaderRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>
-            Rekomendasi Belajar Hari Ini 🎯
-          </Text>
-          <Text style={styles.sectionSubtitle} numberOfLines={1}>
-            Sesuai jadwal: {todayCourse?.name} ({todayCourse?.day})
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
-          <Text style={styles.sectionActionText}>Semua</Text>
-        </TouchableOpacity>
-      </View>
-
-      {recommendedMaterial ? (
-        <MaterialCard
-          material={recommendedMaterial}
-          onPress={(m) => handleOpenAiAssistant(m)}
-          onToggleStudied={handleToggleMaterialStudied}
-          onOpenAi={handleOpenAiAssistant}
-          onOpenNotes={handleOpenNotes}
-          onDelete={handleDeleteMaterial}
-        />
-      ) : (
-        <EmptyState
-          title="Belum ada materi untuk hari ini"
-          subtitle="Tambahkan materi kuliah agar StudyMate dapat menghubungkan jadwal belajarmu."
-        />
-      )}
-
-      {/* Urgent Tasks */}
-      <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>
-            Tugas Mendekati Deadline ⏳
-          </Text>
-          <Text style={styles.sectionSubtitle} numberOfLines={1}>
-            Kumpulkan sebelum batas waktu berakhir
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setCurrentTab('Tasks')} activeOpacity={0.7}>
-          <Text style={styles.sectionActionText}>Semua</Text>
-        </TouchableOpacity>
-      </View>
-
-      {tasks
-        .filter((t) => !t.completed)
-        .slice(0, 2)
-        .map((t) => (
-          <TaskItem
-            key={t.id}
-            task={t}
-            onToggle={handleToggleTaskCompleted}
-            onDelete={handleDeleteTask}
-          />
-        ))}
-
-      {activeTasksCount === 0 && (
-        <View style={styles.allClearCard}>
-          <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
-          <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
-          <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
-        </View>
-      )}
-    </ScrollView>
-  );
-
-  // SCREEN 2: COURSES
-  const renderCoursesScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Mata Kuliah"
-        subtitle="Semester Ganjil 2026/2027"
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
-      />
-
-      <View style={styles.screenBannerRow}>
-        <Text style={styles.screenBannerText}>
-          Kelola materi perkuliahan berdasarkan mata kuliah dan pertemuan 1-16 secara terstruktur.
-        </Text>
-        <TouchableOpacity
-          style={styles.primaryAddButton}
-          onPress={() => {
-            setEditingCourse(null);
-            setCourseModalVisible(true);
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={18} color="#FFFFFF" />
-          <Text style={styles.primaryAddButtonText}>Tambah</Text>
-        </TouchableOpacity>
-      </View>
-
-      {courses.map((course) => {
-        const courseMaterials = materials.filter((m) => m.courseId === course.id);
-        const studied = courseMaterials.filter((m) => m.isStudied).length;
-
-        return (
-          <CourseCard
-            key={course.id}
-            course={course}
-            materialCount={courseMaterials.length}
-            studiedCount={studied}
-            onPress={() => {
-              setSelectedCourseFilter(course.id);
-              setCurrentTab('Materials');
-            }}
-          />
-        );
-      })}
-
-      {courses.length === 0 && (
-        <EmptyState
-          title="Belum Ada Mata Kuliah"
-          subtitle="Tambahkan mata kuliah atau unggah jadwal kuliah untuk membuat otomatis."
-          actionText="+ Tambah Mata Kuliah"
-          onAction={() => setCourseModalVisible(true)}
-        />
-      )}
-    </ScrollView>
-  );
-
-  // SCREEN 3: MATERIALS
-  const renderMaterialsScreen = () => {
-    const meetingNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-
-    return (
-      <View style={styles.screenContainer}>
-        <View style={styles.materialsHeaderWrapper}>
-          <AppHeader
-            title="Katalog Materi"
-            subtitle="Organisasi per Matkul & Pertemuan"
-            unreadCount={unreadNotifCount}
-            onOpenNotif={() => setNotifModalVisible(true)}
-            onOpenScheduleUpload={() => setScheduleModalVisible(true)}
-          />
-
-          {/* Search Bar */}
-          <View style={styles.searchBarContainer}>
-            <Ionicons name="search" size={18} color={COLORS.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Cari modul, topik pertemuan, mata kuliah..."
-              placeholderTextColor={COLORS.textMuted}
-              value={materialSearchQuery}
-              onChangeText={setMaterialSearchQuery}
-            />
-            {materialSearchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setMaterialSearchQuery('')}>
-                <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Status Filter */}
-          <View style={styles.filterPillRow}>
-            <TouchableOpacity
-              style={[
-                styles.statusFilterPill,
-                selectedStatusFilter === 'ALL' && styles.statusFilterPillActive,
-              ]}
-              onPress={() => setSelectedStatusFilter('ALL')}
-            >
-              <Text
-                style={[
-                  styles.statusFilterText,
-                  selectedStatusFilter === 'ALL' && styles.statusFilterTextActive,
-                ]}
-              >
-                Semua ({materials.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.statusFilterPill,
-                selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterPillActive,
-              ]}
-              onPress={() => setSelectedStatusFilter('UNSTUDIED')}
-            >
-              <Text
-                style={[
-                  styles.statusFilterText,
-                  selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterTextActive,
-                ]}
-              >
-                Belum Dibaca ({unstudiedMaterialsCount})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.statusFilterPill,
-                selectedStatusFilter === 'STUDIED' && styles.statusFilterPillActive,
-              ]}
-              onPress={() => setSelectedStatusFilter('STUDIED')}
-            >
-              <Text
-                style={[
-                  styles.statusFilterText,
-                  selectedStatusFilter === 'STUDIED' && styles.statusFilterTextActive,
-                ]}
-              >
-                Selesai ({studiedMaterialsCount})
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Course Filter */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.horizontalFilterScroll}
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            <TouchableOpacity
-              style={[
-                styles.courseFilterChip,
-                selectedCourseFilter === 'ALL' && styles.courseFilterChipActive,
-              ]}
-              onPress={() => setSelectedCourseFilter('ALL')}
-            >
-              <Text
-                style={[
-                  styles.courseFilterChipText,
-                  selectedCourseFilter === 'ALL' && styles.courseFilterChipTextActive,
-                ]}
-              >
-                Semua Matkul
-              </Text>
-            </TouchableOpacity>
-
-            {courses.map((crs) => (
-              <TouchableOpacity
-                key={crs.id}
-                style={[
-                  styles.courseFilterChip,
-                  selectedCourseFilter === crs.id && styles.courseFilterChipActive,
-                  selectedCourseFilter === crs.id && { backgroundColor: crs.color },
-                ]}
-                onPress={() => setSelectedCourseFilter(crs.id)}
-              >
-                <Text
-                  style={[
-                    styles.courseFilterChipText,
-                    selectedCourseFilter === crs.id && styles.courseFilterChipTextActive,
-                  ]}
-                >
-                  {crs.code}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Meeting Filter */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.meetingFilterScroll}
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            <TouchableOpacity
-              style={[
-                styles.meetingFilterChip,
-                selectedMeetingFilter === 'ALL' && styles.meetingFilterChipActive,
-              ]}
-              onPress={() => setSelectedMeetingFilter('ALL')}
-            >
-              <Text
-                style={[
-                  styles.meetingFilterChipText,
-                  selectedMeetingFilter === 'ALL' && styles.meetingFilterChipTextActive,
-                ]}
-              >
-                Semua Pertemuan
-              </Text>
-            </TouchableOpacity>
-            {meetingNumbers.slice(0, 8).map((num) => (
-              <TouchableOpacity
-                key={num}
-                style={[
-                  styles.meetingFilterChip,
-                  selectedMeetingFilter === String(num) && styles.meetingFilterChipActive,
-                ]}
-                onPress={() => setSelectedMeetingFilter(String(num))}
-              >
-                <Text
-                  style={[
-                    styles.meetingFilterChipText,
-                    selectedMeetingFilter === String(num) && styles.meetingFilterChipTextActive,
-                  ]}
-                >
-                  Pertemuan {num}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Scrollable Material List */}
-        <ScrollView
-          style={{ flex: 1, paddingHorizontal: 16 }}
-          contentContainerStyle={{
-            paddingTop: 8,
-            paddingBottom: scrollContentPaddingBottom,
-          }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.listHeaderRow}>
-            <Text style={styles.listCountText}>
-              Menampilkan {filteredMaterials.length} materi
-            </Text>
-            <TouchableOpacity
-              style={styles.addMaterialSmallBtn}
-              onPress={() => {
-                setEditingMaterial(null);
-                setMaterialModalVisible(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add" size={15} color="#FFFFFF" />
-              <Text style={styles.addMaterialSmallBtnText}>Upload Materi</Text>
-            </TouchableOpacity>
-          </View>
-
-          {filteredMaterials.map((item) => (
-            <MaterialCard
-              key={item.id}
-              material={item}
-              onPress={(m) => handleOpenAiAssistant(m)}
-              onToggleStudied={handleToggleMaterialStudied}
-              onOpenAi={handleOpenAiAssistant}
-              onOpenNotes={handleOpenNotes}
-              onDelete={handleDeleteMaterial}
-            />
-          ))}
-
-          {filteredMaterials.length === 0 && (
-            <EmptyState
-              title="Tidak ada materi yang cocok"
-              subtitle="Coba ubah kata kunci pencarian atau reset filter pertemuan."
-              actionText="+ Upload Materi Baru"
-              onAction={() => {
-                setEditingMaterial(null);
-                setMaterialModalVisible(true);
-              }}
-            />
-          )}
-        </ScrollView>
-      </View>
-    );
-  };
-
-  // SCREEN 4: TASKS
-  const renderTasksScreen = () => {
-    const activeTasks = tasks.filter((t) => !t.completed);
-    const completedTasks = tasks.filter((t) => t.completed);
-
-    return (
-      <ScrollView
-        style={styles.screenContainer}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: scrollContentPaddingBottom },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <AppHeader
-          title="Tugas & Deadline"
-          subtitle="Pantau Target Akademik"
-          unreadCount={unreadNotifCount}
-          onOpenNotif={() => setNotifModalVisible(true)}
-          onOpenScheduleUpload={() => setScheduleModalVisible(true)}
-        />
-
-        <View style={styles.screenBannerRow}>
-          <Text style={styles.screenBannerText}>
-            Jangan biarkan tugas terlewat. Setiap tugas terhubung langsung dengan mata kuliah.
-          </Text>
-          <TouchableOpacity
-            style={styles.primaryAddButton}
-            onPress={() => {
-              setEditingTask(null);
-              setTaskModalVisible(true);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
-            <Text style={styles.primaryAddButtonText}>Tambah</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>
-          Tugas Aktif ({activeTasks.length})
-        </Text>
-
-        {activeTasks.map((t) => (
-          <TaskItem
-            key={t.id}
-            task={t}
-            onToggle={handleToggleTaskCompleted}
-            onDelete={handleDeleteTask}
-          />
-        ))}
-
-        {activeTasks.length === 0 && (
-          <View style={styles.allClearCard}>
-            <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
-            <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
-            <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
-          </View>
-        )}
-
-        {completedTasks.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 8 }]}>
-              Sudah Selesai ({completedTasks.length})
-            </Text>
-            {completedTasks.map((t) => (
-              <TaskItem
-                key={t.id}
-                task={t}
-                onToggle={handleToggleTaskCompleted}
-                onDelete={handleDeleteTask}
-              />
-            ))}
-          </>
-        )}
-      </ScrollView>
-    );
-  };
-
-  // SCREEN 5: SCHEDULE, SETTINGS & LOGOUT
-  const renderScheduleProfileScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Jadwal & Profil"
-        subtitle="Sinkronisasi & Pengaturan"
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-      />
-
-      {/* Profil Mahasiswa Card */}
-      <View style={styles.profileHeroCard}>
-        <View style={styles.profileAvatarBox}>
-          <Text style={styles.profileAvatarInitials}>
-            {currentUser?.name
-              ? currentUser.name
-                .split(' ')
-                .map((n) => n[0])
-                .slice(0, 2)
-                .join('')
-              : 'SM'}
-          </Text>
-        </View>
-        <View style={styles.profileInfoCol}>
-          <Text style={styles.profileNameText} numberOfLines={1}>
-            {currentUser?.name || 'Mahasiswa StudyMate'}
-          </Text>
-          <Text style={styles.profileNimText}>NIM: {currentUser?.nim || '-'}</Text>
-          <Text style={styles.profileMajorText} numberOfLines={1}>
-            {currentUser?.email || ''}
-          </Text>
-          <Text style={styles.profileCampusText} numberOfLines={1}>
-            {currentUser?.campus || 'Universitas Indonesia'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Security Audit Banner */}
-      <TouchableOpacity
-        style={styles.securityAuditPillCard}
-        onPress={() => {
-          runSecurityAuditTests();
-          setSecurityModalVisible(true);
-        }}
-        activeOpacity={0.8}
-      >
-        <View style={styles.securityAuditIconCircle}>
-          <Ionicons name="shield-checkmark" size={24} color={COLORS.accent} />
-        </View>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.securityAuditTitle}>Security Audit & Diagnostic Suite</Text>
-          <Text style={styles.securityAuditSub}>
-            Uji verifikasi autentikasi, enkripsi SecureStore, dan isolasi data lokal.
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
-      </TouchableOpacity>
-
-      {/* Upload Jadwal Support Card */}
-      <View style={styles.scheduleUploadCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-          <View style={styles.scheduleIconCircle}>
-            <Ionicons name="document-attach" size={22} color={COLORS.primary} />
-          </View>
-          <View style={{ marginLeft: 12, flex: 1 }}>
-            <Text style={styles.scheduleUploadTitle}>Upload Jadwal Kuliah (PDF / Screenshot)</Text>
-            <Text style={styles.scheduleUploadDesc}>
-              Jadwal kuliah digunakan sebagai pendukung untuk menghubungkan materi dengan aktivitas belajar harian.
-            </Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.uploadScheduleButton}
-          onPress={() => setScheduleModalVisible(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.uploadScheduleButtonText}>Unggah Jadwal KRS</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Jadwal Kuliah Mingguan */}
-      <Text style={[styles.sectionTitle, { marginTop: 18, marginBottom: 10 }]}>
-        Jadwal Kuliah Mingguan 📅
-      </Text>
-
-      {courses.map((crs) => (
-        <View key={crs.id} style={styles.scheduleItemRow}>
-          <View style={[styles.scheduleDayBadge, { backgroundColor: crs.color }]}>
-            <Text style={styles.scheduleDayText}>{crs.day}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.scheduleCourseName} numberOfLines={1}>
-              {crs.name}
-            </Text>
-            <Text style={styles.scheduleTimeRoom} numberOfLines={1}>
-              ⏰ {crs.time} • 📍 {crs.room}
-            </Text>
-          </View>
-          <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
-        </View>
-      ))}
-
-      {/* Pengaturan Notifikasi */}
-      <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
-        Preferensi & Keamanan ⚙️
-      </Text>
-
-      <View style={styles.settingsContainer}>
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Pengingat Materi Sebelum Kuliah</Text>
-            <Text style={styles.settingDesc}>Notifikasi materi yang belum dipelajari sebelum jam kelas.</Text>
-          </View>
-          <Switch
-            value={settings.notifyBeforeClass}
-            onValueChange={async (val) => {
-              const updated = { ...settings, notifyBeforeClass: val };
-              setSettings(updated);
-              if (currentUser) await localDataService.saveSettings(currentUser.id, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Peringatan Deadline Tugas H-1</Text>
-            <Text style={styles.settingDesc}>Ingatkan otomatis sebelum deadline tugas berakhir.</Text>
-          </View>
-          <Switch
-            value={settings.notifyDeadlines}
-            onValueChange={async (val) => {
-              const updated = { ...settings, notifyDeadlines: val };
-              setSettings(updated);
-              if (currentUser) await localDataService.saveSettings(currentUser.id, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Auto-Generate Ringkasan AI</Text>
-            <Text style={styles.settingDesc}>Otomatis ekstrak poin penting saat mengunggah materi baru.</Text>
-          </View>
-          <Switch
-            value={settings.autoSummarizeAi}
-            onValueChange={async (val) => {
-              const updated = { ...settings, autoSummarizeAi: val };
-              setSettings(updated);
-              if (currentUser) await localDataService.saveSettings(currentUser.id, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-      </View>
-
-      {/* Logout Action Button */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogout}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="log-out-outline" size={18} color={COLORS.rose} />
-        <Text style={styles.logoutButtonText}>Keluar dari Akun (Logout)</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-
-  // =============================================================
-  // MODALS WITH SAFE AREA INTEGRATION
-  // =============================================================
-
-  // MODAL 1: AI ASSISTANT
-  const renderAiModal = () => {
-    if (!activeAiMaterial) return null;
-
-    return (
-      <Modal visible={aiModalVisible} animationType="slide" onRequestClose={() => setAiModalVisible(false)}>
-        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <View style={styles.aiBadgeIcon}>
-                <Ionicons name="sparkles" size={17} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalHeaderTitle}>StudyMate AI Assistant</Text>
-                <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
-                  {activeAiMaterial.title}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => setAiModalVisible(false)} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.aiTabContainer}>
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'summary' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('summary')}
-            >
-              <Ionicons
-                name="document-text-outline"
-                size={15}
-                color={aiSubTab === 'summary' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text style={[styles.aiTabText, aiSubTab === 'summary' && styles.aiTabTextActive]}>
-                Ringkasan Cerdas
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'points' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('points')}
-            >
-              <Ionicons
-                name="bulb-outline"
-                size={15}
-                color={aiSubTab === 'points' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text style={[styles.aiTabText, aiSubTab === 'points' && styles.aiTabTextActive]}>
-                Poin Penting
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'quiz' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('quiz')}
-            >
-              <Ionicons
-                name="help-circle-outline"
-                size={15}
-                color={aiSubTab === 'quiz' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text style={[styles.aiTabText, aiSubTab === 'quiz' && styles.aiTabTextActive]}>
-                Latihan Soal
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.modalScrollBody}
-            contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
-            showsVerticalScrollIndicator={false}
-          >
-            {aiSubTab === 'summary' && (
-              <View style={styles.aiContentCard}>
-                <View style={styles.aiBannerPill}>
-                  <Ionicons name="time-outline" size={13} color="#7C3AED" />
-                  <Text style={styles.aiBannerPillText}>Waktu baca: ~3 Menit</Text>
-                </View>
-                <Text style={styles.aiSummaryTitle}>Intisari Materi Perkuliahan</Text>
-                <Text style={styles.aiSummaryParagraph}>{activeAiMaterial.summary}</Text>
-
-                <View style={styles.aiNoteCallout}>
-                  <Ionicons name="information-circle" size={18} color={COLORS.primary} />
-                  <Text style={styles.aiNoteCalloutText}>
-                    Ringkasan dirancang agar mahasiswa cepat memahami konsep kunci sebelum kelas dimulai.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.aiShareButton}
-                  onPress={() =>
-                    Share.share({
-                      message: `Ringkasan StudyMate AI:\n${activeAiMaterial.title}\n\n${activeAiMaterial.summary}`,
-                    })
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
-                  <Text style={styles.aiShareButtonText}>Bagikan Ringkasan</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {aiSubTab === 'points' && (
-              <View style={styles.aiContentCard}>
-                <Text style={styles.aiSummaryTitle}>Konsep Kunci & Rumus Inti</Text>
-                <Text style={styles.aiSectionSubtitle}>
-                  Fokus pada poin-poin berikut untuk persiapan ujian atau kuis dosen:
-                </Text>
-
-                {activeAiMaterial.keyPoints?.map((point, idx) => (
-                  <View key={idx} style={styles.keyPointRow}>
-                    <View style={styles.keyPointBullet}>
-                      <Text style={styles.keyPointBulletText}>{idx + 1}</Text>
-                    </View>
-                    <Text style={styles.keyPointContent}>{point}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {aiSubTab === 'quiz' && (
-              <View style={styles.aiContentCard}>
-                <Text style={styles.aiSummaryTitle}>Uji Pemahaman Mandiri</Text>
-                <Text style={styles.aiSectionSubtitle}>
-                  Jawab pertanyaan latihan berikut untuk menguji pemahaman konsep:
-                </Text>
-
-                {activeAiMaterial.quiz?.map((q, qIndex) => {
-                  const isRevealed = !!quizRevealedMap[qIndex];
-
-                  return (
-                    <View key={qIndex} style={styles.quizCard}>
-                      <Text style={styles.quizQuestionText}>
-                        {qIndex + 1}. {q.question}
-                      </Text>
-
-                      {q.options.map((opt, optIndex) => (
-                        <View
-                          key={optIndex}
-                          style={[
-                            styles.quizOptionBox,
-                            isRevealed && optIndex === q.correctIndex && styles.quizOptionCorrect,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.quizOptionLetter,
-                              isRevealed && optIndex === q.correctIndex && styles.quizOptionLetterCorrect,
-                            ]}
-                          >
-                            {String.fromCharCode(65 + optIndex)}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.quizOptionLabel,
-                              isRevealed && optIndex === q.correctIndex && styles.quizOptionLabelCorrect,
-                            ]}
-                          >
-                            {opt}
-                          </Text>
-                        </View>
-                      ))}
-
-                      <TouchableOpacity
-                        style={styles.quizRevealButton}
-                        onPress={() =>
-                          setQuizRevealedMap((prev) => ({
-                            ...prev,
-                            [qIndex]: !prev[qIndex],
-                          }))
-                        }
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name={isRevealed ? 'eye-off-outline' : 'eye-outline'}
-                          size={16}
-                          color={COLORS.primary}
-                        />
-                        <Text style={styles.quizRevealButtonText}>
-                          {isRevealed ? 'Sembunyikan Pembahasan' : 'Lihat Kunci Jawaban & Pembahasan'}
-                        </Text>
-                      </TouchableOpacity>
-
-                      {isRevealed && (
-                        <View style={styles.quizExplanationBox}>
-                          <Text style={styles.quizExplanationTitle}>💡 Penjelasan AI:</Text>
-                          <Text style={styles.quizExplanationText}>{q.explanation}</Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
-
-  // MODAL 2: PERSONAL NOTES
-  const renderNotesModal = () => {
-    if (!activeNotesMaterial) return null;
-
-    return (
-      <Modal visible={notesModalVisible} animationType="slide" onRequestClose={() => setNotesModalVisible(false)}>
-        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalHeaderTitle}>Catatan Pribadi</Text>
-              <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
-                {activeNotesMaterial.title}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => setNotesModalVisible(false)} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.notesContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            <Text style={styles.notesInstructionText}>
-              Tulis rangkuman pribadi, hal penting dari dosen, atau rumus yang perlu diingat:
-            </Text>
-
-            <TextInput
-              style={styles.notesTextInput}
-              multiline
-              textAlignVertical="top"
-              placeholder="Ketik catatan pribadimu di sini..."
-              placeholderTextColor={COLORS.textMuted}
-              value={currentNoteText}
-              onChangeText={setCurrentNoteText}
-            />
-
-            <TouchableOpacity style={styles.saveNotesButton} onPress={handleSaveNotes} activeOpacity={0.8}>
-              <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
-              <Text style={styles.saveNotesButtonText}>Simpan Catatan</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
-
-  // MODAL 3: SCHEDULE UPLOAD
-  const renderScheduleModal = () => (
-    <Modal visible={scheduleModalVisible} animationType="fade" transparent onRequestClose={() => setScheduleModalVisible(false)}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.scheduleModalBox}>
-          <View style={styles.scheduleModalHeader}>
-            <Ionicons name="calendar" size={24} color={COLORS.primary} />
-            <Text style={styles.scheduleModalTitle}>Upload Jadwal Kuliah</Text>
-          </View>
-
-          <Text style={styles.scheduleModalSubtitle}>
-            Unggah foto screenshot KRS atau berkas PDF jadwal. StudyMate akan otomatis menyelaraskannya dengan materi belajarmu.
-          </Text>
-
-          {isParsingSchedule ? (
-            <View style={styles.parsingIndicatorBox}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.parsingStatusText}>Memindai dokumen & menyelaraskan jadwal...</Text>
-            </View>
-          ) : (
-            <View style={styles.uploadOptionsRow}>
-              <TouchableOpacity style={styles.uploadOptionBtn} onPress={handlePickScheduleImage} activeOpacity={0.7}>
-                <Ionicons name="image-outline" size={30} color={COLORS.secondary} />
-                <Text style={styles.uploadOptionBtnTitle}>Screenshot Foto</Text>
-                <Text style={styles.uploadOptionBtnSub}>Galeri / Kamera</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.uploadOptionBtn} onPress={handlePickScheduleDocument} activeOpacity={0.7}>
-                <Ionicons name="document-text-outline" size={30} color={COLORS.primary} />
-                <Text style={styles.uploadOptionBtnTitle}>Berkas Dokumen PDF</Text>
-                <Text style={styles.uploadOptionBtnSub}>Pilih Berkas KRS</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <TouchableOpacity style={styles.scheduleCancelBtn} onPress={() => setScheduleModalVisible(false)}>
-            <Text style={styles.scheduleCancelBtnText}>Tutup</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // MODAL 4: NOTIFICATIONS
-  const renderNotificationModal = () => (
-    <Modal visible={notifModalVisible} animationType="slide" onRequestClose={() => setNotifModalVisible(false)}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modalHeaderTitle}>Pusat Notifikasi</Text>
-            <Text style={styles.modalHeaderSubtitle}>Pengingat Materi & Deadline</Text>
-          </View>
-          <TouchableOpacity onPress={() => setNotifModalVisible(false)} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 30 + insets.bottom }}
-          showsVerticalScrollIndicator={false}
-        >
-          {notifications.map((n) => (
-            <View key={n.id} style={[styles.notifCard, !n.read && styles.notifCardUnread]}>
-              <View
-                style={[
-                  styles.notifIconCircle,
-                  {
-                    backgroundColor:
-                      n.type === 'class'
-                        ? COLORS.primaryLight
-                        : n.type === 'material'
-                          ? COLORS.amberLight
-                          : COLORS.roseLight,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={n.type === 'class' ? 'school-outline' : n.type === 'material' ? 'book-outline' : 'alarm-outline'}
-                  size={18}
-                  color={n.type === 'class' ? COLORS.primary : n.type === 'material' ? COLORS.amber : COLORS.rose}
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={styles.notifItemTitle}>{n.title}</Text>
-                  <Text style={styles.notifItemTime}>{n.time}</Text>
-                </View>
-                <Text style={styles.notifItemMsg}>{n.message}</Text>
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-
-  // MODAL 5: SECURITY AUDIT & DIAGNOSTIC SUITE (PART 3)
-  const renderSecurityModal = () => (
-    <Modal visible={securityModalVisible} animationType="slide" onRequestClose={() => setSecurityModalVisible(false)}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <View style={styles.aiBadgeIcon}>
-              <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalHeaderTitle}>Security & Audit Suite</Text>
-              <Text style={styles.modalHeaderSubtitle}>Hasil Pengujian Keamanan & Data</Text>
-            </View>
-          </View>
-          <TouchableOpacity onPress={() => setSecurityModalVisible(false)} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.securitySummaryCard}>
-            <Text style={styles.securitySummaryTitle}>Ringkasan Proteksi Data Mahasiswa</Text>
-            <Text style={styles.securitySummaryDesc}>
-              Aplikasi StudyMate memisahkan data sensitif autentikasi (token sesi & password hash) ke dalam Expo SecureStore, sementara konten non-sensitif perkuliahan di-cache dalam AsyncStorage yang diisolasi per akun.
-            </Text>
-            <TouchableOpacity
-              style={styles.retestSecurityBtn}
-              onPress={runSecurityAuditTests}
-              disabled={isTestingSecurity}
-              activeOpacity={0.8}
-            >
-              {isTestingSecurity ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="refresh" size={16} color="#FFFFFF" />
-                  <Text style={styles.retestSecurityBtnText}>Jalankan Ulang Audit Keamanan</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.sectionTitle, { marginBottom: 10 }]}>Log Hasil Pengujian Otomatis:</Text>
-
-          {securityTestResults.map((test) => (
-            <View key={test.id} style={styles.testResultCard}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons
-                    name={test.passed ? 'checkmark-circle' : 'close-circle'}
-                    size={20}
-                    color={test.passed ? COLORS.emerald : COLORS.rose}
-                  />
-                  <Text style={styles.testResultScenario}>{test.scenario}</Text>
-                </View>
-                <Badge
-                  label={test.passed ? 'PASS' : 'FAIL'}
-                  color={test.passed ? COLORS.emerald : COLORS.rose}
-                  bg={test.passed ? COLORS.emeraldLight : COLORS.roseLight}
-                />
-              </View>
-              <Text style={styles.testResultDetail}>{test.details}</Text>
-            </View>
-          ))}
-
-          {securityTestResults.length === 0 && !isTestingSecurity && (
-            <Text style={{ textAlign: 'center', color: COLORS.textMuted, marginVertical: 20 }}>
-              Tekan tombol di atas untuk menjalankan audit pengujian.
-            </Text>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-
-  // BOTTOM NAVIGATION BAR
-  const renderBottomNav = () => {
-    const tabs = [
-      { id: 'Home', label: 'Beranda', iconActive: 'home', iconInactive: 'home-outline' },
-      { id: 'Courses', label: 'Matkul', iconActive: 'book', iconInactive: 'book-outline' },
-      { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
-      { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
-      { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+  const handleSaveMaterial = async (formData) => {
+    if (!currentUser) return;
+    let updated;
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
+
+    const generatedSummary =
+      formData.summary ||
+      `Ringkasan cerdas oleh StudyMate AI untuk mata kuliah ${courseObj.name} pada pertemuan ke-${formData.meetingNumber}. Mencakup fondasi teori dan penerapan praktis untuk mendukung pembelajaran mandiri.`;
+
+    const generatedKeyPoints = formData.keyPoints || [
+      `Fokus utama topik adalah penguasaan ${formData.meetingTopic}.`,
+      `Pahami implementasi dan pola konsep pada materi pertemuan ke-${formData.meetingNumber}.`,
+      'Gunakan catatan pribadi untuk mencatat intisari dosen pengampu.',
     ];
 
-    return (
-      <View
-        style={[
-          styles.bottomNavContainer,
-          {
-            paddingBottom: Math.max(insets.bottom, 8),
-            height: 58 + Math.max(insets.bottom, 8),
-          },
-        ]}
-      >
-        {tabs.map((tab) => {
-          const isActive = currentTab === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              style={styles.bottomNavItem}
-              onPress={() => setCurrentTab(tab.id)}
-              accessibilityLabel={`Menu ${tab.label}`}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={isActive ? tab.iconActive : tab.iconInactive}
-                size={22}
-                color={isActive ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text style={[styles.bottomNavLabel, isActive && styles.bottomNavLabelActive]} numberOfLines={1}>
-                {tab.label}
-              </Text>
-              {isActive && <View style={styles.bottomNavActiveDot} />}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  };
+    const generatedQuiz = formData.quiz || [
+      {
+        question: `Apa konsep inti yang dibahas pada ${formData.title}?`,
+        options: ['Pemahaman fondasi dan implementasi praktis', 'Hafalan tanpa latihan', 'Menunggu arahan asisten lab', 'Kompilasi tanpa pengujian'],
+        correctIndex: 0,
+        explanation: 'Pemahaman konsep dasar dan implementasi mandiri adalah kunci retensi materi perkuliahan jangka panjang.',
+      },
+    ];
 
-  return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeAreaContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      <View style={styles.mainContentFlex}>
-        {currentTab === 'Home' && renderHomeScreen()}
-        {currentTab === 'Courses' && renderCoursesScreen()}
-        {currentTab === 'Materials' && renderMaterialsScreen()}
-        {currentTab === 'Tasks' && renderTasksScreen()}
-        {currentTab === 'Schedule' && renderScheduleProfileScreen()}
-      </View>
-
-      {renderBottomNav()}
-
-      {/* Sub-Modals */}
-      <MaterialFormModal
-        visible={materialModalVisible}
-        editingMaterial={editingMaterial}
-        courses={courses}
-        insets={insets}
-        onClose={() => setMaterialModalVisible(false)}
-        onSave={handleSaveMaterial}
-      />
-
-      <CourseFormModal
-        visible={courseModalVisible}
-        editingCourse={editingCourse}
-        insets={insets}
-        onClose={() => setCourseModalVisible(false)}
-        onSave={async (formData) => {
-          if (!currentUser) return;
-          let updated;
-          if (editingCourse) {
-            updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
-          } else {
-            const newCourse = {
-              id: `crs_${Date.now()}`,
-              userId: currentUser.id,
-              ...formData,
-              color: formData.color || COLORS.primary,
-            };
-            updated = [...courses, newCourse];
-          }
-          setCourses(updated);
-          await localDataService.saveCourses(currentUser.id, updated);
-          setCourseModalVisible(false);
-          setEditingCourse(null);
-        }}
-      />
-
-      <TaskFormModal
-        visible={taskModalVisible}
-        editingTask={editingTask}
-        courses={courses}
-        insets={insets}
-        onClose={() => setTaskModalVisible(false)}
-        onSave={handleSaveTask}
-      />
-
-      {renderNotesModal()}
-      {renderAiModal()}
-      {renderScheduleModal()}
-      {renderNotificationModal()}
-      {renderSecurityModal()}
-    </SafeAreaView>
-  );
-}
-
-// =================================================================
-// MODAL FORMS SUB-COMPONENTS
-// =================================================================
-function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
-  const [title, setTitle] = useState('');
-  const [courseId, setCourseId] = useState(courses[0]?.id || '');
-  const [meetingNumber, setMeetingNumber] = useState('1');
-  const [meetingTopic, setMeetingTopic] = useState('');
-  const [fileType, setFileType] = useState('PDF');
-  const [fileName, setFileName] = useState('');
-  const [fileSize, setFileSize] = useState('3.8 MB');
-
-  useEffect(() => {
     if (editingMaterial) {
-      setTitle(editingMaterial.title);
-      setCourseId(editingMaterial.courseId);
-      setMeetingNumber(String(editingMaterial.meetingNumber || 1));
-      setMeetingTopic(editingMaterial.meetingTopic || '');
-      setFileType(editingMaterial.fileType || 'PDF');
-      setFileName(editingMaterial.fileName || '');
-      setFileSize(editingMaterial.fileSize || '3.5 MB');
+      updated = materials.map((m) =>
+        m.id === editingMaterial.id
+          ? {
+            ...m,
+            ...formData,
+            courseName: courseObj.name,
+            summary: generatedSummary,
+            keyPoints: generatedKeyPoints,
+            quiz: generatedQuiz,
+          }
+          : m
+      );
     } else {
-      setTitle('');
-      setCourseId(courses[0]?.id || '');
-      setMeetingNumber('1');
-      setMeetingTopic('');
-      setFileType('PDF');
-      setFileName('');
-      setFileSize('3.2 MB');
+      const newMaterial = {
+        id: `mat_${Date.now()}`,
+        userId: currentUser.id,
+        ...formData,
+        courseName: courseObj.name,
+        dateAdded: new Date().toISOString().split('T')[0],
+        isStudied: false,
+        userNotes: '',
+        summary: generatedSummary,
+        keyPoints: generatedKeyPoints,
+        quiz: generatedQuiz,
+      };
+      updated = [newMaterial, ...materials];
     }
-  }, [editingMaterial, visible, courses]);
 
-  const handlePickDocument = async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/vnd.ms-powerpoint',
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        ],
-      });
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        setFileName(res.assets[0].name);
-        setFileSize('4.5 MB');
-        if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
-      }
-    } catch (e) {
-      setFileName('Materi_Kuliah_Pertemuan.pdf');
-    }
+    setMaterials(updated);
+    await localDataService.saveMaterials(currentUser.id, updated);
+    setMaterialModalVisible(false);
+    setEditingMaterial(null);
   };
 
-  const handleSave = () => {
-    if (!title.trim()) {
-      Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
-      return;
-    }
-    onSave({
-      title: title.trim(),
-      courseId,
-      meetingNumber: parseInt(meetingNumber, 10) || 1,
-      meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
-      fileType,
-      fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
-      fileSize,
-    });
+  const handleOpenNotes = (material) => {
+    setActiveNotesMaterial(material);
+    setCurrentNoteText(material.userNotes || '');
+    setNotesModalVisible(true);
   };
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>
-            {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
+  const handleSaveNotes = async () => {
+    if (!activeNotesMaterial || !currentUser) return;
+    const updated = materials.map((m) =>
+      m.id === activeNotesMaterial.id ? { ...m, userNotes: currentNoteText } : m
+    );
+    setMaterials(updated);
+    await localDataService.saveMaterials(currentUser.id, updated);
+    setNotesModalVisible(false);
+    setActiveNotesMaterial(null);
+  };
 
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-          showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
-            <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
-            <Text style={styles.filePickerButtonTitle}>
-              {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
-            </Text>
-            <Text style={styles.filePickerButtonSub}>
-              Mendukung format PDF, PPT, PPTX, dan Dokumen
-            </Text>
-          </TouchableOpacity>
+  const handleOpenAiAssistant = (material) => {
+    setActiveAiMaterial(material);
+    setAiSubTab('summary');
+    setQuizRevealedMap({});
+    setAiModalVisible(true);
+  };
 
-          <Text style={styles.formLabel}>Judul Materi</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Modul 3 - React Navigation"
-            placeholderTextColor={COLORS.textMuted}
-            value={title}
-            onChangeText={setTitle}
-          />
+  const handleToggleTaskCompleted = async (taskId) => {
+    if (!currentUser) return;
+    const updated = tasks.map((t) =>
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    setTasks(updated);
+    await localDataService.saveTasks(currentUser.id, updated);
+  };
 
-          <Text style={styles.formLabel}>Mata Kuliah</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {courses.map((c) => (
-              <TouchableOpacity
-                key={c.id}
-                style={[
-                  styles.formCourseOption,
-                  courseId === c.id && styles.formCourseOptionActive,
-                  courseId === c.id && { borderColor: c.color },
-                ]}
-                onPress={() => setCourseId(c.id)}
-              >
-                <Text
-                  style={[
-                    styles.formCourseOptionText,
-                    courseId === c.id && { color: c.color, fontWeight: '700' },
-                  ]}
-                >
-                  {c.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+  const handleDeleteTask = (taskId) => {
+    if (!currentUser) return;
+    Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = tasks.filter((t) => t.id !== taskId);
+          setTasks(updated);
+          await localDataService.saveTasks(currentUser.id, updated);
+        },
+      },
+    ]);
+  };
 
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Pertemuan Ke-</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="1 - 16"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="numeric"
-                value={meetingNumber}
-                onChangeText={setMeetingNumber}
-              />
-            </View>
+  const handleSaveTask = async (formData) => {
+    if (!currentUser) return;
+    let updated;
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
 
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Format Berkas</Text>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {['PDF', 'PPT', 'DOC'].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.fileTypeChoice, fileType === type && styles.fileTypeChoiceActive]}
-                    onPress={() => setFileType(type)}
-                  >
-                    <Text
-                      style={[
-                        styles.fileTypeChoiceText,
-                        fileType === type && styles.fileTypeChoiceTextActive,
-                      ]}
-                    >
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </View>
-
-          <Text style={styles.formLabel}>Topik Pertemuan</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Komponen UI & Layouting Flexbox"
-            placeholderTextColor={COLORS.textMuted}
-            value={meetingTopic}
-            onChangeText={setMeetingTopic}
-          />
-
-          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
-  const [title, setTitle] = useState('');
-  const [courseId, setCourseId] = useState(courses[0]?.id || '');
-  const [deadline, setDeadline] = useState('2026-11-10');
-  const [priority, setPriority] = useState('Sedang');
-  const [description, setDescription] = useState('');
-
-  useEffect(() => {
     if (editingTask) {
-      setTitle(editingTask.title);
-      setCourseId(editingTask.courseId);
-      setDeadline(editingTask.deadline);
-      setPriority(editingTask.priority);
-      setDescription(editingTask.description || '');
+      updated = tasks.map((t) =>
+        t.id === editingTask.id ? { ...t, ...formData, courseName: courseObj.name } : t
+      );
     } else {
-      setTitle('');
-      setCourseId(courses[0]?.id || '');
-      setDeadline('2026-11-10');
-      setPriority('Sedang');
-      setDescription('');
+      const newTask = {
+        id: `tsk_${Date.now()}`,
+        userId: currentUser.id,
+        ...formData,
+        courseName: courseObj.name,
+        completed: false,
+      };
+      updated = [newTask, ...tasks];
     }
-  }, [editingTask, visible, courses]);
 
-  const handleSave = () => {
-    if (!title.trim()) {
-      Alert.alert('Perhatian', 'Harap isi judul tugas.');
-      return;
-    }
-    onSave({
-      title: title.trim(),
-      courseId,
-      deadline,
-      priority,
-      description: description.trim(),
-    });
+    setTasks(updated);
+    await localDataService.saveTasks(currentUser.id, updated);
+    setTaskModalVisible(false);
+    setEditingTask(null);
   };
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>
-            {editingTask ? 'Edit Tugas' : 'Tambah Tugas Baru'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
+  const handlePickScheduleImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
 
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.formLabel}>Judul Tugas</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Buat Laporan Praktikum Modul 2"
-            placeholderTextColor={COLORS.textMuted}
-            value={title}
-            onChangeText={setTitle}
-          />
-
-          <Text style={styles.formLabel}>Mata Kuliah</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {courses.map((c) => (
-              <TouchableOpacity
-                key={c.id}
-                style={[
-                  styles.formCourseOption,
-                  courseId === c.id && styles.formCourseOptionActive,
-                  courseId === c.id && { borderColor: c.color },
-                ]}
-                onPress={() => setCourseId(c.id)}
-              >
-                <Text
-                  style={[
-                    styles.formCourseOptionText,
-                    courseId === c.id && { color: c.color, fontWeight: '700' },
-                  ]}
-                >
-                  {c.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <Text style={styles.formLabel}>Tenggat Waktu (Deadline: YYYY-MM-DD)</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="2026-11-10"
-            placeholderTextColor={COLORS.textMuted}
-            value={deadline}
-            onChangeText={setDeadline}
-          />
-
-          <Text style={styles.formLabel}>Prioritas</Text>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-            {['Tinggi', 'Sedang', 'Rendah'].map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.priorityOptionBtn, priority === p && styles.priorityOptionBtnActive]}
-                onPress={() => setPriority(p)}
-              >
-                <Text
-                  style={[
-                    styles.priorityOptionBtnText,
-                    priority === p && styles.priorityOptionBtnTextActive,
-                  ]}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.formLabel}>Catatan Tambahan / Deskripsi</Text>
-          <TextInput
-            style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
-            multiline
-            placeholder="Detail instruksi tugas atau tautan pengumpulan..."
-            placeholderTextColor={COLORS.textMuted}
-            value={description}
-            onChangeText={setDescription}
-          />
-
-          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.formSubmitButtonText}>Simpan Tugas</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
-  const [lecturer, setLecturer] = useState('');
-  const [day, setDay] = useState('Senin');
-  const [time, setTime] = useState('08:00 - 10:30');
-  const [room, setRoom] = useState('Lab 1');
-  const [sks, setSks] = useState('3');
-
-  const daysList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-
-  useEffect(() => {
-    if (editingCourse) {
-      setName(editingCourse.name);
-      setCode(editingCourse.code);
-      setLecturer(editingCourse.lecturer);
-      setDay(editingCourse.day);
-      setTime(editingCourse.time);
-      setRoom(editingCourse.room);
-      setSks(String(editingCourse.sks || 3));
-    } else {
-      setName('');
-      setCode('');
-      setLecturer('');
-      setDay('Senin');
-      setTime('08:00 - 10:30');
-      setRoom('Lab 1');
-      setSks('3');
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile('Screenshot_Jadwal_KRS.png');
+      }
+    } catch (err) {
+      processScheduleFile('Screenshot_Jadwal_Kuliah_Semester.png');
     }
-  }, [editingCourse, visible]);
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert('Perhatian', 'Harap isi nama mata kuliah.');
-      return;
-    }
-    onSave({
-      name: name.trim(),
-      code: code.trim() || 'IF101',
-      lecturer: lecturer.trim() || 'Dosen Pengampu',
-      day,
-      time: time.trim() || '08:00 - 10:30',
-      room: room.trim() || 'Ruang Kuliah',
-      sks: parseInt(sks, 10) || 3,
-    });
   };
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>
-            {editingCourse ? 'Edit Mata Kuliah' : 'Tambah Mata Kuliah'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
+  const handlePickScheduleDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
 
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.formLabel}>Nama Mata Kuliah</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Interaksi Manusia dan Komputer"
-            placeholderTextColor={COLORS.textMuted}
-            value={name}
-            onChangeText={setName}
-          />
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile(result.assets[0].name || 'Jadwal_KRS_Akademik.pdf');
+      }
+    } catch (err) {
+      processScheduleFile('Jadwal_Kuliah_Semester_Ganjil.pdf');
+    }
+  };
 
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Kode Matkul</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="IF3201"
-                placeholderTextColor={COLORS.textMuted}
-                value={code}
-                onChangeText={setCode}
-              />
-            </View>
-            <View style={{ width: 100 }}>
-              <Text style={styles.formLabel}>SKS</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="3"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="numeric"
-                value={sks}
-                onChangeText={setSks}
-              />
-            </View>
-          </View>
+  const processScheduleFile = (fileName) => {
+    setIsParsingSchedule(true);
+    setTimeout(async () => {
+      setIsParsingSchedule(false);
+      Alert.alert(
+        'Jadwal Berhasil Dianalisis! 🚀',
+        `StudyMate telah mendeteksi 4 Mata Kuliah dari berkas "${fileName}" dan menyelaraskannya dengan akun ${currentUser?.name || ''}.`
+      );
+      const newNotif = {
+        id: `notif_${Date.now()}`,
+        title: 'Jadwal Berhasil Disinkronkan',
+        message: `Mata kuliah telah diselaraskan dengan berkas ${fileName}. Materi kini terhubung dengan hari kuliah.`,
+        time: 'Baru saja',
+        read: false,
+        type: 'schedule',
+      };
+      setNotifications([newNotif, ...notifications]);
+      setScheduleModalVisible(false);
+    }, 1400);
+  };
 
-          <Text style={styles.formLabel}>Dosen Pengampu</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Nama Dosen dan Gelar"
-            placeholderTextColor={COLORS.textMuted}
-            value={lecturer}
-            onChangeText={setLecturer}
-          />
-
-          <Text style={styles.formLabel}>Hari Kuliah</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {daysList.map((d) => (
-              <TouchableOpacity
-                key={d}
-                style={[styles.dayChoiceBtn, day === d && styles.dayChoiceBtnActive]}
-                onPress={() => setDay(d)}
-              >
-                <Text style={[styles.dayChoiceBtnText, day === d && styles.dayChoiceBtnTextActive]}>
-                  {d}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Jam Kuliah</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="08:00 - 10:30"
-                placeholderTextColor={COLORS.textMuted}
-                value={time}
-                onChangeText={setTime}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Ruangan</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Lab 203"
-                placeholderTextColor={COLORS.textMuted}
-                value={room}
-                onChangeText={setRoom}
-              />
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.formSubmitButtonText}>Simpan Mata Kuliah</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-// =================================================================
-// ROOT APPLICATION EXPORT WITH SAFE AREA PROVIDER
-// =================================================================
-export default function App() {
-  return (
-    <SafeAreaProvider>
-      <StudyMateApp />
-    </SafeAreaProvider>
-  );
-}
+  
 
 // =================================================================
 // STYLESHEET (CLEAN, MODERN, ACCESSIBLE)
@@ -4803,4 +3214,4 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 2,
   },
-});
+})};
