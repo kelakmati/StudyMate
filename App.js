@@ -402,6 +402,8 @@ const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth 
   </View>
 );
 
+<<<<<<< HEAD
+=======
 // Material Card Component (Anggota 2)
 const MaterialCard = ({
   material,
@@ -659,6 +661,7 @@ const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
   </View>
 );
 
+>>>>>>> main
 // =================================================================
 // 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
 // =================================================================
@@ -670,10 +673,13 @@ function StudyMateApp() {
   const isSmallScreen = width < 360;
   const isTabletOrLandscape = width > 600;
 
+<<<<<<< HEAD
+=======
   // Dynamic bottom padding to ensure zero bottom-nav overlap (Anggota 3)
   const bottomNavHeight = 58 + Math.max(insets.bottom, 8);
   const scrollContentPaddingBottom = bottomNavHeight + 16;
 
+>>>>>>> main
   // Stat card dynamic width
   const statCardWidth = useMemo(() => {
     if (isTabletOrLandscape) {
@@ -854,6 +860,15 @@ function StudyMateApp() {
       updated = materials.map((m) =>
         m.id === editingMaterial.id
           ? {
+<<<<<<< HEAD
+            ...m,
+            ...formData,
+            courseName: courseObj.name,
+            summary: generatedSummary,
+            keyPoints: generatedKeyPoints,
+            quiz: generatedQuiz,
+          }
+=======
               ...m,
               ...formData,
               courseName: courseObj.name,
@@ -861,6 +876,7 @@ function StudyMateApp() {
               keyPoints: generatedKeyPoints,
               quiz: generatedQuiz,
             }
+>>>>>>> main
           : m
       );
     } else {
@@ -1112,6 +1128,2080 @@ function StudyMateApp() {
             />
           </View>
         </View>
+<<<<<<< HEAD
+      </View>
+
+      {/* Responsive Stats Grid */}
+      <View style={styles.statsGrid}>
+        <StatCard
+          title="Total Materi"
+          value={totalMaterials}
+          subtitle="Tersimpan di Cloud"
+          icon="library-outline"
+          iconColor={COLORS.primary}
+          bgColor={COLORS.primaryLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Sudah Dibaca"
+          value={studiedMaterialsCount}
+          subtitle="Tuntas dipahami"
+          icon="checkmark-done-circle-outline"
+          iconColor={COLORS.emerald}
+          bgColor={COLORS.emeraldLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Belum Dipelajari"
+          value={unstudiedMaterialsCount}
+          subtitle="Perlu di-review"
+          icon="time-outline"
+          iconColor={COLORS.amber}
+          bgColor={COLORS.amberLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Tugas Aktif"
+          value={activeTasksCount}
+          subtitle="Perlu diselesaikan"
+          icon="alarm-outline"
+          iconColor={COLORS.rose}
+          bgColor={COLORS.roseLight}
+          cardWidth={statCardWidth}
+        />
+      </View>
+
+      {/* Responsive Quick Action Bar */}
+      <View style={styles.quickActionBar}>
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            setEditingMaterial(null);
+            setMaterialModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight }]}>
+            <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Upload Materi
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => setScheduleModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.secondaryLight }]}>
+            <Ionicons name="scan-outline" size={20} color={COLORS.secondary} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Upload Jadwal
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            setEditingTask(null);
+            setTaskModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.amberLight }]}>
+            <Ionicons name="add-circle-outline" size={20} color={COLORS.amber} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Tambah Tugas
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            if (materials.length > 0) handleOpenAiAssistant(materials[0]);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.accentLight }]}>
+            <Ionicons name="sparkles" size={20} color={COLORS.accent} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            AI Assistant
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Recommended Today's Study Section */}
+      <View style={styles.sectionHeaderRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            Rekomendasi Belajar Hari Ini 🎯
+          </Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>
+            Sesuai jadwal: {todayCourse?.name} ({todayCourse?.day})
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
+          <Text style={styles.sectionActionText}>Semua</Text>
+        </TouchableOpacity>
+      </View>
+
+      {recommendedMaterial ? (
+        <MaterialCard
+          material={recommendedMaterial}
+          onPress={(m) => handleOpenAiAssistant(m)}
+          onToggleStudied={handleToggleMaterialStudied}
+          onOpenAi={handleOpenAiAssistant}
+          onOpenNotes={handleOpenNotes}
+          onDelete={handleDeleteMaterial}
+        />
+      ) : (
+        <EmptyState
+          title="Belum ada materi untuk hari ini"
+          subtitle="Tambahkan materi kuliah agar StudyMate dapat menghubungkan jadwalmu."
+        />
+      )}
+
+      {/* Urgent Tasks Section */}
+      <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            Tugas Mendekati Deadline ⏳
+          </Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>
+            Kumpulkan sebelum batas waktu berakhir
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setCurrentTab('Tasks')} activeOpacity={0.7}>
+          <Text style={styles.sectionActionText}>Semua</Text>
+        </TouchableOpacity>
+      </View>
+
+      {tasks
+        .filter((t) => !t.completed)
+        .slice(0, 2)
+        .map((t) => (
+          <TaskItem
+            key={t.id}
+            task={t}
+            onToggle={handleToggleTaskCompleted}
+            onDelete={handleDeleteTask}
+          />
+        ))}
+
+      {activeTasksCount === 0 && (
+        <View style={styles.allClearCard}>
+          <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
+          <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
+          <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+
+  // =================================================================
+  // 11. MODAL FORMS SUB-COMPONENTS
+  // =================================================================
+
+  // Form Modal Tambah / Edit Materi
+  function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
+    const [title, setTitle] = useState('');
+    const [courseId, setCourseId] = useState(courses[0]?.id || '');
+    const [meetingNumber, setMeetingNumber] = useState('1');
+    const [meetingTopic, setMeetingTopic] = useState('');
+    const [fileType, setFileType] = useState('PDF');
+    const [fileName, setFileName] = useState('');
+    const [fileSize, setFileSize] = useState('3.8 MB');
+
+    useEffect(() => {
+      if (editingMaterial) {
+        setTitle(editingMaterial.title);
+        setCourseId(editingMaterial.courseId);
+        setMeetingNumber(String(editingMaterial.meetingNumber || 1));
+        setMeetingTopic(editingMaterial.meetingTopic || '');
+        setFileType(editingMaterial.fileType || 'PDF');
+        setFileName(editingMaterial.fileName || '');
+        setFileSize(editingMaterial.fileSize || '3.5 MB');
+      } else {
+        setTitle('');
+        setCourseId(courses[0]?.id || '');
+        setMeetingNumber('1');
+        setMeetingTopic('');
+        setFileType('PDF');
+        setFileName('');
+        setFileSize('3.2 MB');
+      }
+    }, [editingMaterial, visible, courses]);
+
+    const handlePickDocument = async () => {
+      try {
+        const res = await DocumentPicker.getDocumentAsync({
+          type: [
+            'application/pdf',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          ],
+        });
+        if (!res.canceled && res.assets && res.assets.length > 0) {
+          setFileName(res.assets[0].name);
+          setFileSize('4.5 MB');
+          if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
+        }
+      } catch (e) {
+        setFileName('Materi_Kuliah_Pertemuan.pdf');
+      }
+    };
+
+    const handleSave = () => {
+      if (!title.trim()) {
+        Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
+        return;
+      }
+      onSave({
+        title: title.trim(),
+        courseId,
+        meetingNumber: parseInt(meetingNumber, 10) || 1,
+        meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
+        fileType,
+        fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
+        fileSize,
+      });
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>
+              {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
+              <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
+              <Text style={styles.filePickerButtonTitle}>
+                {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
+              </Text>
+              <Text style={styles.filePickerButtonSub}>
+                Mendukung format PDF, PPT, PPTX, dan Dokumen
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.formLabel}>Judul Materi</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Modul 3 - React Navigation"
+              placeholderTextColor={COLORS.textMuted}
+              value={title}
+              onChangeText={setTitle}
+            />
+
+            <Text style={styles.formLabel}>Mata Kuliah</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {courses.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[
+                    styles.formCourseOption,
+                    courseId === c.id && styles.formCourseOptionActive,
+                    courseId === c.id && { borderColor: c.color },
+                  ]}
+                  onPress={() => setCourseId(c.id)}
+                >
+                  <Text
+                    style={[
+                      styles.formCourseOptionText,
+                      courseId === c.id && { color: c.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Pertemuan Ke-</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="1 - 16"
+                  placeholderTextColor={COLORS.textMuted}
+                  keyboardType="numeric"
+                  value={meetingNumber}
+                  onChangeText={setMeetingNumber}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Format Berkas</Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {['PDF', 'PPT', 'DOC'].map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.fileTypeChoice,
+                        fileType === type && styles.fileTypeChoiceActive,
+                      ]}
+                      onPress={() => setFileType(type)}
+                    >
+                      <Text
+                        style={[
+                          styles.fileTypeChoiceText,
+                          fileType === type && styles.fileTypeChoiceTextActive,
+                        ]}
+                      >
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.formLabel}>Topik Pertemuan</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Komponen UI & Layouting Flexbox"
+              placeholderTextColor={COLORS.textMuted}
+              value={meetingTopic}
+              onChangeText={setMeetingTopic}
+            />
+
+            <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // Form Modal Tambah / Edit Tugas
+  function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
+    const [title, setTitle] = useState('');
+    const [courseId, setCourseId] = useState(courses[0]?.id || '');
+    const [deadline, setDeadline] = useState('2026-11-10');
+    const [priority, setPriority] = useState('Sedang');
+    const [description, setDescription] = useState('');
+
+    useEffect(() => {
+      if (editingTask) {
+        setTitle(editingTask.title);
+        setCourseId(editingTask.courseId);
+        setDeadline(editingTask.deadline);
+        setPriority(editingTask.priority);
+        setDescription(editingTask.description || '');
+      } else {
+        setTitle('');
+        setCourseId(courses[0]?.id || '');
+        setDeadline('2026-11-10');
+        setPriority('Sedang');
+        setDescription('');
+      }
+    }, [editingTask, visible, courses]);
+
+    const handleSave = () => {
+      if (!title.trim()) {
+        Alert.alert('Perhatian', 'Harap isi judul tugas.');
+        return;
+      }
+      onSave({
+        title: title.trim(),
+        courseId,
+        deadline,
+        priority,
+        description: description.trim(),
+      });
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>
+              {editingTask ? 'Edit Tugas' : 'Tambah Tugas Baru'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.formLabel}>Judul Tugas</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Buat Laporan Praktikum Modul 2"
+              placeholderTextColor={COLORS.textMuted}
+              value={title}
+              onChangeText={setTitle}
+            />
+
+            <Text style={styles.formLabel}>Mata Kuliah</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {courses.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[
+                    styles.formCourseOption,
+                    courseId === c.id && styles.formCourseOptionActive,
+                    courseId === c.id && { borderColor: c.color },
+                  ]}
+                  onPress={() => setCourseId(c.id)}
+                >
+                  <Text
+                    style={[
+                      styles.formCourseOptionText,
+                      courseId === c.id && { color: c.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.formLabel}>Tenggat Waktu (Deadline: YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="2026-11-10"
+              placeholderTextColor={COLORS.textMuted}
+              value={deadline}
+              onChangeText={setDeadline}
+            />
+
+            <Text style={styles.formLabel}>Prioritas</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {['Tinggi', 'Sedang', 'Rendah'].map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[
+                    styles.priorityOptionBtn,
+                    priority === p && styles.priorityOptionBtnActive,
+                  ]}
+                  onPress={() => setPriority(p)}
+                >
+                  <Text
+                    style={[
+                      styles.priorityOptionBtnText,
+                      priority === p && styles.priorityOptionBtnTextActive,
+                    ]}
+                  >
+                    {p}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.formLabel}>Catatan Tambahan / Deskripsi</Text>
+            <TextInput
+              style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
+              multiline
+              placeholder="Detail instruksi tugas atau tautan pengumpulan..."
+              placeholderTextColor={COLORS.textMuted}
+              value={description}
+              onChangeText={setDescription}
+            />
+
+            <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.formSubmitButtonText}>Simpan Tugas</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // Form Modal Tambah / Edit Mata Kuliah
+  function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
+    const [name, setName] = useState('');
+    const [code, setCode] = useState('');
+    const [lecturer, setLecturer] = useState('');
+    const [day, setDay] = useState('Senin');
+    const [time, setTime] = useState('08:00 - 10:30');
+    const [room, setRoom] = useState('Lab 1');
+    const [sks, setSks] = useState('3');
+
+    const daysList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+    useEffect(() => {
+      if (editingCourse) {
+        setName(editingCourse.name);
+        setCode(editingCourse.code);
+        setLecturer(editingCourse.lecturer);
+        setDay(editingCourse.day);
+        setTime(editingCourse.time);
+        setRoom(editingCourse.room);
+        setSks(String(editingCourse.sks || 3));
+      } else {
+        setName('');
+        setCode('');
+        setLecturer('');
+        setDay('Senin');
+        setTime('08:00 - 10:30');
+        setRoom('Lab 1');
+        setSks('3');
+      }
+    }, [editingCourse, visible]);
+
+    const handleSave = () => {
+      if (!name.trim()) {
+        Alert.alert('Perhatian', 'Harap isi nama mata kuliah.');
+        return;
+      }
+      onSave({
+        name: name.trim(),
+        code: code.trim() || 'IF101',
+        lecturer: lecturer.trim() || 'Dosen Pengampu',
+        day,
+        time: time.trim() || '08:00 - 10:30',
+        room: room.trim() || 'Ruang Kuliah',
+        sks: parseInt(sks, 10) || 3,
+      });
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>
+              {editingCourse ? 'Edit Mata Kuliah' : 'Tambah Mata Kuliah'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.formLabel}>Nama Mata Kuliah</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Interaksi Manusia dan Komputer"
+              placeholderTextColor={COLORS.textMuted}
+              value={name}
+              onChangeText={setName}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Kode Matkul</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="IF3201"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={code}
+                  onChangeText={setCode}
+                />
+              </View>
+              <View style={{ width: 100 }}>
+                <Text style={styles.formLabel}>SKS</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="3"
+                  placeholderTextColor={COLORS.textMuted}
+                  keyboardType="numeric"
+                  value={sks}
+                  onChangeText={setSks}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.formLabel}>Dosen Pengampu</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Nama Dosen dan Gelar"
+              placeholderTextColor={COLORS.textMuted}
+              value={lecturer}
+              onChangeText={setLecturer}
+            />
+
+            <Text style={styles.formLabel}>Hari Kuliah</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {daysList.map((d) => (
+                <TouchableOpacity
+                  key={d}
+                  style={[styles.dayChoiceBtn, day === d && styles.dayChoiceBtnActive]}
+                  onPress={() => setDay(d)}
+                >
+                  <Text style={[styles.dayChoiceBtnText, day === d && styles.dayChoiceBtnTextActive]}>
+                    {d}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Jam Kuliah</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="08:00 - 10:30"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={time}
+                  onChangeText={setTime}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Ruangan</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Lab 203"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={room}
+                  onChangeText={setRoom}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.formSubmitButtonText}>Simpan Mata Kuliah</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // =================================================================
+  // 13. STYLESHEET (CLEAN, RESPONSIVE, WCAG AAA ACCESSIBLE)
+  // =================================================================
+  const styles = StyleSheet.create({
+    safeAreaContainer: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    mainContentFlex: {
+      flex: 1,
+    },
+    screenContainer: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    scrollContent: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+
+    // App Header
+    headerContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 14,
+    },
+    headerTextGroup: {
+      flex: 1,
+      marginRight: 10,
+    },
+    headerSubtitle: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+      fontWeight: '500',
+    },
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+      letterSpacing: -0.4,
+      marginTop: 1,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    headerIconButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    headerBadge: {
+      position: 'absolute',
+      top: -2,
+      right: -2,
+      backgroundColor: COLORS.rose,
+      minWidth: 17,
+      height: 17,
+      borderRadius: 8.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 3,
+    },
+    headerBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 9,
+      fontWeight: '800',
+    },
+
+    // Badge Component
+    badgeContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    badgeText: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+
+    // Hero Progress Banner
+    heroBanner: {
+      backgroundColor: COLORS.primaryDark,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 16,
+      elevation: 3,
+      shadowColor: COLORS.primaryDark,
+      shadowOpacity: 0.22,
+      shadowOffset: { width: 0, height: 3 },
+      shadowRadius: 6,
+    },
+    heroBannerContent: {
+      flex: 1,
+    },
+    heroStreakRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 4,
+    },
+    heroStreakText: {
+      color: '#FEF08A',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    heroTitle: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: '#FFFFFF',
+      marginBottom: 3,
+    },
+    heroSubtitle: {
+      fontSize: 12,
+      color: '#E0E7FF',
+      marginBottom: 12,
+      lineHeight: 16,
+    },
+    heroProgressBarBg: {
+      height: 7,
+      backgroundColor: 'rgba(255, 255, 255, 0.22)',
+      borderRadius: 3.5,
+      overflow: 'hidden',
+    },
+    heroProgressBarFill: {
+      height: '100%',
+      backgroundColor: '#34D399',
+      borderRadius: 3.5,
+    },
+
+    // Stats Grid (Responsive 2 Columns or 4 on Wide)
+    statsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+      marginBottom: 16,
+    },
+    statCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOpacity: 0.03,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+    },
+    statIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    statContentCol: {
+      flex: 1,
+      marginLeft: 10,
+    },
+    statValue: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    statTitle: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    statSubtitle: {
+      fontSize: 9,
+      color: COLORS.textMuted,
+    },
+
+    // Quick Action Bar
+    quickActionBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 18,
+    },
+    quickActionButton: {
+      alignItems: 'center',
+      flex: 1,
+      paddingHorizontal: 2,
+    },
+    quickActionIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 5,
+    },
+    quickActionLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textPrimary,
+      textAlign: 'center',
+    },
+
+    // Section Headers
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      marginBottom: 10,
+    },
+    sectionTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    sectionSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+    },
+    sectionActionText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+
+    // Material Card
+    materialCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 12,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+    },
+    materialCardTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    materialMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+      flexWrap: 'wrap',
+      gap: 6,
+      marginRight: 8,
+    },
+    materialCourseTag: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+      flexShrink: 1,
+    },
+    checkCircleButton: {
+      padding: 2,
+    },
+    materialTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      lineHeight: 19,
+      marginBottom: 4,
+    },
+    materialTopicText: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+      marginBottom: 3,
+    },
+    materialFileMeta: {
+      fontSize: 11,
+      color: COLORS.textMuted,
+      marginBottom: 10,
+    },
+    materialCardFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderTopWidth: 1,
+      borderTopColor: COLORS.divider,
+      paddingTop: 10,
+      gap: 8,
+    },
+    actionPillAi: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.accentLight,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 20,
+      gap: 4,
+    },
+    actionPillAiText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#7C3AED',
+    },
+    actionPillNotes: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primaryLight,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 20,
+      gap: 4,
+    },
+    actionPillNotesText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.primary,
+    },
+    actionDeleteButton: {
+      marginLeft: 'auto',
+      padding: 5,
+    },
+
+    // Course Card
+    courseCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 15,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 12,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+    },
+    courseCardTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 10,
+    },
+    courseMainInfo: {
+      flex: 1,
+      marginRight: 10,
+    },
+    courseBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 4,
+    },
+    courseCodeBadge: {
+      fontSize: 11,
+      fontWeight: '800',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    courseSksText: {
+      fontSize: 11,
+      color: COLORS.textMuted,
+      fontWeight: '600',
+    },
+    courseNameText: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+      marginBottom: 3,
+    },
+    courseLecturerText: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+    },
+    courseSchedulePill: {
+      alignItems: 'flex-end',
+      flexShrink: 0,
+    },
+    courseDayText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    courseTimeText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    courseRoomText: {
+      fontSize: 10,
+      color: COLORS.textMuted,
+      marginTop: 2,
+    },
+    courseProgressContainer: {
+      borderTopWidth: 1,
+      borderTopColor: COLORS.divider,
+      paddingTop: 8,
+    },
+    courseProgressRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 5,
+    },
+    courseProgressLabel: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      fontWeight: '500',
+    },
+    courseProgressValue: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    progressBarBg: {
+      height: 5,
+      backgroundColor: COLORS.inputBackground,
+      borderRadius: 2.5,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: '100%',
+      borderRadius: 2.5,
+    },
+
+    // Task Item Card
+    taskItemCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 9,
+    },
+    taskItemCardCompleted: {
+      opacity: 0.65,
+      backgroundColor: '#F8FAFC',
+    },
+    taskCheckboxTouch: {
+      padding: 4,
+      alignSelf: 'flex-start',
+      marginTop: 2,
+    },
+    taskDetailsCol: {
+      flex: 1,
+      paddingHorizontal: 8,
+    },
+    taskTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    taskTitleCompleted: {
+      textDecorationLine: 'line-through',
+      color: COLORS.textMuted,
+    },
+    taskCourseSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    taskDescText: {
+      fontSize: 11,
+      color: COLORS.textMuted,
+      marginTop: 2,
+    },
+    taskMetaRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 6,
+    },
+    taskDeleteTouch: {
+      padding: 6,
+    },
+
+    // Materials Screen Wrapper
+    materialsHeaderWrapper: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+    searchBarContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.inputBackground,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      height: 42,
+      marginBottom: 10,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 13,
+      color: COLORS.textPrimary,
+      marginLeft: 8,
+    },
+    filterPillRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 10,
+      flexWrap: 'wrap',
+    },
+    statusFilterPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 18,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    statusFilterPillActive: {
+      backgroundColor: COLORS.primaryLight,
+      borderColor: COLORS.primary,
+    },
+    statusFilterText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+    },
+    statusFilterTextActive: {
+      color: COLORS.primary,
+      fontWeight: '700',
+    },
+    horizontalFilterScroll: {
+      marginBottom: 8,
+    },
+    courseFilterChip: {
+      paddingHorizontal: 11,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginRight: 8,
+    },
+    courseFilterChipActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    courseFilterChipText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+    },
+    courseFilterChipTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    meetingFilterScroll: {
+      marginBottom: 8,
+    },
+    meetingFilterChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 6,
+      backgroundColor: COLORS.inputBackground,
+      marginRight: 6,
+    },
+    meetingFilterChipActive: {
+      backgroundColor: COLORS.textPrimary,
+    },
+    meetingFilterChipText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      fontWeight: '600',
+    },
+    meetingFilterChipTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    listHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    listCountText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.textMuted,
+    },
+    addMaterialSmallBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      gap: 4,
+    },
+    addMaterialSmallBtnText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#FFFFFF',
+    },
+
+    // Screen Banner & Add Button
+    screenBannerRow: {
+      backgroundColor: COLORS.primaryLight,
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    screenBannerText: {
+      flex: 1,
+      fontSize: 11,
+      color: COLORS.primaryDark,
+      lineHeight: 16,
+      marginRight: 8,
+    },
+    primaryAddButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 8,
+      gap: 3,
+    },
+    primaryAddButtonText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+
+    // Empty State
+    emptyContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 32,
+      paddingHorizontal: 20,
+    },
+    emptyIconCircle: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: COLORS.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+    emptyTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginBottom: 3,
+      textAlign: 'center',
+    },
+    emptySubtitle: {
+      fontSize: 12,
+      color: COLORS.textMuted,
+      textAlign: 'center',
+      lineHeight: 17,
+      marginBottom: 12,
+    },
+    emptyActionButton: {
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 8,
+    },
+    emptyActionText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    allClearCard: {
+      backgroundColor: COLORS.emeraldLight,
+      borderRadius: 12,
+      padding: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 4,
+    },
+    allClearTitle: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: '#065F46',
+      marginTop: 4,
+    },
+    allClearSubtitle: {
+      fontSize: 11,
+      color: '#047857',
+      marginTop: 2,
+    },
+
+    // Profile & Schedule Screen
+    profileHeroCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 14,
+    },
+    profileAvatarBox: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: COLORS.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    profileAvatarInitials: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    profileInfoCol: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    profileNameText: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    profileNimText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    profileMajorText: {
+      fontSize: 11,
+      color: COLORS.primary,
+      fontWeight: '600',
+      marginTop: 1,
+    },
+    profileCampusText: {
+      fontSize: 10,
+      color: COLORS.textMuted,
+    },
+    scheduleUploadCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 14,
+    },
+    scheduleIconCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: COLORS.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scheduleUploadTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    scheduleUploadDesc: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+      lineHeight: 15,
+    },
+    uploadScheduleButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: COLORS.primary,
+      borderRadius: 10,
+      paddingVertical: 9,
+      gap: 6,
+      marginTop: 6,
+    },
+    uploadScheduleButtonText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    scheduleItemRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 8,
+    },
+    scheduleDayBadge: {
+      width: 50,
+      height: 36,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scheduleDayText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    scheduleCourseName: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    scheduleTimeRoom: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    settingsContainer: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    settingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+    },
+    settingDivider: {
+      height: 1,
+      backgroundColor: COLORS.divider,
+    },
+    settingLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    settingDesc: {
+      fontSize: 10,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+
+    // Modal Common Styles
+    modalSafeArea: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      backgroundColor: COLORS.card,
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.cardBorder,
+    },
+    modalHeaderTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    modalHeaderSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    modalCloseButton: {
+      padding: 4,
+    },
+    modalScrollBody: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+
+    // AI Assistant Modal Styles
+    aiBadgeIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: COLORS.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    aiTabContainer: {
+      flexDirection: 'row',
+      backgroundColor: COLORS.card,
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.cardBorder,
+    },
+    aiTabButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 11,
+      gap: 5,
+      borderBottomWidth: 2,
+      borderBottomColor: 'transparent',
+    },
+    aiTabButtonActive: {
+      borderBottomColor: COLORS.primary,
+    },
+    aiTabText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textMuted,
+    },
+    aiTabTextActive: {
+      color: COLORS.primary,
+      fontWeight: '800',
+    },
+    aiContentCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 14,
+    },
+    aiBannerPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.accentLight,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+      alignSelf: 'flex-start',
+      gap: 4,
+      marginBottom: 8,
+    },
+    aiBannerPillText: {
+      fontSize: 11,
+      color: '#7C3AED',
+      fontWeight: '700',
+    },
+    aiSummaryTitle: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+      marginBottom: 6,
+    },
+    aiSectionSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginBottom: 12,
+      lineHeight: 16,
+    },
+    aiSummaryParagraph: {
+      fontSize: 13,
+      color: COLORS.textSecondary,
+      lineHeight: 20,
+      marginBottom: 12,
+    },
+    aiNoteCallout: {
+      flexDirection: 'row',
+      backgroundColor: COLORS.primaryLight,
+      borderRadius: 10,
+      padding: 10,
+      gap: 6,
+      marginBottom: 12,
+    },
+    aiNoteCalloutText: {
+      flex: 1,
+      fontSize: 11,
+      color: COLORS.primaryDark,
+      lineHeight: 16,
+    },
+    aiShareButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 9,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: COLORS.primary,
+      gap: 6,
+    },
+    aiShareButtonText: {
+      color: COLORS.primary,
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    keyPointRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 10,
+      gap: 8,
+    },
+    keyPointBullet: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: COLORS.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 2,
+    },
+    keyPointBulletText: {
+      color: COLORS.primary,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    keyPointContent: {
+      flex: 1,
+      fontSize: 12,
+      color: COLORS.textPrimary,
+      lineHeight: 18,
+    },
+    quizCard: {
+      backgroundColor: COLORS.background,
+      borderRadius: 12,
+      padding: 11,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    quizQuestionText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      lineHeight: 19,
+      marginBottom: 8,
+    },
+    quizOptionBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 8,
+      padding: 8,
+      marginBottom: 5,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    quizOptionCorrect: {
+      borderColor: COLORS.emerald,
+      backgroundColor: COLORS.emeraldLight,
+    },
+    quizOptionLetter: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: COLORS.textSecondary,
+      width: 20,
+    },
+    quizOptionLetterCorrect: {
+      color: '#065F46',
+    },
+    quizOptionLabel: {
+      fontSize: 11,
+      color: COLORS.textPrimary,
+      flex: 1,
+    },
+    quizOptionLabelCorrect: {
+      color: '#065F46',
+      fontWeight: '700',
+    },
+    quizRevealButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 7,
+      gap: 5,
+      marginTop: 4,
+    },
+    quizRevealButtonText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+    quizExplanationBox: {
+      backgroundColor: COLORS.card,
+      borderRadius: 8,
+      padding: 9,
+      marginTop: 6,
+      borderLeftWidth: 3,
+      borderLeftColor: COLORS.primary,
+    },
+    quizExplanationTitle: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: COLORS.primary,
+      marginBottom: 2,
+    },
+    quizExplanationText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      lineHeight: 15,
+    },
+
+    // Notes Modal Styles
+    notesContainer: {
+      flex: 1,
+      padding: 16,
+    },
+    notesInstructionText: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+      lineHeight: 17,
+      marginBottom: 10,
+    },
+    notesTextInput: {
+      flex: 1,
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      fontSize: 13,
+      color: COLORS.textPrimary,
+      lineHeight: 20,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 12,
+    },
+    saveNotesButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: COLORS.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      gap: 6,
+    },
+    saveNotesButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+
+    // Form Components & Modals
+    formLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginBottom: 5,
+      marginTop: 6,
+    },
+    formInput: {
+      backgroundColor: COLORS.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      fontSize: 12,
+      color: COLORS.textPrimary,
+      marginBottom: 6,
+    },
+    filePickerButton: {
+      backgroundColor: COLORS.primaryLight,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: COLORS.primary,
+      borderRadius: 12,
+      padding: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+    filePickerButtonTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.primaryDark,
+      marginTop: 4,
+      textAlign: 'center',
+    },
+    filePickerButtonSub: {
+      fontSize: 10,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    formCourseOption: {
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginRight: 6,
+    },
+    formCourseOptionActive: {
+      backgroundColor: COLORS.primaryLight,
+    },
+    formCourseOptionText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      fontWeight: '600',
+    },
+    fileTypeChoice: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      alignItems: 'center',
+    },
+    fileTypeChoiceActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    fileTypeChoiceText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    fileTypeChoiceTextActive: {
+      color: '#FFFFFF',
+    },
+    priorityOptionBtn: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      alignItems: 'center',
+    },
+    priorityOptionBtnActive: {
+      backgroundColor: COLORS.textPrimary,
+      borderColor: COLORS.textPrimary,
+    },
+    priorityOptionBtnText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    priorityOptionBtnTextActive: {
+      color: '#FFFFFF',
+    },
+    dayChoiceBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginRight: 6,
+    },
+    dayChoiceBtnActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    dayChoiceBtnText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+    },
+    dayChoiceBtnTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    formSubmitButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: COLORS.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      gap: 6,
+      marginTop: 12,
+    },
+    formSubmitButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+
+    // Schedule Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(15, 23, 42, 0.65)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+    },
+    scheduleModalBox: {
+      width: '100%',
+      maxWidth: 380,
+      backgroundColor: COLORS.card,
+      borderRadius: 18,
+      padding: 18,
+      elevation: 8,
+    },
+    scheduleModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 6,
+    },
+    scheduleModalTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    scheduleModalSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      lineHeight: 16,
+      marginBottom: 14,
+    },
+    uploadOptionsRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginBottom: 14,
+    },
+    uploadOptionBtn: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      padding: 14,
+      alignItems: 'center',
+    },
+    uploadOptionBtnTitle: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginTop: 6,
+      textAlign: 'center',
+    },
+    uploadOptionBtnSub: {
+      fontSize: 9,
+      color: COLORS.textMuted,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    parsingIndicatorBox: {
+      paddingVertical: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    parsingStatusText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.primary,
+      marginTop: 10,
+      textAlign: 'center',
+    },
+    scheduleCancelBtn: {
+      paddingVertical: 8,
+      alignItems: 'center',
+    },
+    scheduleCancelBtnText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textMuted,
+    },
+
+    // Notification Modal Styles
+    notifCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 11,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 8,
+    },
+    notifCardUnread: {
+      backgroundColor: COLORS.primaryLight,
+      borderColor: COLORS.primary + '40',
+    },
+    notifIconCircle: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    notifItemTitle: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    notifItemTime: {
+      fontSize: 9,
+      color: COLORS.textMuted,
+    },
+    notifItemMsg: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+      lineHeight: 15,
+    },
+    markAllReadBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      gap: 6,
+      marginTop: 6,
+    },
+    markAllReadBtnText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+  })
+}
+=======
       </View>
 
       {/* Responsive Stats Grid */}
@@ -4337,3 +6427,4 @@ const styles = StyleSheet.create({
     bottom: 2,
   },
 });
+>>>>>>> main
