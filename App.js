@@ -618,15 +618,15 @@ const TaskItem = ({ task, onToggle, onDelete }) => (
             task.priority === 'Tinggi'
               ? COLORS.rose
               : task.priority === 'Sedang'
-              ? COLORS.amber
-              : COLORS.emerald
+                ? COLORS.amber
+                : COLORS.emerald
           }
           bg={
             task.priority === 'Tinggi'
               ? COLORS.roseLight
               : task.priority === 'Sedang'
-              ? COLORS.amberLight
-              : COLORS.emeraldLight
+                ? COLORS.amberLight
+                : COLORS.emeraldLight
           }
         />
       </View>
@@ -854,13 +854,13 @@ function StudyMateApp() {
       updated = materials.map((m) =>
         m.id === editingMaterial.id
           ? {
-              ...m,
-              ...formData,
-              courseName: courseObj.name,
-              summary: generatedSummary,
-              keyPoints: generatedKeyPoints,
-              quiz: generatedQuiz,
-            }
+            ...m,
+            ...formData,
+            courseName: courseObj.name,
+            summary: generatedSummary,
+            keyPoints: generatedKeyPoints,
+            quiz: generatedQuiz,
+          }
           : m
       );
     } else {
@@ -1982,16 +1982,16 @@ function StudyMateApp() {
                           style={[
                             styles.quizOptionBox,
                             isRevealed &&
-                              optIndex === q.correctIndex &&
-                              styles.quizOptionCorrect,
+                            optIndex === q.correctIndex &&
+                            styles.quizOptionCorrect,
                           ]}
                         >
                           <Text
                             style={[
                               styles.quizOptionLetter,
                               isRevealed &&
-                                optIndex === q.correctIndex &&
-                                styles.quizOptionLetterCorrect,
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionLetterCorrect,
                             ]}
                           >
                             {String.fromCharCode(65 + optIndex)}
@@ -2000,8 +2000,8 @@ function StudyMateApp() {
                             style={[
                               styles.quizOptionLabel,
                               isRevealed &&
-                                optIndex === q.correctIndex &&
-                                styles.quizOptionLabelCorrect,
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionLabelCorrect,
                             ]}
                           >
                             {opt}
@@ -2200,8 +2200,8 @@ function StudyMateApp() {
                       n.type === 'class'
                         ? COLORS.primaryLight
                         : n.type === 'material'
-                        ? COLORS.amberLight
-                        : COLORS.roseLight,
+                          ? COLORS.amberLight
+                          : COLORS.roseLight,
                   },
                 ]}
               >
@@ -2210,16 +2210,16 @@ function StudyMateApp() {
                     n.type === 'class'
                       ? 'school-outline'
                       : n.type === 'material'
-                      ? 'book-outline'
-                      : 'alarm-outline'
+                        ? 'book-outline'
+                        : 'alarm-outline'
                   }
                   size={18}
                   color={
                     n.type === 'class'
                       ? COLORS.primary
                       : n.type === 'material'
-                      ? COLORS.amber
-                      : COLORS.rose
+                        ? COLORS.amber
+                        : COLORS.rose
                   }
                 />
               </View>
