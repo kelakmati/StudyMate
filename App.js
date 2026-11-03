@@ -14,6 +14,7 @@ import {
   Platform,
   Share,
   useWindowDimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -22,11 +23,12 @@ import {
 } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
 // =================================================================
-// 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
+// DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
 // =================================================================
 const COLORS = {
   // Brand Colors
@@ -57,21 +59,152 @@ const COLORS = {
   divider: '#F1F5F9',
 };
 
-const STORAGE_KEYS = {
-  COURSES: '@studymate_courses_v2',
-  MATERIALS: '@studymate_materials_v2',
-  TASKS: '@studymate_tasks_v2',
-  NOTIFICATIONS: '@studymate_notifications_v2',
-  SETTINGS: '@studymate_settings_v2',
-  USER_PROFILE: '@studymate_profile_v2',
+// =================================================================
+// =================================================================
+// PART 2 – ANGGOTA 2: LOCAL DATA SECURITY (STORAGE & VAULT ENGINE)
+// =================================================================
+// =================================================================
+// Penjelasan: Anggota 2 bertanggung jawab memisahkan data sensitif
+// (SecureStore) dan data non-sensitif (AsyncStorage), hashing password
+// satu arah (SHA-256), serta isolasi data multi-user berbasis userId.
+// =================================================================
+
+// 1. Storage Keys Definition
+const SECURE_KEYS = {
+  TOKEN: 'studymate_secure_token',
+  SESSION_USER: 'studymate_secure_user_session',
+  USERS_VAULT: 'studymate_secure_vault_registered_users',
 };
 
-// =================================================================
-// 2. INITIAL SEED DATA (MAHASISWA REALISTIS)
-// =================================================================
-const INITIAL_COURSES = [
+const getAsyncUserKey = (prefix, userId) => `@studymate_${prefix}_usr_${userId}`;
+
+// 2. Cross-Platform SecureStore Wrapper with Web Fallback
+const isNativeSecureSupported = Platform.OS === 'ios' || Platform.OS === 'android';
+
+const secureStorage = {
+  async setItem(key, value) {
+    try {
+      if (isNativeSecureSupported) {
+        await SecureStore.setItemAsync(key, value);
+      } else {
+        await AsyncStorage.setItem(`@vault_${key}`, value);
+      }
+      return true;
+    } catch (e) {
+      console.warn(`[SecureStore Error] Gagal simpan ${key}:`, e);
+      return false;
+    }
+  },
+
+  async getItem(key) {
+    try {
+      if (isNativeSecureSupported) {
+        return await SecureStore.getItemAsync(key);
+      } else {
+        return await AsyncStorage.getItem(`@vault_${key}`);
+      }
+    } catch (e) {
+      console.warn(`[SecureStore Error] Gagal baca ${key}:`, e);
+      return null;
+    }
+  },
+
+  async deleteItem(key) {
+    try {
+      if (isNativeSecureSupported) {
+        await SecureStore.deleteItemAsync(key);
+      } else {
+        await AsyncStorage.removeItem(`@vault_${key}`);
+      }
+      return true;
+    } catch (e) {
+      console.warn(`[SecureStore Error] Gagal hapus ${key}:`, e);
+      return false;
+    }
+  },
+};
+
+// 3. Cryptographic Pure JS SHA-256 Hashing Algorithm
+// Menghindari penyimpanan password dalam plain text tanpa dependensi binary native
+function hashSha256(ascii) {
+  function rightRotate(value, amount) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const maxWord = Math.pow(2, 32);
+  let i, j;
+  let result = '';
+  const words = [];
+  const asciiBitLength = ascii.length * 8;
+  const hash = [];
+  const k = [];
+  let primeCounter = 0;
+  const isComposite = {};
+  for (let candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) {
+        isComposite[i] = candidate;
+      }
+      hash[primeCounter] = (Math.pow(candidate, 0.5) * maxWord) | 0;
+      k[primeCounter++] = (Math.pow(candidate, 1 / 3) * maxWord) | 0;
+    }
+  }
+  ascii += '\x80';
+  while ((ascii.length % 64) - 56) ascii += '\x00';
+  for (i = 0; i < ascii.length; i++) {
+    j = ascii.charCodeAt(i);
+    words[i >> 2] |= j << ((3 - (i % 4)) * 8);
+  }
+  words[words.length] = (asciiBitLength / maxWord) | 0;
+  words[words.length] = asciiBitLength;
+  for (j = 0; j < words.length;) {
+    const w = words.slice(j, (j += 16));
+    const oldHash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      const w15 = w[i - 15],
+        w2 = w[i - 2];
+      const a = hash[0],
+        e = hash[4];
+      const temp1 =
+        hash[7] +
+        (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+        ((e & hash[5]) ^ (~e & hash[6])) +
+        k[i] +
+        (w[i] =
+          i < 16
+            ? w[i]
+            : (w[i - 16] +
+              (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+              w[i - 7] +
+              (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
+            0);
+      const temp2 =
+        (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+        ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash.unshift((temp1 + temp2) | 0);
+      hash[4] = (hash[4] + temp1) | 0;
+    }
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i]) | 0;
+    }
+  }
+  for (i = 0; i < 8; i++) {
+    for (let i2 = 3; i2 >= 0; i2--) {
+      const b = (hash[i] >> (i2 * 8)) & 255;
+      result += (b < 16 ? '0' : '') + b.toString(16);
+    }
+  }
+  return result;
+}
+
+const secureHashPassword = (password, salt) => {
+  return hashSha256(`${password}_studymate_salt_${salt}`);
+};
+
+// 4. Default Seed Starter Templates for Newly Registered Users
+const getInitialCourseTemplates = (userId) => [
   {
-    id: 'crs_1',
+    id: `crs_1_${userId}`,
+    userId,
     code: 'IF3101',
     name: 'Pemrograman Mobile',
     lecturer: 'Dr. Ir. Hendra Wijaya, M.Kom',
@@ -82,7 +215,8 @@ const INITIAL_COURSES = [
     color: '#4F46E5',
   },
   {
-    id: 'crs_2',
+    id: `crs_2_${userId}`,
+    userId,
     code: 'IF3102',
     name: 'Basis Data Lanjut',
     lecturer: 'Prof. Sri Rahayu, Ph.D',
@@ -93,7 +227,8 @@ const INITIAL_COURSES = [
     color: '#0EA5E9',
   },
   {
-    id: 'crs_3',
+    id: `crs_3_${userId}`,
+    userId,
     code: 'IF3103',
     name: 'Kecerdasan Buatan (AI)',
     lecturer: 'Budi Santoso, S.T., M.Sc',
@@ -104,7 +239,8 @@ const INITIAL_COURSES = [
     color: '#8B5CF6',
   },
   {
-    id: 'crs_4',
+    id: `crs_4_${userId}`,
+    userId,
     code: 'IF3104',
     name: 'Rekayasa Perangkat Lunak',
     lecturer: 'Dewi Lestari, M.T',
@@ -116,10 +252,11 @@ const INITIAL_COURSES = [
   },
 ];
 
-const INITIAL_MATERIALS = [
+const getInitialMaterialTemplates = (userId) => [
   {
-    id: 'mat_1',
-    courseId: 'crs_1',
+    id: `mat_1_${userId}`,
+    userId,
+    courseId: `crs_1_${userId}`,
     courseName: 'Pemrograman Mobile',
     meetingNumber: 1,
     meetingTopic: 'Pengenalan React Native & Expo Ecosystem',
@@ -129,888 +266,775 @@ const INITIAL_MATERIALS = [
     fileSize: '4.2 MB',
     dateAdded: '2026-10-12',
     isStudied: true,
-    userNotes: 'Catatan penting: Jangan lupa gunakan Bun atau npm yang kompatibel dengan React 19. Expo Go sangat memudahkan live testing via QR Code.',
-    summary: 'Materi ini membahas fundamental arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer). Menjelaskan perbedaan pengembangan native vs cross-platform, instalasi CLI, serta keunggulan Expo Go dalam mempercepat prototyping aplikasi mobile tanpa kompilasi native yang berat.',
+    userNotes: 'Catatan pribadi: Gunakan SafeAreaProvider dan useSafeAreaInsets agar tidak bertabrakan dengan status bar.',
+    summary: 'Materi ini membahas arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer), perbedaan cross-platform, serta setup Expo Go.',
     keyPoints: [
       'React Native menggunakan konsep declarative UI dengan komponen native di iOS & Android.',
-      'Expo Go mengemas dependensi native siap pakai sehingga tidak butuh Xcode/Android Studio saat tahap belajar dasar.',
-      'JSX mengizinkan penulisan sintaks mirip HTML di dalam kode JavaScript murni.',
-      'State & Props adalah fondasi manajemen data komponen dalam React.',
+      'Expo Go mengemas dependensi native siap pakai tanpa build Gradle berat.',
+      'State & Props adalah fondasi manajemen data komponen React.',
     ],
     quiz: [
       {
-        question: 'Apa fungsi utama Fabric Renderer di arsitektur modern React Native?',
-        options: ['Mengubah file PDF menjadi teks', 'Melakukan render UI secara efisien langsung ke komponen native', 'Mengkompresi gambar kamera', 'Menyimpan database lokal SQLite'],
+        question: 'Apa peran Fabric Renderer di arsitektur React Native modern?',
+        options: ['Mengubah PDF menjadi teks', 'Merender UI langsung ke thread native secara efisien', 'Mengompres foto galeri', 'Menghubungkan WiFi'],
         correctIndex: 1,
-        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JavaScript thread dan native view thread sehingga perpindahan UI terasa instan 60 FPS.',
-      },
-      {
-        question: 'Kapan sebaiknya menggunakan Expo Go dibanding Bare React Native?',
-        options: ['Saat membutuhkan custom library C++ native tingkat lanjut', 'Untuk prototyping cepat dan belajar tanpa konfigurasi native yang rumit', 'Ketika tidak memiliki koneksi internet sama sekali', 'Saat membuat aplikasi sistem operasi baru'],
-        correctIndex: 1,
-        explanation: 'Expo Go dirancang agar mahasiswa langsung fokus ke logika aplikasi tanpa pusing konfigurasi Gradle atau CocoaPods.',
+        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JS thread dan native view thread sehingga UI berjalan 60 FPS.',
       },
     ],
   },
   {
-    id: 'mat_2',
-    courseId: 'crs_1',
+    id: `mat_2_${userId}`,
+    userId,
+    courseId: `crs_1_${userId}`,
     courseName: 'Pemrograman Mobile',
     meetingNumber: 2,
-    meetingTopic: 'Komponen UI, Flexbox & State Management',
+    meetingTopic: 'Komponen UI, Flexbox & Responsive Layout',
     title: 'Slide Kuliah: Flexbox Responsive & State React',
     fileType: 'PPT',
     fileName: 'Pertemuan_2_Flexbox_State.pptx',
     fileSize: '12.8 MB',
     dateAdded: '2026-10-19',
     isStudied: true,
-    userNotes: 'Ingat! default flexDirection di React Native adalah "column", bukan "row" seperti di CSS web standar.',
-    summary: 'Membahas perancangan layout responsif mobile menggunakan Flexbox. Fokus pada properti alignItems, justifyContent, flexWrap, serta pengelolaan State lokal dengan React Hook useState dan useEffect untuk siklus hidup komponen.',
+    userNotes: 'Default flexDirection di React Native adalah column (vertikal).',
+    summary: 'Membahas perancangan layout mobile fleksibel menggunakan Flexbox, alignItems, justifyContent, serta Hook useState.',
     keyPoints: [
-      'Default flexDirection pada React Native adalah column (vertikal).',
+      'Default flexDirection adalah column.',
       'justifyContent mengatur perataan sepanjang main axis.',
-      'alignItems mengatur perataan tegak lurus terhadap cross axis.',
-      'useState memicu re-render UI setiap kali setter function dipanggil dengan state baru.',
+      'alignItems mengatur perataan cross axis.',
     ],
     quiz: [
       {
-        question: 'Apa nilai default dari flexDirection di React Native?',
-        options: ['row', 'column', 'row-reverse', 'grid'],
+        question: 'Nilai default flexDirection di React Native adalah?',
+        options: ['row', 'column', 'grid', 'flex-start'],
         correctIndex: 1,
-        explanation: 'Berbeda dari CSS web yang default-nya row, React Native secara default berorientasi vertikal (column) sesuai layar smartphone.',
-      },
-    ],
-  },
-  {
-    id: 'mat_3',
-    courseId: 'crs_1',
-    courseName: 'Pemrograman Mobile',
-    meetingNumber: 3,
-    meetingTopic: 'Navigasi Antar Halaman & Async Storage',
-    title: 'Hands-on: React Navigation & Offline Persistence',
-    fileType: 'PDF',
-    fileName: 'Modul_03_AsyncStorage_BottomTabs.pdf',
-    fileSize: '3.5 MB',
-    dateAdded: '2026-10-26',
-    isStudied: false,
-    userNotes: 'Perlu latihan ulang: cara serialisasi JSON.stringify dan JSON.parse saat menyimpan array object ke AsyncStorage.',
-    summary: 'Mempelajari navigasi multi-layar (Stack Navigation, Bottom Tab Navigation) dan teknik penyimpanan offline-first menggunakan AsyncStorage. Mengupas siklus simpan-ambil data user secara asinkron.',
-    keyPoints: [
-      'AsyncStorage hanya dapat menyimpan data dalam format String nilai tunggal (gunakan JSON.stringify).',
-      'Bottom Tab Navigation memberikan akses cepat ke 4-5 menu utama aplikasi seluler.',
-      'Gunakan try-catch block untuk menangani error saat I/O AsyncStorage.',
-    ],
-    quiz: [
-      {
-        question: 'Tipe data apa yang didukung langsung oleh AsyncStorage React Native?',
-        options: ['Array murni', 'String murni', 'Binary Buffer murni', 'Boolean murni'],
-        correctIndex: 1,
-        explanation: 'AsyncStorage berbasis key-value string. Object atau array harus dikonversi via JSON.stringify() terlebih dahulu.',
-      },
-    ],
-  },
-  {
-    id: 'mat_4',
-    courseId: 'crs_2',
-    courseName: 'Basis Data Lanjut',
-    meetingNumber: 1,
-    meetingTopic: 'Query Optimization & Indexing B-Tree',
-    title: 'Slide: Konsep Indexing & Execution Plan',
-    fileType: 'PPT',
-    fileName: 'Pertemuan1_Database_Indexing.pptx',
-    fileSize: '8.4 MB',
-    dateAdded: '2026-10-13',
-    isStudied: true,
-    userNotes: 'Catatan dosen: Indeks mempercepat SELECT namun memperlambat INSERT/UPDATE karena pohon indeks harus direorganisasi.',
-    summary: 'Ringkasan mengenai struktur data B-Tree pada RDBMS (PostgreSQL/MySQL), cara membaca Query Execution Plan (EXPLAIN ANALYZE), dan strategi memilih kolom untuk composite indexing.',
-    keyPoints: [
-      'Clustered Index menentukan urutan fisik penyimpanan data pada disk.',
-      'Non-clustered Index membuat pointer penunjuk ke lokasi data aktual.',
-      'EXPLAIN ANALYZE digunakan untuk melihat estimasi cost vs actual runtime eksekusi query.',
-    ],
-    quiz: [
-      {
-        question: 'Apa dampak penambahan terlalu banyak indeks pada tabel database?',
-        options: ['Operasi SELECT menjadi sangat lambat', 'Operasi INSERT dan UPDATE membutuhkan waktu lebih lama', 'Database kehilangan data secara acak', 'Ukuran disk berkurang 50%'],
-        correctIndex: 1,
-        explanation: 'Setiap operasi penulisan (INSERT/UPDATE/DELETE) mewajibkan database memperbarui semua pohon indeks terkait.',
-      },
-    ],
-  },
-  {
-    id: 'mat_5',
-    courseId: 'crs_3',
-    courseName: 'Kecerdasan Buatan (AI)',
-    meetingNumber: 2,
-    meetingTopic: 'Heuristic Search & Algoritma A*',
-    title: 'Catatan Kuliah: A* Search vs Dijkstra Algorithm',
-    fileType: 'DOC',
-    fileName: 'Catatan_Pribadi_Algoritma_A_Star.txt',
-    fileSize: '145 KB',
-    dateAdded: '2026-10-20',
-    isStudied: false,
-    userNotes: 'Rumus f(n) = g(n) + h(n). g(n) = cost riil dari start ke n, h(n) = estimasi heuristik ke tujuan.',
-    summary: 'Komparasi algoritma pencarian rute terpendek. Algoritma A* menggunakan fungsi evaluasi f(n) = g(n) + h(n) di mana h(n) harus admissible (tidak pernah overestimasi biaya ke target) agar menjamin solusi optimal.',
-    keyPoints: [
-      'Algoritma Dijkstra adalah kasus khusus dari A* di mana nilai heuristik h(n) bernilai 0.',
-      'Heuristik admissible menjamin A* selalu menemukan jalur terpendek pertama kali.',
-      'A* banyak diaplikasikan dalam game development, GPS navigasi, dan robotika pathfinding.',
-    ],
-    quiz: [
-      {
-        question: 'Apa syarat agar fungsi heuristik h(n) disebut Admissible?',
-        options: ['h(n) harus selalu bernilai negatif', 'h(n) tidak boleh melebihi biaya riil sebenarnya ke tujuan', 'h(n) harus sama dengan nol di semua node', 'h(n) harus dihitung dengan machine learning'],
-        correctIndex: 1,
-        explanation: 'Jika h(n) tidak pernah mengestimasi lebih tinggi dari jarak sebenarnya, maka rute terpendek dijamin ditemukan.',
+        explanation: 'Berbeda dari web CSS yang default-nya row, React Native secara default adalah column.',
       },
     ],
   },
 ];
 
-const INITIAL_TASKS = [
+const getInitialTaskTemplates = (userId) => [
   {
-    id: 'tsk_1',
-    courseId: 'crs_1',
+    id: `tsk_1_${userId}`,
+    userId,
+    courseId: `crs_1_${userId}`,
     courseName: 'Pemrograman Mobile',
-    title: 'Tugas 1: Bangun UI Aplikasi StudyMate',
+    title: 'Tugas 1: Integrasi Autentikasi & SecureStore StudyMate',
     deadline: '2026-11-06',
     priority: 'Tinggi',
     completed: false,
-    description: 'Selesaikan layout dashboard, navigasi tab, dan modularisasi modal AI Assistant.',
+    description: 'Selesaikan pemisahan SecureStore untuk token dan AsyncStorage untuk data materi.',
   },
   {
-    id: 'tsk_2',
-    courseId: 'crs_2',
+    id: `tsk_2_${userId}`,
+    userId,
+    courseId: `crs_2_${userId}`,
     courseName: 'Basis Data Lanjut',
-    title: 'Praktikum SQL: Analisis Indexing EXPLAIN',
+    title: 'Praktikum SQL: Analisis Indexing B-Tree',
     deadline: '2026-11-08',
     priority: 'Sedang',
     completed: true,
-    description: 'Buat laporan perbandingan waktu eksekusi query sebelum dan sesudah dibuatkan B-Tree Index.',
-  },
-  {
-    id: 'tsk_3',
-    courseId: 'crs_3',
-    courseName: 'Kecerdasan Buatan (AI)',
-    title: 'Resume Paper: Large Language Models for Education',
-    deadline: '2026-11-12',
-    priority: 'Rendah',
-    completed: false,
-    description: 'Buat resume 2 halaman tentang penerapan generative AI untuk ringkasan materi otomatis.',
+    description: 'Bandingkan waktu eksekusi query sebelum dan sesudah dibuatkan index.',
   },
 ];
 
-const INITIAL_NOTIFICATIONS = [
-  {
-    id: 'notif_1',
-    title: 'Jadwal Kuliah Hari Ini!',
-    message: 'Mata Kuliah Pemrograman Mobile (Pertemuan 3) dimulai pukul 08:00 WIB di Lab Komputasi 3.',
-    time: '30 menit yang lalu',
-    read: false,
-    type: 'class',
+// User-Scoped Local Data Operations (AsyncStorage with Try-Catch)
+const localDataService = {
+  async loadUserData(userId) {
+    try {
+      const coursesKey = getAsyncUserKey('courses', userId);
+      const materialsKey = getAsyncUserKey('materials', userId);
+      const tasksKey = getAsyncUserKey('tasks', userId);
+      const settingsKey = getAsyncUserKey('settings', userId);
+
+      const [storedCourses, storedMaterials, storedTasks, storedSettings] =
+        await Promise.all([
+          AsyncStorage.getItem(coursesKey),
+          AsyncStorage.getItem(materialsKey),
+          AsyncStorage.getItem(tasksKey),
+          AsyncStorage.getItem(settingsKey),
+        ]);
+
+      let courses = storedCourses ? JSON.parse(storedCourses) : null;
+      let materials = storedMaterials ? JSON.parse(storedMaterials) : null;
+      let tasks = storedTasks ? JSON.parse(storedTasks) : null;
+      let settings = storedSettings
+        ? JSON.parse(storedSettings)
+        : {
+          notifyBeforeClass: true,
+          notifyDeadlines: true,
+          autoSummarizeAi: true,
+        };
+
+      // Inisialisasi awal jika akun belum memiliki data
+      if (!courses || courses.length === 0) {
+        courses = getInitialCourseTemplates(userId);
+        await AsyncStorage.setItem(coursesKey, JSON.stringify(courses));
+      }
+      if (!materials || materials.length === 0) {
+        materials = getInitialMaterialTemplates(userId);
+        await AsyncStorage.setItem(materialsKey, JSON.stringify(materials));
+      }
+      if (!tasks || tasks.length === 0) {
+        tasks = getInitialTaskTemplates(userId);
+        await AsyncStorage.setItem(tasksKey, JSON.stringify(tasks));
+      }
+
+      return { courses, materials, tasks, settings };
+    } catch (error) {
+      console.error('[LocalDataService] Gagal memuat data akun:', error);
+      return {
+        courses: getInitialCourseTemplates(userId),
+        materials: getInitialMaterialTemplates(userId),
+        tasks: getInitialTaskTemplates(userId),
+        settings: { notifyBeforeClass: true, notifyDeadlines: true, autoSummarizeAi: true },
+      };
+    }
   },
-  {
-    id: 'notif_2',
-    title: 'Materi Belum Dibaca ⚠️',
-    message: 'Kamu belum membaca materi "Hands-on: React Navigation & Offline Persistence". Klik untuk pelajari.',
-    time: '2 jam yang lalu',
-    read: false,
-    type: 'material',
+
+  async saveCourses(userId, courses) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('courses', userId), JSON.stringify(courses));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan courses:', e);
+      return false;
+    }
   },
-  {
-    id: 'notif_3',
-    title: 'Deadline Tugas H-4',
-    message: 'Tugas 1: Bangun UI Aplikasi StudyMate tenggat tanggal 06 November 2026.',
-    time: 'Kemarin',
-    read: true,
-    type: 'task',
+
+  async saveMaterials(userId, materials) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('materials', userId), JSON.stringify(materials));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan materials:', e);
+      return false;
+    }
   },
-];
+
+  async saveTasks(userId, tasks) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('tasks', userId), JSON.stringify(tasks));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan tasks:', e);
+      return false;
+    }
+  },
+
+  async saveSettings(userId, settings) {
+    try {
+      await AsyncStorage.setItem(getAsyncUserKey('settings', userId), JSON.stringify(settings));
+      return true;
+    } catch (e) {
+      console.error('[LocalDataService] Gagal simpan settings:', e);
+      return false;
+    }
+  },
+};
 
 // =================================================================
-// 3. REUSABLE ATOMIC & MOLECULAR UI COMPONENTS
+// REUSABLE UI COMPONENTS (SHARED ATOMIC DESIGN)
 // =================================================================
-
-
-  // SCREEN 4: PENGELOLAAN TUGAS DAN DEADLINE (Anggota 2)
-  const renderTasksScreen = () => {
-    const activeTasks = tasks.filter((t) => !t.completed);
-    const completedTasks = tasks.filter((t) => t.completed);
-
-    return (
-      <ScrollView
-        style={styles.screenContainer}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: scrollContentPaddingBottom },
-        ]}
-        showsVerticalScrollIndicator={false}
+const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload, onOpenSecurityModal }) => (
+  <View style={styles.headerContainer}>
+    <View style={styles.headerTextGroup}>
+      <Text style={styles.headerSubtitle} numberOfLines={1}>
+        {subtitle || 'Halo Mahasiswa! 👋'}
+      </Text>
+      <Text style={styles.headerTitle} numberOfLines={1}>
+        {title || 'StudyMate'}
+      </Text>
+    </View>
+    <View style={styles.headerActions}>
+      {onOpenSecurityModal && (
+        <TouchableOpacity
+          style={[styles.headerIconButton, { borderColor: COLORS.accent + '40' }]}
+          onPress={onOpenSecurityModal}
+          accessibilityLabel="Audit Keamanan Data"
+          activeOpacity={0.7}
+        >
+          <Ionicons name="shield-checkmark" size={19} color={COLORS.accent} />
+        </TouchableOpacity>
+      )}
+      {onOpenScheduleUpload && (
+        <TouchableOpacity
+          style={styles.headerIconButton}
+          onPress={onOpenScheduleUpload}
+          accessibilityLabel="Unggah Jadwal Kuliah"
+          activeOpacity={0.7}
+        >
+          <Ionicons name="calendar-outline" size={19} color={COLORS.primary} />
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity
+        style={styles.headerIconButton}
+        onPress={onOpenNotif}
+        accessibilityLabel="Pusat Notifikasi"
+        activeOpacity={0.7}
       >
-        <AppHeader
-          title="Tugas & Deadline"
-          subtitle="Pantau Target Akademik"
-          unreadCount={unreadNotifCount}
-          onOpenNotif={() => setNotifModalVisible(true)}
-          onOpenScheduleUpload={() => setScheduleModalVisible(true)}
-        />
+        <Ionicons name="notifications-outline" size={19} color={COLORS.textPrimary} />
+        {unreadCount > 0 && (
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{unreadCount}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
-        <View style={styles.screenBannerRow}>
-          <Text style={styles.screenBannerText}>
-            Jangan biarkan tugas terlewat. Setiap tugas terhubung langsung dengan mata kuliah.
-          </Text>
-          <TouchableOpacity
-            style={styles.primaryAddButton}
-            onPress={() => {
-              setEditingTask(null);
-              setTaskModalVisible(true);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
-            <Text style={styles.primaryAddButtonText}>Tambah</Text>
-          </TouchableOpacity>
-        </View>
+const Badge = ({ label, color, bg, icon }) => (
+  <View style={[styles.badgeContainer, { backgroundColor: bg || COLORS.primaryLight }]}>
+    {icon && <Ionicons name={icon} size={11} color={color || COLORS.primary} style={{ marginRight: 4 }} />}
+    <Text style={[styles.badgeText, { color: color || COLORS.primary }]} numberOfLines={1}>
+      {label}
+    </Text>
+  </View>
+);
 
-        {/* Section Aktif */}
-        <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>
-          Tugas Aktif ({activeTasks.length})
+const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth }) => (
+  <View style={[styles.statCard, { width: cardWidth, borderLeftColor: iconColor, borderLeftWidth: 4 }]}>
+    <View style={[styles.statIconBox, { backgroundColor: bgColor }]}>
+      <Ionicons name={icon} size={20} color={iconColor} />
+    </View>
+    <View style={styles.statContentCol}>
+      <Text style={styles.statValue} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.statTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text style={styles.statSubtitle} numberOfLines={1}>
+          {subtitle}
         </Text>
+      ) : null}
+    </View>
+  </View>
+);
 
-        {activeTasks.map((t) => (
-          <TaskItem
-            key={t.id}
-            task={t}
-            onToggle={handleToggleTaskCompleted}
-            onDelete={handleDeleteTask}
-          />
-        ))}
-
-        {activeTasks.length === 0 && (
-          <View style={styles.allClearCard}>
-            <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
-            <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
-            <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
-          </View>
-        )}
-
-        {/* Section Selesai */}
-        {completedTasks.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 8 }]}>
-              Sudah Selesai ({completedTasks.length})
-            </Text>
-            {completedTasks.map((t) => (
-              <TaskItem
-                key={t.id}
-                task={t}
-                onToggle={handleToggleTaskCompleted}
-                onDelete={handleDeleteTask}
-              />
-            ))}
-          </>
-        )}
-      </ScrollView>
-    );
+const MaterialCard = ({ material, onPress, onToggleStudied, onOpenAi, onOpenNotes, onDelete }) => {
+  const getFileBadge = (type) => {
+    switch (type) {
+      case 'PDF':
+        return { color: COLORS.rose, bg: COLORS.roseLight, icon: 'document-text' };
+      case 'PPT':
+        return { color: COLORS.amber, bg: COLORS.amberLight, icon: 'easel' };
+      case 'DOC':
+      default:
+        return { color: COLORS.secondary, bg: COLORS.secondaryLight, icon: 'newspaper' };
+    }
   };
+  const badgeInfo = getFileBadge(material.fileType);
 
-  // SCREEN 5: JADWAL KULIAH, PENGATURAN & PROFIL (Anggota 2 & 3)
-  const renderScheduleProfileScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Jadwal & Profil"
-        subtitle="Sinkronisasi & Pengaturan"
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-      />
-
-      {/* Profil Mahasiswa Card */}
-      <View style={styles.profileHeroCard}>
-        <View style={styles.profileAvatarBox}>
-          <Text style={styles.profileAvatarInitials}>
-            {userProfile.name
-              .split(' ')
-              .map((n) => n[0])
-              .slice(0, 2)
-              .join('')}
+  return (
+    <View style={styles.materialCard}>
+      <View style={styles.materialCardTop}>
+        <View style={styles.materialMetaRow}>
+          <Badge label={material.fileType} color={badgeInfo.color} bg={badgeInfo.bg} icon={badgeInfo.icon} />
+          <Badge label={`Pertemuan ${material.meetingNumber}`} color={COLORS.textSecondary} bg={COLORS.inputBackground} />
+          <Text style={styles.materialCourseTag} numberOfLines={1}>
+            {material.courseName}
           </Text>
-        </View>
-        <View style={styles.profileInfoCol}>
-          <Text style={styles.profileNameText} numberOfLines={1}>
-            {userProfile.name}
-          </Text>
-          <Text style={styles.profileNimText}>NIM: {userProfile.nim}</Text>
-          <Text style={styles.profileMajorText} numberOfLines={1}>
-            {userProfile.major}
-          </Text>
-          <Text style={styles.profileCampusText} numberOfLines={1}>
-            {userProfile.campus}
-          </Text>
-        </View>
-      </View>
-
-      {/* Upload Jadwal Support Card */}
-      <View style={styles.scheduleUploadCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-          <View style={styles.scheduleIconCircle}>
-            <Ionicons name="document-attach" size={22} color={COLORS.primary} />
-          </View>
-          <View style={{ marginLeft: 12, flex: 1 }}>
-            <Text style={styles.scheduleUploadTitle}>Upload Jadwal Kuliah (PDF / Screenshot)</Text>
-            <Text style={styles.scheduleUploadDesc}>
-              Jadwal kuliah digunakan sebagai pendukung untuk menghubungkan materi dengan aktivitas belajar harian.
-            </Text>
-          </View>
         </View>
 
         <TouchableOpacity
-          style={styles.uploadScheduleButton}
-          onPress={() => setScheduleModalVisible(true)}
-          activeOpacity={0.8}
+          onPress={() => onToggleStudied(material.id)}
+          style={styles.checkCircleButton}
+          accessibilityLabel="Tandai Sudah Dipelajari"
+          activeOpacity={0.7}
         >
-          <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.uploadScheduleButtonText}>Unggah Jadwal KRS</Text>
+          <Ionicons
+            name={material.isStudied ? 'checkmark-circle' : 'ellipse-outline'}
+            size={24}
+            color={material.isStudied ? COLORS.emerald : COLORS.textMuted}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Jadwal Kuliah Mingguan Preview */}
-      <Text style={[styles.sectionTitle, { marginTop: 18, marginBottom: 10 }]}>
-        Jadwal Kuliah Mingguan 📅
-      </Text>
+      <TouchableOpacity activeOpacity={0.75} onPress={() => onPress(material)}>
+        <Text style={styles.materialTitle} numberOfLines={2}>
+          {material.title}
+        </Text>
+        <Text style={styles.materialTopicText} numberOfLines={1}>
+          📌 {material.meetingTopic}
+        </Text>
+        <Text style={styles.materialFileMeta} numberOfLines={1}>
+          {material.fileName} • {material.fileSize || 'Ukuran normal'}
+        </Text>
+      </TouchableOpacity>
 
-      {courses.map((crs) => (
-        <View key={crs.id} style={styles.scheduleItemRow}>
-          <View style={[styles.scheduleDayBadge, { backgroundColor: crs.color }]}>
-            <Text style={styles.scheduleDayText}>{crs.day}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.scheduleCourseName} numberOfLines={1}>
-              {crs.name}
-            </Text>
-            <Text style={styles.scheduleTimeRoom} numberOfLines={1}>
-              ⏰ {crs.time} • 📍 {crs.room}
-            </Text>
-          </View>
-          <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
-        </View>
-      ))}
+      <View style={styles.materialCardFooter}>
+        <TouchableOpacity style={styles.actionPillAi} onPress={() => onOpenAi(material)} activeOpacity={0.7}>
+          <Ionicons name="sparkles" size={13} color="#7C3AED" />
+          <Text style={styles.actionPillAiText}>StudyMate AI</Text>
+        </TouchableOpacity>
 
-      {/* Pengaturan Notifikasi */}
-      <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
-        Preferensi Notifikasi & AI ⚙️
-      </Text>
-
-      <View style={styles.settingsContainer}>
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Pengingat Materi Sebelum Kuliah</Text>
-            <Text style={styles.settingDesc}>Notifikasi materi yang belum dipelajari sebelum jam kelas.</Text>
-          </View>
-          <Switch
-            value={settings.notifyBeforeClass}
-            onValueChange={(val) => {
-              const updated = { ...settings, notifyBeforeClass: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Peringatan Deadline Tugas H-1</Text>
-            <Text style={styles.settingDesc}>Ingatkan otomatis sebelum deadline tugas berakhir.</Text>
-          </View>
-          <Switch
-            value={settings.notifyDeadlines}
-            onValueChange={(val) => {
-              const updated = { ...settings, notifyDeadlines: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Auto-Generate Ringkasan AI</Text>
-            <Text style={styles.settingDesc}>Otomatis ekstrak poin penting saat mengunggah materi baru.</Text>
-          </View>
-          <Switch
-            value={settings.autoSummarizeAi}
-            onValueChange={(val) => {
-              const updated = { ...settings, autoSummarizeAi: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-      </View>
-    </ScrollView>
-  );
-
-  // =================================================================
-  // 9. MODALS WITH SAFE AREA INTEGRATION (Anggota 2 & 3)
-  // =================================================================
-
-  // MODAL 1: STUDYMATE AI ASSISTANT
-  const renderAiModal = () => {
-    if (!activeAiMaterial) return null;
-
-    return (
-      <Modal
-        visible={aiModalVisible}
-        animationType="slide"
-        onRequestClose={() => setAiModalVisible(false)}
-      >
-        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <View style={styles.aiBadgeIcon}>
-                <Ionicons name="sparkles" size={17} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalHeaderTitle}>StudyMate AI Assistant</Text>
-                <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
-                  {activeAiMaterial.title}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              onPress={() => setAiModalVisible(false)}
-              style={styles.modalCloseButton}
-            >
-              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* AI Sub-Tabs */}
-          <View style={styles.aiTabContainer}>
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'summary' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('summary')}
-            >
-              <Ionicons
-                name="document-text-outline"
-                size={15}
-                color={aiSubTab === 'summary' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.aiTabText,
-                  aiSubTab === 'summary' && styles.aiTabTextActive,
-                ]}
-              >
-                Ringkasan Cerdas
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'points' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('points')}
-            >
-              <Ionicons
-                name="bulb-outline"
-                size={15}
-                color={aiSubTab === 'points' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.aiTabText,
-                  aiSubTab === 'points' && styles.aiTabTextActive,
-                ]}
-              >
-                Poin Penting
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'quiz' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('quiz')}
-            >
-              <Ionicons
-                name="help-circle-outline"
-                size={15}
-                color={aiSubTab === 'quiz' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.aiTabText,
-                  aiSubTab === 'quiz' && styles.aiTabTextActive,
-                ]}
-              >
-                Latihan Soal
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.modalScrollBody}
-            contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
-            showsVerticalScrollIndicator={false}
-          >
-            {aiSubTab === 'summary' && (
-              <View style={styles.aiContentCard}>
-                <View style={styles.aiBannerPill}>
-                  <Ionicons name="time-outline" size={13} color="#7C3AED" />
-                  <Text style={styles.aiBannerPillText}>Waktu baca: ~3 Menit</Text>
-                </View>
-                <Text style={styles.aiSummaryTitle}>Intisari Materi Perkuliahan</Text>
-                <Text style={styles.aiSummaryParagraph}>{activeAiMaterial.summary}</Text>
-
-                <View style={styles.aiNoteCallout}>
-                  <Ionicons name="information-circle" size={18} color={COLORS.primary} />
-                  <Text style={styles.aiNoteCalloutText}>
-                    Ringkasan dirancang agar mahasiswa cepat memahami konsep kunci sebelum kelas dimulai.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.aiShareButton}
-                  onPress={() =>
-                    Share.share({
-                      message: `Ringkasan StudyMate AI:\n${activeAiMaterial.title}\n\n${activeAiMaterial.summary}`,
-                    })
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
-                  <Text style={styles.aiShareButtonText}>Bagikan Ringkasan</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {aiSubTab === 'points' && (
-              <View style={styles.aiContentCard}>
-                <Text style={styles.aiSummaryTitle}>Konsep Kunci & Rumus Inti</Text>
-                <Text style={styles.aiSectionSubtitle}>
-                  Fokus pada poin-poin berikut untuk persiapan ujian atau kuis dosen:
-                </Text>
-
-                {activeAiMaterial.keyPoints?.map((point, idx) => (
-                  <View key={idx} style={styles.keyPointRow}>
-                    <View style={styles.keyPointBullet}>
-                      <Text style={styles.keyPointBulletText}>{idx + 1}</Text>
-                    </View>
-                    <Text style={styles.keyPointContent}>{point}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {aiSubTab === 'quiz' && (
-              <View style={styles.aiContentCard}>
-                <Text style={styles.aiSummaryTitle}>Uji Pemahaman Mandiri</Text>
-                <Text style={styles.aiSectionSubtitle}>
-                  Jawab pertanyaan latihan berikut untuk menguji pemahaman konsep:
-                </Text>
-
-                {activeAiMaterial.quiz?.map((q, qIndex) => {
-                  const isRevealed = !!quizRevealedMap[qIndex];
-
-                  return (
-                    <View key={qIndex} style={styles.quizCard}>
-                      <Text style={styles.quizQuestionText}>
-                        {qIndex + 1}. {q.question}
-                      </Text>
-
-                      {q.options.map((opt, optIndex) => (
-                        <View
-                          key={optIndex}
-                          style={[
-                            styles.quizOptionBox,
-                            isRevealed &&
-                              optIndex === q.correctIndex &&
-                              styles.quizOptionCorrect,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.quizOptionLetter,
-                              isRevealed &&
-                                optIndex === q.correctIndex &&
-                                styles.quizOptionLetterCorrect,
-                            ]}
-                          >
-                            {String.fromCharCode(65 + optIndex)}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.quizOptionLabel,
-                              isRevealed &&
-                                optIndex === q.correctIndex &&
-                                styles.quizOptionLabelCorrect,
-                            ]}
-                          >
-                            {opt}
-                          </Text>
-                        </View>
-                      ))}
-
-                      <TouchableOpacity
-                        style={styles.quizRevealButton}
-                        onPress={() =>
-                          setQuizRevealedMap((prev) => ({
-                            ...prev,
-                            [qIndex]: !prev[qIndex],
-                          }))
-                        }
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name={isRevealed ? 'eye-off-outline' : 'eye-outline'}
-                          size={16}
-                          color={COLORS.primary}
-                        />
-                        <Text style={styles.quizRevealButtonText}>
-                          {isRevealed
-                            ? 'Sembunyikan Pembahasan'
-                            : 'Lihat Kunci Jawaban & Pembahasan'}
-                        </Text>
-                      </TouchableOpacity>
-
-                      {isRevealed && (
-                        <View style={styles.quizExplanationBox}>
-                          <Text style={styles.quizExplanationTitle}>💡 Penjelasan AI:</Text>
-                          <Text style={styles.quizExplanationText}>{q.explanation}</Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
-
-  // MODAL 2: CATATAN PRIBADI PER MATERI
-  const renderNotesModal = () => {
-    if (!activeNotesMaterial) return null;
-
-    return (
-      <Modal
-        visible={notesModalVisible}
-        animationType="slide"
-        onRequestClose={() => setNotesModalVisible(false)}
-      >
-        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalHeaderTitle}>Catatan Pribadi</Text>
-              <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
-                {activeNotesMaterial.title}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setNotesModalVisible(false)}
-              style={styles.modalCloseButton}
-            >
-              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.notesContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            <Text style={styles.notesInstructionText}>
-              Tulis rangkuman pribadi, hal-hal penting yang disampaikan dosen saat kelas, atau rumus yang perlu diingat:
-            </Text>
-
-            <TextInput
-              style={styles.notesTextInput}
-              multiline
-              textAlignVertical="top"
-              placeholder="Ketik catatan pribadimu di sini..."
-              placeholderTextColor={COLORS.textMuted}
-              value={currentNoteText}
-              onChangeText={setCurrentNoteText}
-            />
-
-            <TouchableOpacity
-              style={styles.saveNotesButton}
-              onPress={handleSaveNotes}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
-              <Text style={styles.saveNotesButtonText}>Simpan Catatan</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
-
-  // MODAL 3: UPLOAD JADWAL MODAL
-  const renderScheduleModal = () => (
-    <Modal
-      visible={scheduleModalVisible}
-      animationType="fade"
-      transparent
-      onRequestClose={() => setScheduleModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.scheduleModalBox}>
-          <View style={styles.scheduleModalHeader}>
-            <Ionicons name="calendar" size={24} color={COLORS.primary} />
-            <Text style={styles.scheduleModalTitle}>Upload Jadwal Kuliah</Text>
-          </View>
-
-          <Text style={styles.scheduleModalSubtitle}>
-            Unggah foto screenshot KRS atau berkas PDF jadwal. StudyMate akan otomatis mendeteksi jadwal untuk mengorganisasi materi belajarmu.
+        <TouchableOpacity style={styles.actionPillNotes} onPress={() => onOpenNotes(material)} activeOpacity={0.7}>
+          <Ionicons name={material.userNotes ? 'document-text' : 'create-outline'} size={13} color={COLORS.primary} />
+          <Text style={styles.actionPillNotesText}>
+            {material.userNotes ? 'Lihat Catatan' : '+ Catatan'}
           </Text>
+        </TouchableOpacity>
 
-          {isParsingSchedule ? (
-            <View style={styles.parsingIndicatorBox}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.parsingStatusText}>
-                Memindai dokumen & menyelaraskan jadwal...
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.uploadOptionsRow}>
-              <TouchableOpacity
-                style={styles.uploadOptionBtn}
-                onPress={handlePickScheduleImage}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="image-outline" size={30} color={COLORS.secondary} />
-                <Text style={styles.uploadOptionBtnTitle}>Screenshot Foto</Text>
-                <Text style={styles.uploadOptionBtnSub}>Dari Galeri / Kamera</Text>
-              </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionDeleteButton}
+          onPress={() => onDelete(material.id)}
+          activeOpacity={0.7}
+          accessibilityLabel="Hapus Materi"
+        >
+          <Ionicons name="trash-outline" size={17} color={COLORS.textMuted} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
-              <TouchableOpacity
-                style={styles.uploadOptionBtn}
-                onPress={handlePickScheduleDocument}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="document-text-outline" size={30} color={COLORS.primary} />
-                <Text style={styles.uploadOptionBtnTitle}>File Berkas PDF</Text>
-                <Text style={styles.uploadOptionBtnSub}>Pilih Berkas KRS</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
+  const progressPercent = materialCount > 0 ? Math.round((studiedCount / materialCount) * 100) : 0;
 
-          <TouchableOpacity
-            style={styles.scheduleCancelBtn}
-            onPress={() => setScheduleModalVisible(false)}
-          >
-            <Text style={styles.scheduleCancelBtnText}>Tutup</Text>
-          </TouchableOpacity>
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[styles.courseCard, { borderTopColor: course.color, borderTopWidth: 4 }]}
+      onPress={() => onPress(course)}
+    >
+      <View style={styles.courseCardTop}>
+        <View style={styles.courseMainInfo}>
+          <View style={styles.courseBadgeRow}>
+            <Text style={[styles.courseCodeBadge, { backgroundColor: course.color + '18', color: course.color }]}>
+              {course.code}
+            </Text>
+            <Text style={styles.courseSksText}>{course.sks} SKS</Text>
+          </View>
+          <Text style={styles.courseNameText} numberOfLines={2}>
+            {course.name}
+          </Text>
+          <Text style={styles.courseLecturerText} numberOfLines={1}>
+            👨‍🏫 {course.lecturer}
+          </Text>
+        </View>
+
+        <View style={styles.courseSchedulePill}>
+          <Text style={styles.courseDayText}>{course.day}</Text>
+          <Text style={styles.courseTimeText}>{course.time}</Text>
+          <Text style={styles.courseRoomText} numberOfLines={1}>
+            📍 {course.room}
+          </Text>
         </View>
       </View>
-    </Modal>
-  );
 
-  // MODAL 4: PUSAT NOTIFIKASI
-  const renderNotificationModal = () => (
-    <Modal
-      visible={notifModalVisible}
-      animationType="slide"
-      onRequestClose={() => setNotifModalVisible(false)}
-    >
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modalHeaderTitle}>Pusat Notifikasi</Text>
-            <Text style={styles.modalHeaderSubtitle}>Pengingat Materi & Deadline</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => setNotifModalVisible(false)}
-            style={styles.modalCloseButton}
-          >
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
+      <View style={styles.courseProgressContainer}>
+        <View style={styles.courseProgressRow}>
+          <Text style={styles.courseProgressLabel}>Progres Terpelajari</Text>
+          <Text style={styles.courseProgressValue}>
+            {studiedCount}/{materialCount} ({progressPercent}%)
+          </Text>
         </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 30 + insets.bottom }}
-          showsVerticalScrollIndicator={false}
-        >
-          {notifications.map((n) => (
-            <View key={n.id} style={[styles.notifCard, !n.read && styles.notifCardUnread]}>
-              <View
-                style={[
-                  styles.notifIconCircle,
-                  {
-                    backgroundColor:
-                      n.type === 'class'
-                        ? COLORS.primaryLight
-                        : n.type === 'material'
-                        ? COLORS.amberLight
-                        : COLORS.roseLight,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={
-                    n.type === 'class'
-                      ? 'school-outline'
-                      : n.type === 'material'
-                      ? 'book-outline'
-                      : 'alarm-outline'
-                  }
-                  size={18}
-                  color={
-                    n.type === 'class'
-                      ? COLORS.primary
-                      : n.type === 'material'
-                      ? COLORS.amber
-                      : COLORS.rose
-                  }
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={styles.notifItemTitle}>{n.title}</Text>
-                  <Text style={styles.notifItemTime}>{n.time}</Text>
-                </View>
-                <Text style={styles.notifItemMsg}>{n.message}</Text>
-              </View>
-            </View>
-          ))}
-
-          {notifications.length === 0 && (
-            <EmptyState
-              title="Belum Ada Notifikasi"
-              subtitle="Notifikasi jadwal dan pengingat materi akan tampil di sini."
-            />
-          )}
-
-          <TouchableOpacity
-            style={styles.markAllReadBtn}
-            onPress={async () => {
-              const updated = notifications.map((n) => ({ ...n, read: true }));
-              setNotifications(updated);
-              await persistData(STORAGE_KEYS.NOTIFICATIONS, updated);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="checkmark-done" size={16} color={COLORS.primary} />
-            <Text style={styles.markAllReadBtnText}>Tandai Semua Sudah Dibaca</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+        <View style={styles.progressBarBg}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${Math.min(100, Math.max(0, progressPercent))}%`, backgroundColor: course.color },
+            ]}
+          />
+        </View>
+      </View>
+    </TouchableOpacity>
   );
+};
 
+const TaskItem = ({ task, onToggle, onDelete }) => (
+  <View style={[styles.taskItemCard, task.completed && styles.taskItemCardCompleted]}>
+    <TouchableOpacity
+      style={styles.taskCheckboxTouch}
+      onPress={() => onToggle(task.id)}
+      accessibilityLabel="Selesaikan Tugas"
+      activeOpacity={0.7}
+    >
+      <Ionicons
+        name={task.completed ? 'checkmark-circle' : 'square-outline'}
+        size={24}
+        color={task.completed ? COLORS.emerald : COLORS.textMuted}
+      />
+    </TouchableOpacity>
+
+    <View style={styles.taskDetailsCol}>
+      <Text style={[styles.taskTitle, task.completed && styles.taskTitleCompleted]} numberOfLines={2}>
+        {task.title}
+      </Text>
+      <Text style={styles.taskCourseSubtitle} numberOfLines={1}>
+        {task.courseName}
+      </Text>
+      {task.description ? (
+        <Text style={styles.taskDescText} numberOfLines={1}>
+          {task.description}
+        </Text>
+      ) : null}
+
+      <View style={styles.taskMetaRow}>
+        <Badge
+          label={`Deadline: ${task.deadline}`}
+          color={task.completed ? COLORS.textMuted : COLORS.rose}
+          bg={task.completed ? COLORS.inputBackground : COLORS.roseLight}
+          icon="calendar-outline"
+        />
+        <Badge
+          label={`Prioritas: ${task.priority}`}
+          color={
+            task.priority === 'Tinggi'
+              ? COLORS.rose
+              : task.priority === 'Sedang'
+                ? COLORS.amber
+                : COLORS.emerald
+          }
+          bg={
+            task.priority === 'Tinggi'
+              ? COLORS.roseLight
+              : task.priority === 'Sedang'
+                ? COLORS.amberLight
+                : COLORS.emeraldLight
+          }
+        />
+      </View>
+    </View>
+
+    <TouchableOpacity
+      style={styles.taskDeleteTouch}
+      onPress={() => onDelete(task.id)}
+      accessibilityLabel="Hapus Tugas"
+      activeOpacity={0.7}
+    >
+      <Ionicons name="trash-outline" size={18} color={COLORS.textMuted} />
+    </TouchableOpacity>
+  </View>
+);
+
+const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
+  <View style={styles.emptyContainer}>
+    <View style={styles.emptyIconCircle}>
+      <Ionicons name={icon || 'folder-open-outline'} size={36} color={COLORS.primary} />
+    </View>
+    <Text style={styles.emptyTitle}>{title}</Text>
+    <Text style={styles.emptySubtitle}>{subtitle}</Text>
+    {actionText && (
+      <TouchableOpacity style={styles.emptyActionButton} onPress={onAction} activeOpacity={0.8}>
+        <Text style={styles.emptyActionText}>{actionText}</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
 
 // =================================================================
-// 13. STYLESHEET (CLEAN, RESPONSIVE, WCAG AAA ACCESSIBLE)
+// =================================================================
+// PART 1 & 3: MAIN APP (AUTH FLOW & INTEGRATION)
+// =================================================================
+// =================================================================
+function StudyMateApp() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  const isSmallScreen = width < 360;
+  const isTabletOrLandscape = width > 600;
+
+  const bottomNavHeight = 58 + Math.max(insets.bottom, 8);
+  const scrollContentPaddingBottom = bottomNavHeight + 16;
+
+  const statCardWidth = useMemo(() => {
+    if (isTabletOrLandscape) return (width - 32 - 36) / 4;
+    return (width - 32 - 12) / 2;
+  }, [width, isTabletOrLandscape]);
+
+  // -------------------------------------------------------------
+ 
+
+
+  // =============================================================
+  // PART 2 & 3: APP DATA CRUD OPERATIONS (USER-SCOPED)
+  // =============================================================
+  const handleToggleMaterialStudied = async (materialId) => {
+    if (!currentUser) return;
+    const updated = materials.map((m) =>
+      m.id === materialId ? { ...m, isStudied: !m.isStudied } : m
+    );
+    setMaterials(updated);
+    await localDataService.saveMaterials(currentUser.id, updated);
+  };
+
+  const handleDeleteMaterial = (materialId) => {
+    if (!currentUser) return;
+    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = materials.filter((m) => m.id !== materialId);
+          setMaterials(updated);
+          await localDataService.saveMaterials(currentUser.id, updated);
+        },
+      },
+    ]);
+  };
+
+  const handleSaveMaterial = async (formData) => {
+    if (!currentUser) return;
+    let updated;
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
+
+    const generatedSummary =
+      formData.summary ||
+      `Ringkasan cerdas oleh StudyMate AI untuk mata kuliah ${courseObj.name} pada pertemuan ke-${formData.meetingNumber}. Mencakup fondasi teori dan penerapan praktis untuk mendukung pembelajaran mandiri.`;
+
+    const generatedKeyPoints = formData.keyPoints || [
+      `Fokus utama topik adalah penguasaan ${formData.meetingTopic}.`,
+      `Pahami implementasi dan pola konsep pada materi pertemuan ke-${formData.meetingNumber}.`,
+      'Gunakan catatan pribadi untuk mencatat intisari dosen pengampu.',
+    ];
+
+    const generatedQuiz = formData.quiz || [
+      {
+        question: `Apa konsep inti yang dibahas pada ${formData.title}?`,
+        options: ['Pemahaman fondasi dan implementasi praktis', 'Hafalan tanpa latihan', 'Menunggu arahan asisten lab', 'Kompilasi tanpa pengujian'],
+        correctIndex: 0,
+        explanation: 'Pemahaman konsep dasar dan implementasi mandiri adalah kunci retensi materi perkuliahan jangka panjang.',
+      },
+    ];
+
+    if (editingMaterial) {
+      updated = materials.map((m) =>
+        m.id === editingMaterial.id
+          ? {
+            ...m,
+            ...formData,
+            courseName: courseObj.name,
+            summary: generatedSummary,
+            keyPoints: generatedKeyPoints,
+            quiz: generatedQuiz,
+          }
+          : m
+      );
+    } else {
+      const newMaterial = {
+        id: `mat_${Date.now()}`,
+        userId: currentUser.id,
+        ...formData,
+        courseName: courseObj.name,
+        dateAdded: new Date().toISOString().split('T')[0],
+        isStudied: false,
+        userNotes: '',
+        summary: generatedSummary,
+        keyPoints: generatedKeyPoints,
+        quiz: generatedQuiz,
+      };
+      updated = [newMaterial, ...materials];
+    }
+
+    setMaterials(updated);
+    await localDataService.saveMaterials(currentUser.id, updated);
+    setMaterialModalVisible(false);
+    setEditingMaterial(null);
+  };
+
+  const handleOpenNotes = (material) => {
+    setActiveNotesMaterial(material);
+    setCurrentNoteText(material.userNotes || '');
+    setNotesModalVisible(true);
+  };
+
+  const handleSaveNotes = async () => {
+    if (!activeNotesMaterial || !currentUser) return;
+    const updated = materials.map((m) =>
+      m.id === activeNotesMaterial.id ? { ...m, userNotes: currentNoteText } : m
+    );
+    setMaterials(updated);
+    await localDataService.saveMaterials(currentUser.id, updated);
+    setNotesModalVisible(false);
+    setActiveNotesMaterial(null);
+  };
+
+  const handleOpenAiAssistant = (material) => {
+    setActiveAiMaterial(material);
+    setAiSubTab('summary');
+    setQuizRevealedMap({});
+    setAiModalVisible(true);
+  };
+
+  const handleToggleTaskCompleted = async (taskId) => {
+    if (!currentUser) return;
+    const updated = tasks.map((t) =>
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    setTasks(updated);
+    await localDataService.saveTasks(currentUser.id, updated);
+  };
+
+  const handleDeleteTask = (taskId) => {
+    if (!currentUser) return;
+    Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = tasks.filter((t) => t.id !== taskId);
+          setTasks(updated);
+          await localDataService.saveTasks(currentUser.id, updated);
+        },
+      },
+    ]);
+  };
+
+  const handleSaveTask = async (formData) => {
+    if (!currentUser) return;
+    let updated;
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
+
+    if (editingTask) {
+      updated = tasks.map((t) =>
+        t.id === editingTask.id ? { ...t, ...formData, courseName: courseObj.name } : t
+      );
+    } else {
+      const newTask = {
+        id: `tsk_${Date.now()}`,
+        userId: currentUser.id,
+        ...formData,
+        courseName: courseObj.name,
+        completed: false,
+      };
+      updated = [newTask, ...tasks];
+    }
+
+    setTasks(updated);
+    await localDataService.saveTasks(currentUser.id, updated);
+    setTaskModalVisible(false);
+    setEditingTask(null);
+  };
+
+  const handlePickScheduleImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile('Screenshot_Jadwal_KRS.png');
+      }
+    } catch (err) {
+      processScheduleFile('Screenshot_Jadwal_Kuliah_Semester.png');
+    }
+  };
+
+  const handlePickScheduleDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile(result.assets[0].name || 'Jadwal_KRS_Akademik.pdf');
+      }
+    } catch (err) {
+      processScheduleFile('Jadwal_Kuliah_Semester_Ganjil.pdf');
+    }
+  };
+
+  const processScheduleFile = (fileName) => {
+    setIsParsingSchedule(true);
+    setTimeout(async () => {
+      setIsParsingSchedule(false);
+      Alert.alert(
+        'Jadwal Berhasil Dianalisis! 🚀',
+        `StudyMate telah mendeteksi 4 Mata Kuliah dari berkas "${fileName}" dan menyelaraskannya dengan akun ${currentUser?.name || ''}.`
+      );
+      const newNotif = {
+        id: `notif_${Date.now()}`,
+        title: 'Jadwal Berhasil Disinkronkan',
+        message: `Mata kuliah telah diselaraskan dengan berkas ${fileName}. Materi kini terhubung dengan hari kuliah.`,
+        time: 'Baru saja',
+        read: false,
+        type: 'schedule',
+      };
+      setNotifications([newNotif, ...notifications]);
+      setScheduleModalVisible(false);
+    }, 1400);
+  };
+
+  // =============================================================
+  // COMPUTED DATA & DASHBOARD STATS
+  // =============================================================
+  const totalMaterials = materials.length;
+  const studiedMaterialsCount = materials.filter((m) => m.isStudied).length;
+  const unstudiedMaterialsCount = totalMaterials - studiedMaterialsCount;
+  const studyProgressPercent =
+    totalMaterials > 0 ? Math.round((studiedMaterialsCount / totalMaterials) * 100) : 0;
+
+  const activeTasksCount = tasks.filter((t) => !t.completed).length;
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+
+  const filteredMaterials = useMemo(() => {
+    return materials.filter((item) => {
+      const query = materialSearchQuery.toLowerCase().trim();
+      const matchSearch =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        item.courseName.toLowerCase().includes(query) ||
+        item.meetingTopic.toLowerCase().includes(query);
+
+      const matchCourse =
+        selectedCourseFilter === 'ALL' || item.courseId === selectedCourseFilter;
+
+      const matchMeeting =
+        selectedMeetingFilter === 'ALL' ||
+        String(item.meetingNumber) === String(selectedMeetingFilter);
+
+      const matchStatus =
+        selectedStatusFilter === 'ALL' ||
+        (selectedStatusFilter === 'STUDIED' && item.isStudied) ||
+        (selectedStatusFilter === 'UNSTUDIED' && !item.isStudied);
+
+      return matchSearch && matchCourse && matchMeeting && matchStatus;
+    });
+  }, [
+    materials,
+    materialSearchQuery,
+    selectedCourseFilter,
+    selectedMeetingFilter,
+    selectedStatusFilter,
+  ]);
+
+  const todayCourse = useMemo(() => {
+    const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const currentDay = daysMap[new Date().getDay()];
+    const found = courses.find((c) => c.day.toLowerCase() === currentDay.toLowerCase());
+    return found || courses[0];
+  }, [courses]);
+
+  const recommendedMaterial = useMemo(() => {
+    if (!todayCourse) return materials[0];
+    const unread = materials.find((m) => m.courseId === todayCourse.id && !m.isStudied);
+    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0];
+  }, [todayCourse, materials]);
+
+ 
+
+// =================================================================
+// ROOT APPLICATION EXPORT WITH SAFE AREA PROVIDER
+// =================================================================
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StudyMateApp />
+    </SafeAreaProvider>
+  );
+}
+
+// =================================================================
+// STYLESHEET (CLEAN, MODERN, ACCESSIBLE)
 // =================================================================
 const styles = StyleSheet.create({
   safeAreaContainer: {
@@ -1027,6 +1051,201 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+
+  // Splash Styles
+  splashLogoBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+  },
+  splashBrandTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: COLORS.textPrimary,
+    marginTop: 14,
+  },
+  splashBrandTagline: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 3,
+  },
+
+  // Auth Styles
+  authScrollContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+  authBrandBox: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  authLogoIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    elevation: 4,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+  },
+  authBrandTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: COLORS.textPrimary,
+  },
+  authBrandSubtitle: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+    paddingHorizontal: 16,
+  },
+  authSecurityPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    gap: 4,
+    marginTop: 10,
+  },
+  authSecurityPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  authTabSwitch: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 14,
+  },
+  authTabSwitchBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  authTabSwitchBtnActive: {
+    backgroundColor: COLORS.card,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+  },
+  authTabSwitchBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  authTabSwitchBtnTextActive: {
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
+  authErrorAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.roseLight,
+    borderWidth: 1,
+    borderColor: COLORS.rose + '40',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  authErrorAlertText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#991B1B',
+    lineHeight: 16,
+  },
+  authCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+  },
+  authInputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  authInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 10,
+  },
+  authTextInput: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    marginLeft: 8,
+  },
+  authSubmitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 13,
+    gap: 8,
+    marginTop: 10,
+  },
+  authSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  authDemoCallout: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '30',
+  },
+  authDemoCalloutTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primaryDark,
+  },
+  authDemoCalloutText: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+    marginTop: 2,
   },
 
   // App Header
@@ -1086,7 +1305,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // Badge Component
   badgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1099,7 +1317,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Hero Progress Banner
   heroBanner: {
     backgroundColor: COLORS.primaryDark,
     borderRadius: 16,
@@ -1149,7 +1366,6 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
 
-  // Stats Grid (Responsive 2 Columns or 4 on Wide)
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1197,7 +1413,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
-  // Quick Action Bar
   quickActionBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1229,7 +1444,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Section Headers
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1252,7 +1466,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 
-  // Material Card
   materialCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -1347,7 +1560,6 @@ const styles = StyleSheet.create({
     padding: 5,
   },
 
-  // Course Card
   courseCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -1449,7 +1661,6 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
   },
 
-  // Task Item Card
   taskItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1502,7 +1713,6 @@ const styles = StyleSheet.create({
     padding: 6,
   },
 
-  // Materials Screen Wrapper
   materialsHeaderWrapper: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -1622,7 +1832,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  // Screen Banner & Add Button
   screenBannerRow: {
     backgroundColor: COLORS.primaryLight,
     borderRadius: 12,
@@ -1654,7 +1863,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Empty State
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1715,7 +1923,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Profile & Schedule Screen
   profileHeroCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -1763,6 +1970,37 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.textMuted,
   },
+
+  securityAuditPillCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.accentLight,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '30',
+    marginBottom: 14,
+  },
+  securityAuditIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  securityAuditTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  securityAuditSub: {
+    fontSize: 11,
+    color: '#7C3AED',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+
   scheduleUploadCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -1865,8 +2103,25 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 1,
   },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.roseLight,
+    borderWidth: 1,
+    borderColor: COLORS.rose + '40',
+    borderRadius: 12,
+    paddingVertical: 12,
+    gap: 6,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  logoutButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.rose,
+  },
 
-  // Modal Common Styles
   modalSafeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -1900,7 +2155,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
 
-  // AI Assistant Modal Styles
   aiBadgeIcon: {
     width: 30,
     height: 30,
@@ -2114,7 +2368,6 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
-  // Notes Modal Styles
   notesContainer: {
     flex: 1,
     padding: 16,
@@ -2152,7 +2405,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // Form Components & Modals
   formLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -2292,7 +2544,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // Schedule Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -2374,7 +2625,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
-  // Notification Modal Styles
   notifCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2411,21 +2661,64 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 15,
   },
-  markAllReadBtn: {
+
+  // Security Audit Modal Styles
+  securitySummaryCard: {
+    backgroundColor: COLORS.accentLight,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '30',
+    marginBottom: 16,
+  },
+  securitySummaryTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  securitySummaryDesc: {
+    fontSize: 12,
+    color: '#5B21B6',
+    lineHeight: 17,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  retestSecurityBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: COLORS.accent,
+    borderRadius: 10,
     paddingVertical: 10,
     gap: 6,
-    marginTop: 6,
   },
-  markAllReadBtnText: {
+  retestSecurityBtnText: {
+    color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '800',
+  },
+  testResultCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    marginBottom: 8,
+  },
+  testResultScenario: {
+    fontSize: 13,
     fontWeight: '700',
-    color: COLORS.primary,
+    color: COLORS.textPrimary,
+    flex: 1,
+  },
+  testResultDetail: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+    lineHeight: 16,
   },
 
-  // Bottom Navigation Bar (Anggota 3)
+  // Bottom Navigation Bar
   bottomNavContainer: {
     flexDirection: 'row',
     backgroundColor: COLORS.card,
