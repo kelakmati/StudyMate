@@ -24,6 +24,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
+import NetInfo from '@react-native-community/netinfo';
 
 // =================================================================
 // 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
@@ -66,602 +68,6 @@ const STORAGE_KEYS = {
   USER_PROFILE: '@studymate_profile_v2',
 };
 
-// =================================================================
-// 2. INITIAL SEED DATA (MAHASISWA REALISTIS)
-// =================================================================
-const INITIAL_COURSES = [
-  {
-    id: 'crs_1',
-    code: 'IF3101',
-    name: 'Pemrograman Mobile',
-    lecturer: 'Dr. Ir. Hendra Wijaya, M.Kom',
-    day: 'Senin',
-    time: '08:00 - 10:30',
-    room: 'Lab Komputasi 3',
-    sks: 3,
-    color: '#4F46E5',
-  },
-  {
-    id: 'crs_2',
-    code: 'IF3102',
-    name: 'Basis Data Lanjut',
-    lecturer: 'Prof. Sri Rahayu, Ph.D',
-    day: 'Selasa',
-    time: '10:45 - 13:15',
-    room: 'R. Seminar 204',
-    sks: 3,
-    color: '#0EA5E9',
-  },
-  {
-    id: 'crs_3',
-    code: 'IF3103',
-    name: 'Kecerdasan Buatan (AI)',
-    lecturer: 'Budi Santoso, S.T., M.Sc',
-    day: 'Rabu',
-    time: '13:30 - 16:00',
-    room: 'Gd. Fasilkom 301',
-    sks: 3,
-    color: '#8B5CF6',
-  },
-  {
-    id: 'crs_4',
-    code: 'IF3104',
-    name: 'Rekayasa Perangkat Lunak',
-    lecturer: 'Dewi Lestari, M.T',
-    day: 'Kamis',
-    time: '08:00 - 10:30',
-    room: 'Ruang Teori 102',
-    sks: 3,
-    color: '#10B981',
-  },
-];
-
-const INITIAL_MATERIALS = [
-  {
-    id: 'mat_1',
-    courseId: 'crs_1',
-    courseName: 'Pemrograman Mobile',
-    meetingNumber: 1,
-    meetingTopic: 'Pengenalan React Native & Expo Ecosystem',
-    title: 'Modul 1: React Native Architecture & Setup',
-    fileType: 'PDF',
-    fileName: 'Modul_01_ReactNative_Setup.pdf',
-    fileSize: '4.2 MB',
-    dateAdded: '2026-10-12',
-    isStudied: true,
-    userNotes: 'Catatan penting: Jangan lupa gunakan Bun atau npm yang kompatibel dengan React 19. Expo Go sangat memudahkan live testing via QR Code.',
-    summary: 'Materi ini membahas fundamental arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer). Menjelaskan perbedaan pengembangan native vs cross-platform, instalasi CLI, serta keunggulan Expo Go dalam mempercepat prototyping aplikasi mobile tanpa kompilasi native yang berat.',
-    keyPoints: [
-      'React Native menggunakan konsep declarative UI dengan komponen native di iOS & Android.',
-      'Expo Go mengemas dependensi native siap pakai sehingga tidak butuh Xcode/Android Studio saat tahap belajar dasar.',
-      'JSX mengizinkan penulisan sintaks mirip HTML di dalam kode JavaScript murni.',
-      'State & Props adalah fondasi manajemen data komponen dalam React.',
-    ],
-    quiz: [
-      {
-        question: 'Apa fungsi utama Fabric Renderer di arsitektur modern React Native?',
-        options: ['Mengubah file PDF menjadi teks', 'Melakukan render UI secara efisien langsung ke komponen native', 'Mengkompresi gambar kamera', 'Menyimpan database lokal SQLite'],
-        correctIndex: 1,
-        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JavaScript thread dan native view thread sehingga perpindahan UI terasa instan 60 FPS.',
-      },
-      {
-        question: 'Kapan sebaiknya menggunakan Expo Go dibanding Bare React Native?',
-        options: ['Saat membutuhkan custom library C++ native tingkat lanjut', 'Untuk prototyping cepat dan belajar tanpa konfigurasi native yang rumit', 'Ketika tidak memiliki koneksi internet sama sekali', 'Saat membuat aplikasi sistem operasi baru'],
-        correctIndex: 1,
-        explanation: 'Expo Go dirancang agar mahasiswa langsung fokus ke logika aplikasi tanpa pusing konfigurasi Gradle atau CocoaPods.',
-      },
-    ],
-  },
-  {
-    id: 'mat_2',
-    courseId: 'crs_1',
-    courseName: 'Pemrograman Mobile',
-    meetingNumber: 2,
-    meetingTopic: 'Komponen UI, Flexbox & State Management',
-    title: 'Slide Kuliah: Flexbox Responsive & State React',
-    fileType: 'PPT',
-    fileName: 'Pertemuan_2_Flexbox_State.pptx',
-    fileSize: '12.8 MB',
-    dateAdded: '2026-10-19',
-    isStudied: true,
-    userNotes: 'Ingat! default flexDirection di React Native adalah "column", bukan "row" seperti di CSS web standar.',
-    summary: 'Membahas perancangan layout responsif mobile menggunakan Flexbox. Fokus pada properti alignItems, justifyContent, flexWrap, serta pengelolaan State lokal dengan React Hook useState dan useEffect untuk siklus hidup komponen.',
-    keyPoints: [
-      'Default flexDirection pada React Native adalah column (vertikal).',
-      'justifyContent mengatur perataan sepanjang main axis.',
-      'alignItems mengatur perataan tegak lurus terhadap cross axis.',
-      'useState memicu re-render UI setiap kali setter function dipanggil dengan state baru.',
-    ],
-    quiz: [
-      {
-        question: 'Apa nilai default dari flexDirection di React Native?',
-        options: ['row', 'column', 'row-reverse', 'grid'],
-        correctIndex: 1,
-        explanation: 'Berbeda dari CSS web yang default-nya row, React Native secara default berorientasi vertikal (column) sesuai layar smartphone.',
-      },
-    ],
-  },
-  {
-    id: 'mat_3',
-    courseId: 'crs_1',
-    courseName: 'Pemrograman Mobile',
-    meetingNumber: 3,
-    meetingTopic: 'Navigasi Antar Halaman & Async Storage',
-    title: 'Hands-on: React Navigation & Offline Persistence',
-    fileType: 'PDF',
-    fileName: 'Modul_03_AsyncStorage_BottomTabs.pdf',
-    fileSize: '3.5 MB',
-    dateAdded: '2026-10-26',
-    isStudied: false,
-    userNotes: 'Perlu latihan ulang: cara serialisasi JSON.stringify dan JSON.parse saat menyimpan array object ke AsyncStorage.',
-    summary: 'Mempelajari navigasi multi-layar (Stack Navigation, Bottom Tab Navigation) dan teknik penyimpanan offline-first menggunakan AsyncStorage. Mengupas siklus simpan-ambil data user secara asinkron.',
-    keyPoints: [
-      'AsyncStorage hanya dapat menyimpan data dalam format String nilai tunggal (gunakan JSON.stringify).',
-      'Bottom Tab Navigation memberikan akses cepat ke 4-5 menu utama aplikasi seluler.',
-      'Gunakan try-catch block untuk menangani error saat I/O AsyncStorage.',
-    ],
-    quiz: [
-      {
-        question: 'Tipe data apa yang didukung langsung oleh AsyncStorage React Native?',
-        options: ['Array murni', 'String murni', 'Binary Buffer murni', 'Boolean murni'],
-        correctIndex: 1,
-        explanation: 'AsyncStorage berbasis key-value string. Object atau array harus dikonversi via JSON.stringify() terlebih dahulu.',
-      },
-    ],
-  },
-  {
-    id: 'mat_4',
-    courseId: 'crs_2',
-    courseName: 'Basis Data Lanjut',
-    meetingNumber: 1,
-    meetingTopic: 'Query Optimization & Indexing B-Tree',
-    title: 'Slide: Konsep Indexing & Execution Plan',
-    fileType: 'PPT',
-    fileName: 'Pertemuan1_Database_Indexing.pptx',
-    fileSize: '8.4 MB',
-    dateAdded: '2026-10-13',
-    isStudied: true,
-    userNotes: 'Catatan dosen: Indeks mempercepat SELECT namun memperlambat INSERT/UPDATE karena pohon indeks harus direorganisasi.',
-    summary: 'Ringkasan mengenai struktur data B-Tree pada RDBMS (PostgreSQL/MySQL), cara membaca Query Execution Plan (EXPLAIN ANALYZE), dan strategi memilih kolom untuk composite indexing.',
-    keyPoints: [
-      'Clustered Index menentukan urutan fisik penyimpanan data pada disk.',
-      'Non-clustered Index membuat pointer penunjuk ke lokasi data aktual.',
-      'EXPLAIN ANALYZE digunakan untuk melihat estimasi cost vs actual runtime eksekusi query.',
-    ],
-    quiz: [
-      {
-        question: 'Apa dampak penambahan terlalu banyak indeks pada tabel database?',
-        options: ['Operasi SELECT menjadi sangat lambat', 'Operasi INSERT dan UPDATE membutuhkan waktu lebih lama', 'Database kehilangan data secara acak', 'Ukuran disk berkurang 50%'],
-        correctIndex: 1,
-        explanation: 'Setiap operasi penulisan (INSERT/UPDATE/DELETE) mewajibkan database memperbarui semua pohon indeks terkait.',
-      },
-    ],
-  },
-  {
-    id: 'mat_5',
-    courseId: 'crs_3',
-    courseName: 'Kecerdasan Buatan (AI)',
-    meetingNumber: 2,
-    meetingTopic: 'Heuristic Search & Algoritma A*',
-    title: 'Catatan Kuliah: A* Search vs Dijkstra Algorithm',
-    fileType: 'DOC',
-    fileName: 'Catatan_Pribadi_Algoritma_A_Star.txt',
-    fileSize: '145 KB',
-    dateAdded: '2026-10-20',
-    isStudied: false,
-    userNotes: 'Rumus f(n) = g(n) + h(n). g(n) = cost riil dari start ke n, h(n) = estimasi heuristik ke tujuan.',
-    summary: 'Komparasi algoritma pencarian rute terpendek. Algoritma A* menggunakan fungsi evaluasi f(n) = g(n) + h(n) di mana h(n) harus admissible (tidak pernah overestimasi biaya ke target) agar menjamin solusi optimal.',
-    keyPoints: [
-      'Algoritma Dijkstra adalah kasus khusus dari A* di mana nilai heuristik h(n) bernilai 0.',
-      'Heuristik admissible menjamin A* selalu menemukan jalur terpendek pertama kali.',
-      'A* banyak diaplikasikan dalam game development, GPS navigasi, dan robotika pathfinding.',
-    ],
-    quiz: [
-      {
-        question: 'Apa syarat agar fungsi heuristik h(n) disebut Admissible?',
-        options: ['h(n) harus selalu bernilai negatif', 'h(n) tidak boleh melebihi biaya riil sebenarnya ke tujuan', 'h(n) harus sama dengan nol di semua node', 'h(n) harus dihitung dengan machine learning'],
-        correctIndex: 1,
-        explanation: 'Jika h(n) tidak pernah mengestimasi lebih tinggi dari jarak sebenarnya, maka rute terpendek dijamin ditemukan.',
-      },
-    ],
-  },
-];
-
-const INITIAL_TASKS = [
-  {
-    id: 'tsk_1',
-    courseId: 'crs_1',
-    courseName: 'Pemrograman Mobile',
-    title: 'Tugas 1: Bangun UI Aplikasi StudyMate',
-    deadline: '2026-11-06',
-    priority: 'Tinggi',
-    completed: false,
-    description: 'Selesaikan layout dashboard, navigasi tab, dan modularisasi modal AI Assistant.',
-  },
-  {
-    id: 'tsk_2',
-    courseId: 'crs_2',
-    courseName: 'Basis Data Lanjut',
-    title: 'Praktikum SQL: Analisis Indexing EXPLAIN',
-    deadline: '2026-11-08',
-    priority: 'Sedang',
-    completed: true,
-    description: 'Buat laporan perbandingan waktu eksekusi query sebelum dan sesudah dibuatkan B-Tree Index.',
-  },
-  {
-    id: 'tsk_3',
-    courseId: 'crs_3',
-    courseName: 'Kecerdasan Buatan (AI)',
-    title: 'Resume Paper: Large Language Models for Education',
-    deadline: '2026-11-12',
-    priority: 'Rendah',
-    completed: false,
-    description: 'Buat resume 2 halaman tentang penerapan generative AI untuk ringkasan materi otomatis.',
-  },
-];
-
-const INITIAL_NOTIFICATIONS = [
-  {
-    id: 'notif_1',
-    title: 'Jadwal Kuliah Hari Ini!',
-    message: 'Mata Kuliah Pemrograman Mobile (Pertemuan 3) dimulai pukul 08:00 WIB di Lab Komputasi 3.',
-    time: '30 menit yang lalu',
-    read: false,
-    type: 'class',
-  },
-  {
-    id: 'notif_2',
-    title: 'Materi Belum Dibaca ⚠️',
-    message: 'Kamu belum membaca materi "Hands-on: React Navigation & Offline Persistence". Klik untuk pelajari.',
-    time: '2 jam yang lalu',
-    read: false,
-    type: 'material',
-  },
-  {
-    id: 'notif_3',
-    title: 'Deadline Tugas H-4',
-    message: 'Tugas 1: Bangun UI Aplikasi StudyMate tenggat tanggal 06 November 2026.',
-    time: 'Kemarin',
-    read: true,
-    type: 'task',
-  },
-];
-
-// =================================================================
-// 3. REUSABLE ATOMIC & MOLECULAR UI COMPONENTS
-// =================================================================
-
-// Reusable Header Component with Safe Status Bar Handling (Anggota 1)
-const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload }) => (
-  <View style={styles.headerContainer}>
-    <View style={styles.headerTextGroup}>
-      <Text style={styles.headerSubtitle} numberOfLines={1}>
-        {subtitle || 'Halo Mahasiswa! 👋'}
-      </Text>
-      <Text style={styles.headerTitle} numberOfLines={1}>
-        {title || 'StudyMate'}
-      </Text>
-    </View>
-    <View style={styles.headerActions}>
-      {onOpenScheduleUpload && (
-        <TouchableOpacity
-          style={styles.headerIconButton}
-          onPress={onOpenScheduleUpload}
-          accessibilityLabel="Unggah Jadwal Kuliah"
-          activeOpacity={0.7}
-        >
-          <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
-        </TouchableOpacity>
-      )}
-      <TouchableOpacity
-        style={styles.headerIconButton}
-        onPress={onOpenNotif}
-        accessibilityLabel="Pusat Notifikasi"
-        activeOpacity={0.7}
-      >
-        <Ionicons name="notifications-outline" size={20} color={COLORS.textPrimary} />
-        {unreadCount > 0 && (
-          <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>{unreadCount}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    </View>
-  </View>
-);
-
-// Reusable Badge Chip
-const Badge = ({ label, color, bg, icon }) => (
-  <View style={[styles.badgeContainer, { backgroundColor: bg || COLORS.primaryLight }]}>
-    {icon && <Ionicons name={icon} size={11} color={color || COLORS.primary} style={{ marginRight: 4 }} />}
-    <Text style={[styles.badgeText, { color: color || COLORS.primary }]} numberOfLines={1}>
-      {label}
-    </Text>
-  </View>
-);
-
-// Dynamic Stat Card for Dashboard (Anggota 1)
-const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth }) => (
-  <View style={[styles.statCard, { width: cardWidth, borderLeftColor: iconColor, borderLeftWidth: 4 }]}>
-    <View style={[styles.statIconBox, { backgroundColor: bgColor }]}>
-      <Ionicons name={icon} size={20} color={iconColor} />
-    </View>
-    <View style={styles.statContentCol}>
-      <Text style={styles.statValue} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={styles.statTitle} numberOfLines={1}>
-        {title}
-      </Text>
-      {subtitle ? (
-        <Text style={styles.statSubtitle} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      ) : null}
-    </View>
-  </View>
-);
-
-// Material Card Component (Anggota 2)
-const MaterialCard = ({
-  material,
-  onPress,
-  onToggleStudied,
-  onOpenAi,
-  onOpenNotes,
-  onDelete,
-}) => {
-  const getFileBadge = (type) => {
-    switch (type) {
-      case 'PDF':
-        return { color: COLORS.rose, bg: COLORS.roseLight, icon: 'document-text' };
-      case 'PPT':
-        return { color: COLORS.amber, bg: COLORS.amberLight, icon: 'easel' };
-      case 'DOC':
-      default:
-        return { color: COLORS.secondary, bg: COLORS.secondaryLight, icon: 'newspaper' };
-    }
-  };
-
-  const badgeInfo = getFileBadge(material.fileType);
-
-  return (
-    <View style={styles.materialCard}>
-      {/* Top Meta Header */}
-      <View style={styles.materialCardTop}>
-        <View style={styles.materialMetaRow}>
-          <Badge
-            label={material.fileType}
-            color={badgeInfo.color}
-            bg={badgeInfo.bg}
-            icon={badgeInfo.icon}
-          />
-          <Badge
-            label={`Pertemuan ${material.meetingNumber}`}
-            color={COLORS.textSecondary}
-            bg={COLORS.inputBackground}
-          />
-          <Text style={styles.materialCourseTag} numberOfLines={1}>
-            {material.courseName}
-          </Text>
-        </View>
-
-        {/* Studied Toggle Button */}
-        <TouchableOpacity
-          onPress={() => onToggleStudied(material.id)}
-          style={styles.checkCircleButton}
-          accessibilityLabel="Tandai Sudah Dipelajari"
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={material.isStudied ? 'checkmark-circle' : 'ellipse-outline'}
-            size={24}
-            color={material.isStudied ? COLORS.emerald : COLORS.textMuted}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Main Material Title & Topic */}
-      <TouchableOpacity activeOpacity={0.75} onPress={() => onPress(material)}>
-        <Text style={styles.materialTitle} numberOfLines={2}>
-          {material.title}
-        </Text>
-        <Text style={styles.materialTopicText} numberOfLines={1}>
-          📌 {material.meetingTopic}
-        </Text>
-        <Text style={styles.materialFileMeta} numberOfLines={1}>
-          {material.fileName} • {material.fileSize || 'Ukuran normal'}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Action Footer */}
-      <View style={styles.materialCardFooter}>
-        <TouchableOpacity
-          style={styles.actionPillAi}
-          onPress={() => onOpenAi(material)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="sparkles" size={13} color="#7C3AED" />
-          <Text style={styles.actionPillAiText}>StudyMate AI</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionPillNotes}
-          onPress={() => onOpenNotes(material)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={material.userNotes ? 'document-text' : 'create-outline'}
-            size={13}
-            color={COLORS.primary}
-          />
-          <Text style={styles.actionPillNotesText}>
-            {material.userNotes ? 'Lihat Catatan' : '+ Catatan'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionDeleteButton}
-          onPress={() => onDelete(material.id)}
-          activeOpacity={0.7}
-          accessibilityLabel="Hapus Materi"
-        >
-          <Ionicons name="trash-outline" size={17} color={COLORS.textMuted} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-// Course Card Component (Anggota 2)
-const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
-  const progressPercent =
-    materialCount > 0 ? Math.round((studiedCount / materialCount) * 100) : 0;
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      style={[styles.courseCard, { borderTopColor: course.color, borderTopWidth: 4 }]}
-      onPress={() => onPress(course)}
-    >
-      <View style={styles.courseCardTop}>
-        <View style={styles.courseMainInfo}>
-          <View style={styles.courseBadgeRow}>
-            <Text style={[styles.courseCodeBadge, { backgroundColor: course.color + '18', color: course.color }]}>
-              {course.code}
-            </Text>
-            <Text style={styles.courseSksText}>{course.sks} SKS</Text>
-          </View>
-          <Text style={styles.courseNameText} numberOfLines={2}>
-            {course.name}
-          </Text>
-          <Text style={styles.courseLecturerText} numberOfLines={1}>
-            👨‍🏫 {course.lecturer}
-          </Text>
-        </View>
-
-        <View style={styles.courseSchedulePill}>
-          <Text style={styles.courseDayText}>{course.day}</Text>
-          <Text style={styles.courseTimeText}>{course.time}</Text>
-          <Text style={styles.courseRoomText} numberOfLines={1}>
-            📍 {course.room}
-          </Text>
-        </View>
-      </View>
-
-      {/* Progress Bar Material Organizer */}
-      <View style={styles.courseProgressContainer}>
-        <View style={styles.courseProgressRow}>
-          <Text style={styles.courseProgressLabel}>Progres Materi Terpelajari</Text>
-          <Text style={styles.courseProgressValue}>
-            {studiedCount}/{materialCount} ({progressPercent}%)
-          </Text>
-        </View>
-        <View style={styles.progressBarBg}>
-          <View
-            style={[
-              styles.progressBarFill,
-              { width: `${Math.min(100, Math.max(0, progressPercent))}%`, backgroundColor: course.color },
-            ]}
-          />
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-// Task Item Component (Anggota 2)
-const TaskItem = ({ task, onToggle, onDelete }) => (
-  <View style={[styles.taskItemCard, task.completed && styles.taskItemCardCompleted]}>
-    <TouchableOpacity
-      style={styles.taskCheckboxTouch}
-      onPress={() => onToggle(task.id)}
-      accessibilityLabel="Selesaikan Tugas"
-      activeOpacity={0.7}
-    >
-      <Ionicons
-        name={task.completed ? 'checkmark-circle' : 'square-outline'}
-        size={24}
-        color={task.completed ? COLORS.emerald : COLORS.textMuted}
-      />
-    </TouchableOpacity>
-
-    <View style={styles.taskDetailsCol}>
-      <Text
-        style={[
-          styles.taskTitle,
-          task.completed && styles.taskTitleCompleted,
-        ]}
-        numberOfLines={2}
-      >
-        {task.title}
-      </Text>
-      <Text style={styles.taskCourseSubtitle} numberOfLines={1}>
-        {task.courseName}
-      </Text>
-      {task.description ? (
-        <Text style={styles.taskDescText} numberOfLines={1}>
-          {task.description}
-        </Text>
-      ) : null}
-
-      <View style={styles.taskMetaRow}>
-        <Badge
-          label={`Deadline: ${task.deadline}`}
-          color={task.completed ? COLORS.textMuted : COLORS.rose}
-          bg={task.completed ? COLORS.inputBackground : COLORS.roseLight}
-          icon="calendar-outline"
-        />
-        <Badge
-          label={`Prioritas: ${task.priority}`}
-          color={
-            task.priority === 'Tinggi'
-              ? COLORS.rose
-              : task.priority === 'Sedang'
-              ? COLORS.amber
-              : COLORS.emerald
-          }
-          bg={
-            task.priority === 'Tinggi'
-              ? COLORS.roseLight
-              : task.priority === 'Sedang'
-              ? COLORS.amberLight
-              : COLORS.emeraldLight
-          }
-        />
-      </View>
-    </View>
-
-    <TouchableOpacity
-      style={styles.taskDeleteTouch}
-      onPress={() => onDelete(task.id)}
-      accessibilityLabel="Hapus Tugas"
-      activeOpacity={0.7}
-    >
-      <Ionicons name="trash-outline" size={18} color={COLORS.textMuted} />
-    </TouchableOpacity>
-  </View>
-);
-
-// Empty State View
-const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
-  <View style={styles.emptyContainer}>
-    <View style={styles.emptyIconCircle}>
-      <Ionicons name={icon || 'folder-open-outline'} size={36} color={COLORS.primary} />
-    </View>
-    <Text style={styles.emptyTitle}>{title}</Text>
-    <Text style={styles.emptySubtitle}>{subtitle}</Text>
-    {actionText && (
-      <TouchableOpacity style={styles.emptyActionButton} onPress={onAction} activeOpacity={0.8}>
-        <Text style={styles.emptyActionText}>{actionText}</Text>
-      </TouchableOpacity>
-    )}
-  </View>
-);
-
-// =================================================================
-// 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
-// =================================================================
 function StudyMateApp() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -684,6 +90,48 @@ function StudyMateApp() {
 
   // Navigation Tabs: 'Home' | 'Courses' | 'Materials' | 'Tasks' | 'Schedule'
   const [currentTab, setCurrentTab] = useState('Home');
+
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: Authentication State
+  // authScreen: 'login' | 'register'
+  // isAuthenticated: apakah user sudah login via REST API
+  // apiUser: data user dari backend (id, name, email)
+  // =================================================================
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authScreen, setAuthScreen] = useState('login');
+  const [apiUser, setApiUser] = useState(null);
+
+  // Auth form fields
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+
+  // Sprint 04 – Anggota 3: Protected API test state
+  const [apiTestResult, setApiTestResult] = useState(null);
+  const [isApiTesting, setIsApiTesting] = useState(false);
+
+  // =================================================================
+  // WEEK 6 – ANGGOTA 3: Offline Handling & Network Status State
+  // =================================================================
+  const [isOffline, setIsOffline] = useState(false);
+  const [isCheckingConnection, setIsCheckingConnection] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // =================================================================
+  // WEEK 6 – ANGGOTA 2: Feature-Level UI States (Loading, Error, Retry)
+  // =================================================================
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [coursesError, setCoursesError] = useState(null);
+
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [materialsError, setMaterialsError] = useState(null);
+
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState(null);
 
   // Core Data States
   const [courses, setCourses] = useState([]);
@@ -738,10 +186,120 @@ function StudyMateApp() {
 
   // =================================================================
   // 5. DATA PERSISTENCE & INITIALIZATION
+  // Sprint 04 – Anggota 2: Session Recovery (restore token & user from SecureStore)
+  // =================================================================
+  // =================================================================
+  // WEEK 6 – ANGGOTA 3: Real-Time Network & Offline Listener
   // =================================================================
   useEffect(() => {
-    loadAllData();
+    // 1. Subscribe ke NetInfo untuk deteksi konektivitas jaringan perangkat
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const offline = !state.isConnected || state.isInternetReachable === false;
+      setIsOffline(offline);
+      if (!offline) {
+        // Ketika koneksi kembali, verifikasi keterjangkauan server XAMPP
+        checkServerConnectivity();
+      }
+    });
+
+    // 2. Inisialisasi data & pemulihan sesi aplikasi
+    initializeApp();
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
+
+  /**
+   * checkServerConnectivity:
+   * Menguji apakah server XAMPP API benar-benar dapat dijangkau
+   * (karena terkoneksi Wi-Fi belum tentu server lokal aktif).
+   */
+  const checkServerConnectivity = async () => {
+    setIsCheckingConnection(true);
+    try {
+      const result = await requestApi('/index.php', {
+        method: 'GET',
+        requiresAuth: false,
+        timeoutMs: 4000,
+      });
+      setIsOffline(!result.ok);
+      if (result.ok) {
+        setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
+      }
+      return result.ok;
+    } catch {
+      setIsOffline(true);
+      return false;
+    } finally {
+      setIsCheckingConnection(false);
+    }
+  };
+
+  /**
+   * initializeApp:
+   * BUG FIX Sprint 04:
+   * - Tambahkan outer try-finally untuk MEMASTIKAN setIsLoading(false) selalu terpanggil
+   * - Tambahkan timeout pada validasi backend saat startup
+   * - Jika backend tidak bisa dijangkau saat startup, jangan hapus token –
+   *   tampilkan login tapi pertahankan token di SecureStore untuk retry berikutnya
+   */
+  /**
+   * initializeApp:
+   * WEEK 6 UPGRADE – Offline Session Preservation
+   * Jika server sedang offline saat aplikasi dibuka, pertahankan data sesi lokal
+   * sehingga pengguna tetap dapat membuka aplikasi dan membaca materi offline!
+   */
+  const initializeApp = async () => {
+    try {
+      let storedToken = null;
+      let storedUser = null;
+      try {
+        [storedToken, storedUser] = await Promise.all([
+          getAccessToken(),
+          getUserData(),
+        ]);
+      } catch (secureStoreErr) {
+        console.warn('[Init] SecureStore read error:', secureStoreErr.message);
+      }
+
+      if (storedToken && storedUser) {
+        // Coba validasi token ke backend
+        const result = await requestApi('/users/me.php', {
+          method: 'GET',
+          requiresAuth: true,
+          timeoutMs: 5000,
+        });
+
+        if (result.ok && result.data && result.data.success) {
+          // Token valid & online
+          setIsAuthenticated(true);
+          setApiUser(result.data.user);
+          setIsOffline(false);
+          setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
+          await loadAllData();
+          return;
+        } else if (result.status === 401) {
+          // Token terbukti tidak valid (401 Unauthorized) – bersihkan sesi
+          console.warn('[Init] Token kadaluwarsa/tidak valid (401), hapus sesi.');
+          await deleteAccessToken().catch(() => {});
+          await deleteUserData().catch(() => {});
+        } else {
+          // Server offline atau timeout – TETAP izinkan akses offline menggunakan data lokal!
+          console.warn('[Init] Server tidak terjangkau saat startup. Membuka mode offline.');
+          setIsOffline(true);
+          setIsAuthenticated(true);
+          setApiUser(storedUser);
+          await loadAllData();
+          return;
+        }
+      }
+    } catch (outerErr) {
+      console.error('[Init] Error inisialisasi aplikasi:', outerErr.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadAllData = async () => {
     try {
@@ -786,10 +344,90 @@ function StudyMateApp() {
 
       if (storedSettings) setSettings(JSON.parse(storedSettings));
       if (storedProfile) setUserProfile(JSON.parse(storedProfile));
+      setCoursesError(null);
+      setMaterialsError(null);
+      setTasksError(null);
     } catch (error) {
       console.error('Error loading StudyMate storage:', error);
     } finally {
       setIsLoading(false);
+      setCoursesLoading(false);
+      setMaterialsLoading(false);
+      setTasksLoading(false);
+    }
+  };
+
+  // =================================================================
+  // WEEK 6 – ANGGOTA 2: Feature-Level Refresh & Retry Handlers
+  // =================================================================
+
+  /**
+   * handleRefreshCourses:
+   * Mengambil ulang mata kuliah dengan UI State (Loading -> Success/Error)
+   */
+  const handleRefreshCourses = async () => {
+    setCoursesLoading(true);
+    setCoursesError(null);
+    try {
+      // Cek konektivitas server
+      const isOnline = await checkServerConnectivity();
+      if (!isOnline) {
+        // Tetap gunakan data tersimpan di AsyncStorage
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
+        if (stored) setCourses(JSON.parse(stored));
+        setCoursesError('Koneksi terputus. Data ditampilkan dari penyimpanan lokal perangkat.');
+      } else {
+        // Berhasil terhubung
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
+        if (stored) setCourses(JSON.parse(stored));
+        setCoursesError(null);
+      }
+    } catch (e) {
+      setCoursesError('Gagal memuat mata kuliah: ' + e.message);
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
+  /**
+   * handleRefreshMaterials:
+   * Mengambil ulang materi perkuliahan dengan UI State
+   */
+  const handleRefreshMaterials = async () => {
+    setMaterialsLoading(true);
+    setMaterialsError(null);
+    try {
+      const isOnline = await checkServerConnectivity();
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.MATERIALS);
+      if (stored) setMaterials(JSON.parse(stored));
+      if (!isOnline) {
+        setMaterialsError('Koneksi terputus. Data materi menggunakan cache offline.');
+      }
+    } catch (e) {
+      setMaterialsError('Gagal memuat katalog materi: ' + e.message);
+    } finally {
+      setMaterialsLoading(false);
+    }
+  };
+
+  /**
+   * handleRefreshTasks:
+   * Mengambil ulang tugas perkuliahan dengan UI State
+   */
+  const handleRefreshTasks = async () => {
+    setTasksLoading(true);
+    setTasksError(null);
+    try {
+      const isOnline = await checkServerConnectivity();
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
+      if (stored) setTasks(JSON.parse(stored));
+      if (!isOnline) {
+        setTasksError('Koneksi terputus. Menampilkan tugas dari penyimpanan lokal.');
+      }
+    } catch (e) {
+      setTasksError('Gagal memuat daftar tugas: ' + e.message);
+    } finally {
+      setTasksLoading(false);
     }
   };
 
@@ -798,6 +436,234 @@ function StudyMateApp() {
       await AsyncStorage.setItem(key, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to persist to AsyncStorage:', key, e);
+    }
+  };
+
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
+  // =================================================================
+
+  /**
+   * handleApiRegister:
+   * BUG FIX Sprint 04:
+   * - Sebelumnya memanggil handleApiLogin() di dalam try-block → double isAuthLoading
+   * - Sekarang register hanya mendaftarkan akun, lalu redirect ke Login
+   * - Alur lebih aman: user login sendiri → token hanya diterbitkan via /auth/login.php
+   */
+  const handleApiRegister = async () => {
+    // Cegah double submit
+    if (isAuthLoading) return;
+    setAuthError('');
+
+    // Validasi input sisi client
+    if (!authName.trim() || !authEmail.trim() || !authPassword) {
+      setAuthError('Semua field wajib diisi.');
+      return;
+    }
+    if (!authEmail.includes('@') || !authEmail.includes('.')) {
+      setAuthError('Format email tidak valid.');
+      return;
+    }
+    if (authPassword.length < 6) {
+      setAuthError('Password minimal 6 karakter.');
+      return;
+    }
+    if (authPassword !== authConfirmPassword) {
+      setAuthError('Password dan konfirmasi password tidak cocok.');
+      return;
+    }
+
+    console.log('[REGISTER] Memulai registrasi untuk:', authEmail.trim().toLowerCase());
+    console.log('[REGISTER] API_URL:', API_URL);
+    setIsAuthLoading(true);
+    try {
+      const result = await apiPost('/auth/register.php', {
+        name: authName.trim(),
+        email: authEmail.trim().toLowerCase(),
+        password: authPassword,
+      });
+      console.log('[REGISTER] Response:', JSON.stringify(result.data).substring(0, 150));
+
+      if (result.ok && result.data.success) {
+        // BUG FIX: Jangan panggil handleApiLogin() di sini (menyebabkan double loading state)
+        // Tampilkan pesan sukses & arahkan ke Login agar user login sendiri
+        setAuthError(''); // clear error
+        Alert.alert(
+          'Registrasi Berhasil! 🎉',
+          'Akun berhasil dibuat. Silakan masuk menggunakan email dan password yang sudah didaftarkan.',
+          [{
+            text: 'Masuk Sekarang',
+            onPress: () => {
+              setAuthScreen('login');
+              setAuthName('');
+              setAuthConfirmPassword('');
+              // Pertahankan email & password agar tidak perlu ketik ulang
+            },
+          }]
+        );
+      } else {
+        setAuthError(result.data.message || 'Registrasi gagal. Coba lagi.');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setAuthError('Request timeout (10 detik). Periksa koneksi dan pastikan XAMPP berjalan.');
+      } else {
+        setAuthError(e.message || 'Tidak dapat terhubung ke server. Pastikan XAMPP berjalan dan IP sudah benar.');
+      }
+    } finally {
+      // BUG FIX: finally SELALU mengembalikan loading ke false
+      setIsAuthLoading(false);
+    }
+  };
+
+  /**
+   * handleApiLogin:
+   * BUG FIX Sprint 04:
+   * - Tambahkan guard: cegah double-submit jika sudah loading
+   * - Tambahkan timeout message yang jelas
+   * - Pisahkan penyimpanan SecureStore ke try-catch terpisah agar error SecureStore
+   *   tidak menyebabkan loading stuck
+   * - loadAllData() di-wrap agar error-nya tidak bubble ke catch utama
+   */
+  const handleApiLogin = async (emailOverride, passwordOverride) => {
+    // Cegah double submit
+    if (isAuthLoading) return;
+    setAuthError('');
+
+    const email = (emailOverride || authEmail).trim().toLowerCase();
+    const password = passwordOverride || authPassword;
+
+    if (!email || !password) {
+      setAuthError('Email dan password wajib diisi.');
+      return;
+    }
+
+    console.log('[LOGIN] Memulai login untuk:', email);
+    console.log('[LOGIN] API_URL:', API_URL);
+    setIsAuthLoading(true);
+    try {
+      // Step 1: Kirim kredensial ke backend PHP
+      const result = await apiPost('/auth/login.php', { email, password });
+      console.log('[LOGIN] Response:', JSON.stringify(result.data).substring(0, 150));
+
+      if (result.ok && result.data.success) {
+        const { access_token, user } = result.data;
+
+        // Step 2: Simpan token & data ke SecureStore (wrap terpisah agar error tidak stuck)
+        try {
+          await saveAccessToken(access_token);
+          await saveUserData(user);
+        } catch (secureStoreErr) {
+          console.warn('[Login] SecureStore error (non-fatal):', secureStoreErr.message);
+          // Tetap lanjutkan login meskipun SecureStore gagal (sesi tidak persisten)
+        }
+
+        // Step 3: Update state autentikasi – ini yang membuka Dashboard
+        setApiUser(user);
+        setUserProfile((prev) => ({ ...prev, name: user.name }));
+        setIsAuthenticated(true);
+        // isAuthLoading akan di-false oleh finally sebelum loadAllData
+      } else {
+        setAuthError(result.data.message || 'Email atau password salah.');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setAuthError('Request timeout (10 detik). Periksa koneksi Wi-Fi dan pastikan XAMPP berjalan.');
+      } else {
+        setAuthError(e.message || 'Tidak dapat terhubung ke server. Pastikan API_URL sudah benar.');
+      }
+    } finally {
+      // BUG FIX: selalu reset loading di sini – SEBELUM loadAllData agar UI tidak freeze
+      setIsAuthLoading(false);
+    }
+
+    // Step 4: Muat data lokal – dipanggil tanpa await agar tidak blocking
+    // (loadAllData menggunakan isLoading state tersendiri, bukan isAuthLoading)
+    // Catatan: isAuthenticated masih false di sini karena setState bersifat async,
+    // loadAllData() dipanggil langsung tanpa kondisi – sudah aman karena tidak
+    // bergantung pada auth state, hanya membaca AsyncStorage.
+    loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
+  };
+
+  /**
+   * handleApiLogout:
+   * Sprint 04 – Anggota 3: Session Cleared
+   * 1. Kirim POST /auth/logout.php agar token dicabut di server (stateful revocation).
+   * 2. Hapus token & data user dari SecureStore.
+   * 3. Reset state dan arahkan ke halaman login.
+   */
+  const handleApiLogout = async () => {
+    Alert.alert(
+      'Konfirmasi Logout',
+      'Apakah kamu yakin ingin keluar dari StudyMate?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Cabut token di server
+              await apiPostAuth('/auth/logout.php');
+            } catch (e) {
+              console.warn('[Logout] Tidak bisa menghubungi server, tetap logout lokal.');
+            }
+
+            // Hapus token dari SecureStore (PENTING: dilakukan terlepas dari respons server)
+            await deleteAccessToken();
+            await deleteUserData();
+
+            // Bersihkan seluruh state sesi
+            setApiUser(null);
+            setIsAuthenticated(false);
+            setAuthScreen('login');
+            setAuthEmail('');
+            setAuthPassword('');
+            setAuthName('');
+            setAuthConfirmPassword('');
+            setAuthError('');
+            setApiTestResult(null);
+          },
+        },
+      ]
+    );
+  };
+
+  /**
+   * handleTestProtectedApi:
+   * Sprint 04 – Anggota 3: Test Authenticated Request ke GET /users/me.php
+   * Membuktikan bahwa Authorization Header + Bearer Token berfungsi.
+   */
+  /**
+   * handleTestProtectedApi:
+   * Sprint 04 – Test Authenticated Request ke GET /users/me.php
+   * Membuktikan bahwa Authorization Header + Bearer Token berfungsi.
+   */
+  const handleTestProtectedApi = async () => {
+    setIsApiTesting(true);
+    setApiTestResult(null);
+
+    try {
+      const result = await requestApi('/users/me.php', { method: 'GET', requiresAuth: true });
+      setApiTestResult({
+        success: result.ok,
+        status: result.status,
+        friendlyError: result.error,
+        data: result.data || { error: result.error },
+        isTimeout: result.isTimeout,
+        isOffline: result.isOffline,
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+      });
+    } catch (e) {
+      setApiTestResult({
+        success: false,
+        status: 0,
+        friendlyError: getFriendlyErrorMessage(0, null, 'NETWORK'),
+        data: { message: e.message },
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+      });
+    } finally {
+      setIsApiTesting(false);
     }
   };
 
@@ -854,13 +720,13 @@ function StudyMateApp() {
       updated = materials.map((m) =>
         m.id === editingMaterial.id
           ? {
-              ...m,
-              ...formData,
-              courseName: courseObj.name,
-              summary: generatedSummary,
-              keyPoints: generatedKeyPoints,
-              quiz: generatedQuiz,
-            }
+            ...m,
+            ...formData,
+            courseName: courseObj.name,
+            summary: generatedSummary,
+            keyPoints: generatedKeyPoints,
+            quiz: generatedQuiz,
+          }
           : m
       );
     } else {
@@ -1071,6 +937,330 @@ function StudyMateApp() {
   // 8. SCREEN RENDERERS WITH OPTIMAL SCROLLING & RESPONSIVENESS
   // =================================================================
 
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: AUTH SCREENS (Login & Register)
+  // Ditampilkan jika isAuthenticated === false
+  // =================================================================
+  const renderAuthScreen = () => {
+    const isRegister = authScreen === 'register';
+
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+            paddingVertical: 32,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Logo & Brand */}
+          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 22,
+                backgroundColor: COLORS.primary,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 14,
+                shadowColor: COLORS.primary,
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.3,
+                shadowRadius: 10,
+                elevation: 8,
+              }}
+            >
+              <Ionicons name="school" size={36} color="#FFFFFF" />
+            </View>
+            <Text style={{ fontSize: 26, fontWeight: '900', color: COLORS.textPrimary }}>
+              StudyMate
+            </Text>
+            <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>
+              Personal Study Material Organizer
+            </Text>
+          </View>
+
+          {/* Card Auth */}
+          <View
+            style={{
+              backgroundColor: COLORS.card,
+              borderRadius: 20,
+              padding: 24,
+              borderWidth: 1,
+              borderColor: COLORS.cardBorder,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.06,
+              shadowRadius: 12,
+              elevation: 4,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: '800',
+                color: COLORS.textPrimary,
+                marginBottom: 4,
+              }}
+            >
+              {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali 👋'}
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                color: COLORS.textMuted,
+                marginBottom: 20,
+              }}
+            >
+              {isRegister
+                ? 'Daftarkan akun mahasiswa untuk mulai belajar'
+                : 'Masuk untuk melanjutkan belajarmu'}
+            </Text>
+
+            {/* Name (Register only) */}
+            {isRegister && (
+              <View style={{ marginBottom: 14 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                  Nama Lengkap
+                </Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: COLORS.inputBackground,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: COLORS.cardBorder,
+                    paddingHorizontal: 14,
+                    height: 48,
+                  }}
+                >
+                  <Ionicons name="person-outline" size={18} color={COLORS.textMuted} />
+                  <TextInput
+                    style={{
+                      flex: 1,
+                      marginLeft: 10,
+                      fontSize: 15,
+                      color: COLORS.textPrimary,
+                    }}
+                    placeholder="Nama lengkap kamu"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={authName}
+                    onChangeText={setAuthName}
+                    autoCapitalize="words"
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Email */}
+            <View style={{ marginBottom: 14 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                Email Mahasiswa
+              </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: COLORS.inputBackground,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: COLORS.cardBorder,
+                  paddingHorizontal: 14,
+                  height: 48,
+                }}
+              >
+                <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
+                <TextInput
+                  style={{
+                    flex: 1,
+                    marginLeft: 10,
+                    fontSize: 15,
+                    color: COLORS.textPrimary,
+                  }}
+                  placeholder="email@kampus.ac.id"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={authEmail}
+                  onChangeText={setAuthEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            {/* Password */}
+            <View style={{ marginBottom: isRegister ? 14 : 20 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                Password
+              </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: COLORS.inputBackground,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: COLORS.cardBorder,
+                  paddingHorizontal: 14,
+                  height: 48,
+                }}
+              >
+                <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
+                <TextInput
+                  style={{
+                    flex: 1,
+                    marginLeft: 10,
+                    fontSize: 15,
+                    color: COLORS.textPrimary,
+                  }}
+                  placeholder="Minimal 6 karakter"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={authPassword}
+                  onChangeText={setAuthPassword}
+                  secureTextEntry={!showAuthPassword}
+                />
+                <TouchableOpacity onPress={() => setShowAuthPassword((v) => !v)}>
+                  <Ionicons
+                    name={showAuthPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={18}
+                    color={COLORS.textMuted}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Confirm Password (Register only) */}
+            {isRegister && (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                  Konfirmasi Password
+                </Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: COLORS.inputBackground,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: COLORS.cardBorder,
+                    paddingHorizontal: 14,
+                    height: 48,
+                  }}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.textMuted} />
+                  <TextInput
+                    style={{
+                      flex: 1,
+                      marginLeft: 10,
+                      fontSize: 15,
+                      color: COLORS.textPrimary,
+                    }}
+                    placeholder="Ulangi password"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={authConfirmPassword}
+                    onChangeText={setAuthConfirmPassword}
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Error Message */}
+            {!!authError && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  backgroundColor: COLORS.roseLight,
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: '#FECACA',
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} style={{ marginTop: 1 }} />
+                <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: COLORS.rose, fontWeight: '600' }}>
+                  {authError}
+                </Text>
+              </View>
+            )}
+
+            {/* Submit Button */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: isAuthLoading ? COLORS.textMuted : COLORS.primary,
+                borderRadius: 14,
+                height: 50,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+              }}
+              onPress={() => (isRegister ? handleApiRegister() : handleApiLogin())}
+              disabled={isAuthLoading}
+              activeOpacity={0.8}
+            >
+              {isAuthLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={isRegister ? 'person-add-outline' : 'log-in-outline'}
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                  <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
+                    {isRegister ? 'Daftar Sekarang' : 'Masuk ke StudyMate'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Switch Login/Register */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 20 }}>
+            <Text style={{ fontSize: 14, color: COLORS.textMuted }}>
+              {isRegister ? 'Sudah punya akun? ' : 'Belum punya akun? '}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setAuthScreen(isRegister ? 'login' : 'register');
+                setAuthError('');
+                setAuthName('');
+                setAuthPassword('');
+                setAuthConfirmPassword('');
+              }}
+            >
+              <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '800' }}>
+                {isRegister ? 'Login' : 'Daftar'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Note HTTPS */}
+          <Text
+            style={{
+              fontSize: 10,
+              color: COLORS.textMuted,
+              textAlign: 'center',
+              marginTop: 16,
+              lineHeight: 15,
+            }}
+          >
+            {'🔒'} Koneksi lokal menggunakan HTTP (pengembangan).{'\n'}
+            Deploy produksi wajib menggunakan HTTPS.
+          </Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  };
+
   // SCREEN 1: DASHBOARD AKTIVITAS BELAJAR (Anggota 1)
   const renderHomeScreen = () => (
     <ScrollView
@@ -1087,6 +1277,13 @@ function StudyMateApp() {
         unreadCount={unreadNotifCount}
         onOpenNotif={() => setNotifModalVisible(true)}
         onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+      />
+
+      {/* Week 6: Offline Banner */}
+      <OfflineBanner
+        isOffline={isOffline}
+        onRetry={checkServerConnectivity}
+        isRetrying={isCheckingConnection}
       />
 
       {/* Hero Progress Banner */}
@@ -1303,6 +1500,26 @@ function StudyMateApp() {
         onOpenScheduleUpload={() => setScheduleModalVisible(true)}
       />
 
+      {/* Week 6: Offline Banner */}
+      <OfflineBanner
+        isOffline={isOffline}
+        onRetry={handleRefreshCourses}
+        isRetrying={coursesLoading || isCheckingConnection}
+      />
+
+      {/* Week 6: Error State dengan tombol Retry */}
+      {coursesError && (
+        <ApiErrorCard
+          title="Koneksi Data Mata Kuliah"
+          message={coursesError}
+          onRetry={handleRefreshCourses}
+          isRetrying={coursesLoading}
+        />
+      )}
+
+      {/* Week 6: Loading State */}
+      {coursesLoading && <InlineLoadingIndicator message="Memperbarui data mata kuliah..." />}
+
       <View style={styles.screenBannerRow}>
         <Text style={styles.screenBannerText}>
           Kelola materi perkuliahan berdasarkan mata kuliah dan pertemuan 1-16 secara terstruktur.
@@ -1364,6 +1581,26 @@ function StudyMateApp() {
             onOpenNotif={() => setNotifModalVisible(true)}
             onOpenScheduleUpload={() => setScheduleModalVisible(true)}
           />
+
+          {/* Week 6: Offline Banner */}
+          <OfflineBanner
+            isOffline={isOffline}
+            onRetry={handleRefreshMaterials}
+            isRetrying={materialsLoading || isCheckingConnection}
+          />
+
+          {/* Week 6: Error State */}
+          {materialsError && (
+            <ApiErrorCard
+              title="Katalog Materi Perkuliahan"
+              message={materialsError}
+              onRetry={handleRefreshMaterials}
+              isRetrying={materialsLoading}
+            />
+          )}
+
+          {/* Week 6: Loading State */}
+          {materialsLoading && <InlineLoadingIndicator message="Menyinkronkan materi perkuliahan..." />}
 
           {/* Search Bar */}
           <View style={styles.searchBarContainer}>
@@ -1603,6 +1840,26 @@ function StudyMateApp() {
           onOpenScheduleUpload={() => setScheduleModalVisible(true)}
         />
 
+        {/* Week 6: Offline Banner */}
+        <OfflineBanner
+          isOffline={isOffline}
+          onRetry={handleRefreshTasks}
+          isRetrying={tasksLoading || isCheckingConnection}
+        />
+
+        {/* Week 6: Error State dengan tombol Retry */}
+        {tasksError && (
+          <ApiErrorCard
+            title="Daftar Tugas & Deadline"
+            message={tasksError}
+            onRetry={handleRefreshTasks}
+            isRetrying={tasksLoading}
+          />
+        )}
+
+        {/* Week 6: Loading State */}
+        {tasksLoading && <InlineLoadingIndicator message="Memuat daftar tugas..." />}
+
         <View style={styles.screenBannerRow}>
           <Text style={styles.screenBannerText}>
             Jangan biarkan tugas terlewat. Setiap tugas terhubung langsung dengan mata kuliah.
@@ -1808,6 +2065,123 @@ function StudyMateApp() {
           />
         </View>
       </View>
+
+      {/* ================================================================= */}
+      {/* SPRINT 04 – ANGGOTA 3: Authenticated User Info & Protected API Test */}
+      {/* ================================================================= */}
+      {isAuthenticated && apiUser && (
+        <View
+          style={{
+            marginHorizontal: 0,
+            marginTop: 20,
+            backgroundColor: COLORS.primaryLight,
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: '#C7D2FE',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <Ionicons name="shield-checkmark" size={20} color={COLORS.primary} />
+            <Text style={{ fontSize: 15, fontWeight: '800', color: COLORS.primary, marginLeft: 8 }}>
+              Sesi Terautentikasi
+            </Text>
+          </View>
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
+            Nama: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.name}</Text>
+          </Text>
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
+            Email: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.email}</Text>
+          </Text>
+          <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
+            Token tersimpan di Expo SecureStore (terenkripsi)
+          </Text>
+
+          {/* Sprint 04 – Tombol Test Protected API */}
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: COLORS.primary,
+              borderRadius: 10,
+              paddingVertical: 10,
+              marginTop: 12,
+            }}
+            onPress={handleTestProtectedApi}
+            disabled={isApiTesting}
+            activeOpacity={0.8}
+          >
+            {isApiTesting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" />
+            )}
+            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginLeft: 8 }}>
+              {isApiTesting ? 'Menguji...' : 'Test Protected API (GET /users/me.php)'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Test Result */}
+          {apiTestResult && (
+            <View
+              style={{
+                marginTop: 10,
+                backgroundColor: apiTestResult.success ? COLORS.emeraldLight : COLORS.roseLight,
+                borderRadius: 10,
+                padding: 10,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Ionicons
+                  name={apiTestResult.success ? 'checkmark-circle' : 'close-circle'}
+                  size={16}
+                  color={apiTestResult.success ? COLORS.emerald : COLORS.rose}
+                />
+                <Text
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 12,
+                    fontWeight: '800',
+                    color: apiTestResult.success ? COLORS.emerald : COLORS.rose,
+                  }}
+                >
+                  HTTP {apiTestResult.status} {apiTestResult.success ? '– 200 OK' : '– Error'}
+                  {'  '}\u2022 {apiTestResult.timestamp}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: COLORS.textSecondary, fontFamily: 'monospace' }}>
+                {JSON.stringify(apiTestResult.data, null, 2).substring(0, 200)}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Logout Button */}
+      {isAuthenticated && (
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: COLORS.roseLight,
+            borderRadius: 14,
+            paddingVertical: 14,
+            marginTop: 20,
+            borderWidth: 1,
+            borderColor: '#FECACA',
+          }}
+          onPress={handleApiLogout}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="log-out-outline" size={20} color={COLORS.rose} />
+          <Text style={{ color: COLORS.rose, fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
+            Logout dari StudyMate
+          </Text>
+        </TouchableOpacity>
+      )}
+
     </ScrollView>
   );
 
@@ -1982,16 +2356,16 @@ function StudyMateApp() {
                           style={[
                             styles.quizOptionBox,
                             isRevealed &&
-                              optIndex === q.correctIndex &&
-                              styles.quizOptionCorrect,
+                            optIndex === q.correctIndex &&
+                            styles.quizOptionCorrect,
                           ]}
                         >
                           <Text
                             style={[
                               styles.quizOptionLetter,
                               isRevealed &&
-                                optIndex === q.correctIndex &&
-                                styles.quizOptionLetterCorrect,
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionLetterCorrect,
                             ]}
                           >
                             {String.fromCharCode(65 + optIndex)}
@@ -2000,8 +2374,8 @@ function StudyMateApp() {
                             style={[
                               styles.quizOptionLabel,
                               isRevealed &&
-                                optIndex === q.correctIndex &&
-                                styles.quizOptionLabelCorrect,
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionLabelCorrect,
                             ]}
                           >
                             {opt}
@@ -2200,8 +2574,8 @@ function StudyMateApp() {
                       n.type === 'class'
                         ? COLORS.primaryLight
                         : n.type === 'material'
-                        ? COLORS.amberLight
-                        : COLORS.roseLight,
+                          ? COLORS.amberLight
+                          : COLORS.roseLight,
                   },
                 ]}
               >
@@ -2210,16 +2584,16 @@ function StudyMateApp() {
                     n.type === 'class'
                       ? 'school-outline'
                       : n.type === 'material'
-                      ? 'book-outline'
-                      : 'alarm-outline'
+                        ? 'book-outline'
+                        : 'alarm-outline'
                   }
                   size={18}
                   color={
                     n.type === 'class'
                       ? COLORS.primary
                       : n.type === 'material'
-                      ? COLORS.amber
-                      : COLORS.rose
+                        ? COLORS.amber
+                        : COLORS.rose
                   }
                 />
               </View>
@@ -2321,6 +2695,11 @@ function StudyMateApp() {
         </Text>
       </SafeAreaView>
     );
+  }
+
+  // Sprint 04 – Anggota 2: Tampilkan halaman Auth jika belum login via API
+  if (!isAuthenticated) {
+    return renderAuthScreen();
   }
 
   return (
@@ -4336,4 +4715,101 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 2,
   },
+
+  // =================================================================
+  // WEEK 6 STYLES: Offline Banner, Error Card, Loading Indicator
+  // =================================================================
+  offlineBannerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  offlineBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  offlineBannerSubtitle: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
+  },
+  offlineRetryButton: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  offlineRetryText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+
+  apiErrorCardContainer: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  apiErrorIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFE4E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  apiErrorTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.rose,
+    marginBottom: 4,
+  },
+  apiErrorMessage: {
+    fontSize: 13,
+    color: '#9F1239',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  apiErrorRetryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.rose,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  apiErrorRetryText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  inlineLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  inlineLoadingText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+  },
+
 });
