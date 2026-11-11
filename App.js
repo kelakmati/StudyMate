@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,6 +13,8 @@ import {
   Alert,
   Platform,
   Share,
+  Image,
+  Vibration,
   useWindowDimensions,
 } from 'react-native';
 import {
@@ -26,6 +28,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import NetInfo from '@react-native-community/netinfo';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Haptics from 'expo-haptics';
+import { Accelerometer } from 'expo-sensors';
 
 // =================================================================
 // 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
@@ -67,122 +73,39 @@ const STORAGE_KEYS = {
   SETTINGS: '@studymate_settings_v2',
   USER_PROFILE: '@studymate_profile_v2',
 };
-
-function StudyMateApp() {
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-
-  // Responsive flags
-  const isSmallScreen = width < 360;
-  const isTabletOrLandscape = width > 600;
-
-  // Dynamic bottom padding to ensure zero bottom-nav overlap (Anggota 3)
-  const bottomNavHeight = 58 + Math.max(insets.bottom, 8);
-  const scrollContentPaddingBottom = bottomNavHeight + 16;
-
-  // Stat card dynamic width
-  const statCardWidth = useMemo(() => {
-    if (isTabletOrLandscape) {
-      return (width - 32 - 36) / 4; // 4 columns
-    }
-    return (width - 32 - 12) / 2; // 2 columns
-  }, [width, isTabletOrLandscape]);
-
-  // Navigation Tabs: 'Home' | 'Courses' | 'Materials' | 'Tasks' | 'Schedule'
-  const [currentTab, setCurrentTab] = useState('Home');
-
   // =================================================================
-  // SPRINT 04 – ANGGOTA 2: Authentication State
-  // authScreen: 'login' | 'register'
-  // isAuthenticated: apakah user sudah login via REST API
-  // apiUser: data user dari backend (id, name, email)
+  // WEEK 7 – ANGGOTA 3: Accelerometer & Shake to Refresh States & Refs
   // =================================================================
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authScreen, setAuthScreen] = useState('login');
-  const [apiUser, setApiUser] = useState(null);
+  const [isShakeRefreshing, setIsShakeRefreshing] = useState(false);
+  const [shakeBanner, setShakeBanner] = useState(null); // { visible, message, status }
 
-  // Auth form fields
-  const [authName, setAuthName] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
-  const [showAuthPassword, setShowAuthPassword] = useState(false);
-
-  // Sprint 04 – Anggota 3: Protected API test state
-  const [apiTestResult, setApiTestResult] = useState(null);
-  const [isApiTesting, setIsApiTesting] = useState(false);
-
-  // =================================================================
-  // WEEK 6 – ANGGOTA 3: Offline Handling & Network Status State
-  // =================================================================
-  const [isOffline, setIsOffline] = useState(false);
-  const [isCheckingConnection, setIsCheckingConnection] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
-
-  // =================================================================
-  // WEEK 6 – ANGGOTA 2: Feature-Level UI States (Loading, Error, Retry)
-  // =================================================================
-  const [coursesLoading, setCoursesLoading] = useState(false);
-  const [coursesError, setCoursesError] = useState(null);
-
-  const [materialsLoading, setMaterialsLoading] = useState(false);
-  const [materialsError, setMaterialsError] = useState(null);
-
-  const [tasksLoading, setTasksLoading] = useState(false);
-  const [tasksError, setTasksError] = useState(null);
-
-  // Core Data States
-  const [courses, setCourses] = useState([]);
-  const [materials, setMaterials] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [userProfile, setUserProfile] = useState({
-    name: 'Ahmad Faiz Pratama',
-    nim: '2201010199',
-    major: 'Teknik Informatika - Semester 5',
-    campus: 'Universitas Indonesia',
-    studyStreakDays: 14,
-  });
-
-  // Loading & Filter States
-  const [isLoading, setIsLoading] = useState(true);
-  const [materialSearchQuery, setMaterialSearchQuery] = useState('');
-  const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
-  const [selectedMeetingFilter, setSelectedMeetingFilter] = useState('ALL');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
-
-  // Modals Visibility
-  const [materialModalVisible, setMaterialModalVisible] = useState(false);
-  const [editingMaterial, setEditingMaterial] = useState(null);
-
-  const [courseModalVisible, setCourseModalVisible] = useState(false);
-  const [editingCourse, setEditingCourse] = useState(null);
-
-  const [taskModalVisible, setTaskModalVisible] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
-
-  const [notesModalVisible, setNotesModalVisible] = useState(false);
-  const [activeNotesMaterial, setActiveNotesMaterial] = useState(null);
-  const [currentNoteText, setCurrentNoteText] = useState('');
-
-  const [aiModalVisible, setAiModalVisible] = useState(false);
-  const [activeAiMaterial, setActiveAiMaterial] = useState(null);
-  const [aiSubTab, setAiSubTab] = useState('summary');
-  const [quizRevealedMap, setQuizRevealedMap] = useState({});
-
-  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
-  const [isParsingSchedule, setIsParsingSchedule] = useState(false);
-
-  const [notifModalVisible, setNotifModalVisible] = useState(false);
-
-  // Settings State
+  // Settings State (with Week 7 shakeToRefresh default true)
   const [settings, setSettings] = useState({
     notifyBeforeClass: true,
     notifyDeadlines: true,
     autoSummarizeAi: true,
+    shakeToRefresh: true,
   });
+
+  // Mutable refs untuk mencegah stale closure pada accelerometer subscription
+  const lastShakeTimeRef = useRef(0);
+  const lastAccRef = useRef({ x: 0, y: 0, z: 0 });
+  const isShakeRefreshingRef = useRef(false);
+  const activeTabRef = useRef(currentTab);
+  const isModalActiveRef = useRef(false);
+
+  // Sinkronisasi refs setiap kali render
+  activeTabRef.current = currentTab;
+  isModalActiveRef.current =
+    materialModalVisible ||
+    courseModalVisible ||
+    taskModalVisible ||
+    notesModalVisible ||
+    aiModalVisible ||
+    scheduleModalVisible ||
+    notifModalVisible ||
+    isScannerVisible ||
+    viewingPhotoMaterial !== null;
 
   // =================================================================
   // 5. DATA PERSISTENCE & INITIALIZATION
@@ -282,8 +205,8 @@ function StudyMateApp() {
         } else if (result.status === 401) {
           // Token terbukti tidak valid (401 Unauthorized) – bersihkan sesi
           console.warn('[Init] Token kadaluwarsa/tidak valid (401), hapus sesi.');
-          await deleteAccessToken().catch(() => {});
-          await deleteUserData().catch(() => {});
+          await deleteAccessToken().catch(() => { });
+          await deleteUserData().catch(() => { });
         } else {
           // Server offline atau timeout – TETAP izinkan akses offline menggunakan data lokal!
           console.warn('[Init] Server tidak terjangkau saat startup. Membuka mode offline.');
@@ -342,7 +265,16 @@ function StudyMateApp() {
         await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
       }
 
-      if (storedSettings) setSettings(JSON.parse(storedSettings));
+      if (storedSettings) {
+        const parsedSettings = JSON.parse(storedSettings);
+        setSettings({
+          notifyBeforeClass: true,
+          notifyDeadlines: true,
+          autoSummarizeAi: true,
+          shakeToRefresh: true,
+          ...parsedSettings,
+        });
+      }
       if (storedProfile) setUserProfile(JSON.parse(storedProfile));
       setCoursesError(null);
       setMaterialsError(null);
@@ -438,6 +370,134 @@ function StudyMateApp() {
       console.warn('Failed to persist to AsyncStorage:', key, e);
     }
   };
+
+  // =================================================================
+  // WEEK 7 – ANGGOTA 3: ACCELEROMETER & SHAKE TO REFRESH IMPLEMENTATION
+  // =================================================================
+
+  /**
+   * handleRefreshHome:
+   * Memperbarui seluruh ringkasan data pembelajaran (Courses, Materials, Tasks)
+   */
+  const handleRefreshHome = async () => {
+    await Promise.all([
+      handleRefreshCourses(),
+      handleRefreshMaterials(),
+      handleRefreshTasks(),
+    ]);
+  };
+
+  /**
+   * handleTriggerShakeRefresh:
+   * Mengatur alur pembaruan data saat goyangan perangkat terdeteksi:
+   * 1. Getaran haptic feedback singkat (expo-haptics / Vibration)
+   * 2. Notifikasi visual "Goyangan terdeteksi! Memperbarui data..."
+   * 3. Menjalankan refresh sesuai tab aktif
+   * 4. Memberikan feedback keberhasilan / status offline
+   */
+  const handleTriggerShakeRefresh = async () => {
+    if (isShakeRefreshingRef.current) return;
+    isShakeRefreshingRef.current = true;
+    setIsShakeRefreshing(true);
+
+    // 1. Berikan feedback getaran singkat
+    await triggerShakeFeedback();
+
+    // 2. Tampilkan banner floating "Goyangan terdeteksi! Memperbarui data..."
+    setShakeBanner({
+      visible: true,
+      message: '📳 Goyangan terdeteksi! Memperbarui data...',
+      status: 'loading',
+    });
+
+    const activeTab = activeTabRef.current;
+    let targetName = 'Data Belajar';
+
+    try {
+      const isOnline = await checkServerConnectivity();
+
+      if (activeTab === 'Courses') {
+        targetName = 'Mata Kuliah';
+        await handleRefreshCourses();
+      } else if (activeTab === 'Materials') {
+        targetName = 'Katalog Materi';
+        await handleRefreshMaterials();
+      } else if (activeTab === 'Tasks') {
+        targetName = 'Daftar Tugas';
+        await handleRefreshTasks();
+      } else {
+        // Tab Home atau Schedule
+        targetName = 'Dashboard Belajar';
+        await handleRefreshHome();
+      }
+
+      if (isOnline) {
+        setShakeBanner({
+          visible: true,
+          message: `✅ Data ${targetName} berhasil diperbarui via Shake to Refresh!`,
+          status: 'success',
+        });
+      } else {
+        setShakeBanner({
+          visible: true,
+          message: `⚠️ Mode Offline: Data ${targetName} dimuat dari penyimpanan lokal.`,
+          status: 'warning',
+        });
+      }
+    } catch (err) {
+      setShakeBanner({
+        visible: true,
+        message: `❌ Gagal memperbarui: ${err.message}`,
+        status: 'error',
+      });
+    } finally {
+      isShakeRefreshingRef.current = false;
+      setIsShakeRefreshing(false);
+      // Auto-hide floating toast setelah 2.8 detik
+      setTimeout(() => {
+        setShakeBanner((prev) => (prev ? { ...prev, visible: false } : null));
+      }, 2800);
+    }
+  };
+
+  /**
+   * Accelerometer Shake Detection Listener:
+   * Membaca nilai sensor X, Y, Z secara internal tanpa menampilkan angka pada UI.
+   * Menggunakan perhitungan magnitude dan delta dengan threshold dan cooldown.
+   * Subscription otomatis dimatikan jika toggle preferensi dimatikan oleh pengguna.
+   */
+  useEffect(() => {
+    if (settings.shakeToRefresh === false) {
+      return;
+    }
+
+    // Set interval 100ms (10Hz) - efisien baterai dan responsif
+    Accelerometer.setUpdateInterval(100);
+
+    const subscription = Accelerometer.addListener(({ x, y, z }) => {
+      // Jangan jalankan refresh jika modal sedang aktif atau sedang proses refresh
+      if (isModalActiveRef.current || isShakeRefreshingRef.current) {
+        lastAccRef.current = { x, y, z };
+        return;
+      }
+
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      const last = lastAccRef.current;
+      const delta = Math.abs(x - last.x) + Math.abs(y - last.y) + Math.abs(z - last.z);
+      lastAccRef.current = { x, y, z };
+
+      const now = Date.now();
+      // Threshold: magnitude > 1.85g atau delta goyangan cepat > 1.7g, dengan cooldown 2.5s
+      if ((magnitude > 1.85 || delta > 1.7) && (now - lastShakeTimeRef.current > 2500)) {
+        lastShakeTimeRef.current = now;
+        handleTriggerShakeRefresh();
+      }
+    });
+
+    return () => {
+      subscription && subscription.remove();
+    };
+  }, [settings.shakeToRefresh]);
 
   // =================================================================
   // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
@@ -688,6 +748,9 @@ function StudyMateApp() {
           const updated = materials.filter((m) => m.id !== materialId);
           setMaterials(updated);
           await persistData(STORAGE_KEYS.MATERIALS, updated);
+          if (viewingPhotoMaterial && viewingPhotoMaterial.id === materialId) {
+            setViewingPhotoMaterial(null);
+          }
         },
       },
     ]);
@@ -748,6 +811,71 @@ function StudyMateApp() {
     await persistData(STORAGE_KEYS.MATERIALS, updated);
     setMaterialModalVisible(false);
     setEditingMaterial(null);
+  };
+
+  /**
+   * handleSaveScannedMaterial:
+   * WEEK 7 – ANGGOTA 2: Menyimpan hasil pemindaian Smart Material Scanner
+   * - Menyimpan foto ke direktori dokumen lokal perangkat (FileSystem.documentDirectory)
+   * - Menyatukan materi ke dalam katalog mata kuliah yang sudah ada
+   * - Menyimpan metadata secara persisten di AsyncStorage
+   */
+  const handleSaveScannedMaterial = async (scannedData) => {
+    try {
+      const courseObj = courses.find((c) => c.id === scannedData.courseId) || courses[0];
+
+      // 1. Salin foto dari cache kamera ke direktori dokumen persisten
+      const persistentUri = await persistImageAsync(scannedData.imageUri);
+
+      // 2. Buat objek materi hasil scan lengkap
+      const newScanned = {
+        id: `scan_${Date.now()}`,
+        title: scannedData.title.trim(),
+        courseId: courseObj ? courseObj.id : (courses[0]?.id || 'crs_1'),
+        courseName: courseObj ? courseObj.name : 'Mata Kuliah',
+        meetingNumber: parseInt(scannedData.meetingNumber, 10) || 1,
+        meetingTopic: scannedData.meetingTopic.trim() || `Dokumentasi Pertemuan ${scannedData.meetingNumber}`,
+        fileType: 'SCAN',
+        fileName: `Scan_${courseObj?.code || 'MAT'}_P${scannedData.meetingNumber}.jpg`,
+        fileSize: '1.4 MB (Foto Kamera)',
+        imageUri: persistentUri,
+        isScanned: true,
+        dateAdded: new Date().toISOString().split('T')[0],
+        isStudied: false,
+        userNotes: scannedData.userNotes ? scannedData.userNotes.trim() : '',
+        summary: `Materi hasil pemindaian langsung (Smart Material Scanner) untuk mata kuliah ${courseObj?.name || ''} pada pertemuan ke-${scannedData.meetingNumber}. Dokumentasi visual papan tulis/slide dosen untuk referensi belajar mandiri.`,
+        keyPoints: [
+          `Dokumentasi visual langsung pertemuan ke-${scannedData.meetingNumber}.`,
+          `Tersimpan secara lokal pada memori perangkat mahasiswa.`,
+          scannedData.userNotes?.trim() ? `Catatan: ${scannedData.userNotes.trim()}` : 'Belum ada catatan khusus.',
+        ],
+        quiz: [
+          {
+            question: `Apa materi inti yang didokumentasikan pada foto ${scannedData.title.trim()}?`,
+            options: [
+              scannedData.meetingTopic.trim() || courseObj?.name || 'Materi Inti',
+              'Catatan umum tanpa topik',
+              'Jadwal perkuliahan',
+              'Tugas kelompok',
+            ],
+            correctIndex: 0,
+            explanation: `Materi foto ini mendokumentasikan pembahasan ${scannedData.meetingTopic.trim() || courseObj?.name}.`,
+          },
+        ],
+      };
+
+      const updated = [newScanned, ...materials];
+      setMaterials(updated);
+      await persistData(STORAGE_KEYS.MATERIALS, updated);
+      setIsScannerVisible(false);
+
+      Alert.alert(
+        'Materi Scan Berhasil Disimpan! 🎉',
+        `Foto materi "${newScanned.title}" telah tersimpan di katalog mata kuliah ${newScanned.courseName}. Anda dapat membukanya kembali kapan saja.`
+      );
+    } catch (err) {
+      Alert.alert('Gagal Menyimpan', 'Terjadi kesalahan saat menyimpan foto materi: ' + err.message);
+    }
   };
 
   const handleOpenNotes = (material) => {
@@ -1777,17 +1905,29 @@ function StudyMateApp() {
             <Text style={styles.listCountText}>
               Menampilkan {filteredMaterials.length} materi
             </Text>
-            <TouchableOpacity
-              style={styles.addMaterialSmallBtn}
-              onPress={() => {
-                setEditingMaterial(null);
-                setMaterialModalVisible(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add" size={15} color="#FFFFFF" />
-              <Text style={styles.addMaterialSmallBtnText}>Upload Materi</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {/* WEEK 7 – ANGGOTA 1 & 2: Tombol Scan Materi Kamera HP */}
+              <TouchableOpacity
+                style={styles.scanMaterialBtn}
+                onPress={() => setIsScannerVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera" size={15} color="#FFFFFF" />
+                <Text style={styles.scanMaterialBtnText}>Scan Materi</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.addMaterialSmallBtn}
+                onPress={() => {
+                  setEditingMaterial(null);
+                  setMaterialModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cloud-upload" size={14} color="#FFFFFF" />
+                <Text style={styles.addMaterialSmallBtnText}>Upload</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {filteredMaterials.map((item) => (
@@ -1799,19 +1939,41 @@ function StudyMateApp() {
               onOpenAi={handleOpenAiAssistant}
               onOpenNotes={handleOpenNotes}
               onDelete={handleDeleteMaterial}
+              onPreviewImage={(m) => setViewingPhotoMaterial(m)}
             />
           ))}
 
           {filteredMaterials.length === 0 && (
-            <EmptyState
-              title="Tidak ada materi yang cocok"
-              subtitle="Coba ubah kata kunci pencarian atau reset filter pertemuan."
-              actionText="+ Upload Materi Baru"
-              onAction={() => {
-                setEditingMaterial(null);
-                setMaterialModalVisible(true);
-              }}
-            />
+            <View style={{ alignItems: 'center', marginTop: 32, paddingHorizontal: 20 }}>
+              <Ionicons name="document-text-outline" size={52} color={COLORS.textMuted} />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginTop: 12 }}>
+                Tidak ada materi yang cocok
+              </Text>
+              <Text style={{ fontSize: 13, color: COLORS.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 18 }}>
+                Pindai papan tulis / slide dosen menggunakan kamera HP atau unggah berkas materi baru.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.scanMaterialBtn, { paddingHorizontal: 16, paddingVertical: 10 }]}
+                  onPress={() => setIsScannerVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="camera" size={16} color="#FFFFFF" />
+                  <Text style={[styles.scanMaterialBtnText, { fontSize: 13 }]}>Scan Materi HP</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.addMaterialSmallBtn, { paddingHorizontal: 16, paddingVertical: 10 }]}
+                  onPress={() => {
+                    setEditingMaterial(null);
+                    setMaterialModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="cloud-upload" size={16} color="#FFFFFF" />
+                  <Text style={[styles.addMaterialSmallBtnText, { fontSize: 13 }]}>Upload Berkas</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
         </ScrollView>
       </View>
@@ -2058,6 +2220,28 @@ function StudyMateApp() {
             value={settings.autoSummarizeAi}
             onValueChange={(val) => {
               const updated = { ...settings, autoSummarizeAi: val };
+              setSettings(updated);
+              persistData(STORAGE_KEYS.SETTINGS, updated);
+            }}
+            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+          />
+        </View>
+
+        <View style={styles.settingDivider} />
+
+        {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Setting Toggle */}
+        <View style={styles.settingRow}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="phone-portrait-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.settingLabel}>Goyangkan HP untuk Refresh</Text>
+            </View>
+            <Text style={styles.settingDesc}>Goyangkan perangkat untuk memperbarui data StudyMate.</Text>
+          </View>
+          <Switch
+            value={settings.shakeToRefresh !== false}
+            onValueChange={(val) => {
+              const updated = { ...settings, shakeToRefresh: val };
               setSettings(updated);
               persistData(STORAGE_KEYS.SETTINGS, updated);
             }}
@@ -2763,6 +2947,56 @@ function StudyMateApp() {
       {renderAiModal()}
       {renderScheduleModal()}
       {renderNotificationModal()}
+
+      {/* WEEK 7 – ANGGOTA 1 & 2: Smart Material Scanner Camera Modal */}
+      <SmartMaterialScannerModal
+        visible={isScannerVisible}
+        courses={courses}
+        insets={insets}
+        onClose={() => setIsScannerVisible(false)}
+        onSaveMaterial={handleSaveScannedMaterial}
+      />
+
+      {/* WEEK 7 – ANGGOTA 2: Full-Screen Scanned Photo Viewer Modal */}
+      <PhotoViewerModal
+        material={viewingPhotoMaterial}
+        insets={insets}
+        onClose={() => setViewingPhotoMaterial(null)}
+        onDelete={(id) => {
+          setViewingPhotoMaterial(null);
+          handleDeleteMaterial(id);
+        }}
+      />
+
+      {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Floating Toast Feedback */}
+      {shakeBanner && shakeBanner.visible && (
+        <View style={[styles.shakeFloatingToast, { top: insets.top + 10 }]}>
+          <Ionicons
+            name={
+              shakeBanner.status === 'loading'
+                ? 'sync'
+                : shakeBanner.status === 'success'
+                ? 'checkmark-circle'
+                : shakeBanner.status === 'warning'
+                ? 'cloud-offline'
+                : 'alert-circle'
+            }
+            size={20}
+            color={
+              shakeBanner.status === 'loading'
+                ? '#38BDF8'
+                : shakeBanner.status === 'success'
+                ? '#34D399'
+                : shakeBanner.status === 'warning'
+                ? '#FBBF24'
+                : '#F87171'
+            }
+          />
+          <Text style={styles.shakeFloatingToastText} numberOfLines={2}>
+            {shakeBanner.message}
+          </Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -3245,6 +3479,550 @@ function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
+    </Modal>
+  );
+}
+
+// =================================================================
+// WEEK 7 – ANGGOTA 1 & 2: SMART MATERIAL SCANNER CAMERA MODAL
+// =================================================================
+function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMaterial }) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const cameraRef = useRef(null);
+
+  // Scanner Steps: 'CAMERA' | 'PREVIEW' | 'FORM'
+  const [step, setStep] = useState('CAMERA');
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState(null);
+  const [facing, setFacing] = useState('back');
+  const [torch, setTorch] = useState(false);
+  const [isTakingPicture, setIsTakingPicture] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Form Fields
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0]?.id || '');
+  const [meetingNumber, setMeetingNumber] = useState('1');
+  const [meetingTopic, setMeetingTopic] = useState('');
+  const [userNotes, setUserNotes] = useState('');
+
+  // Reset state saat modal dibuka
+  useEffect(() => {
+    if (visible) {
+      setStep('CAMERA');
+      setCapturedPhotoUri(null);
+      setFacing('back');
+      setTorch(false);
+      setIsTakingPicture(false);
+      setIsSaving(false);
+      setTitle('');
+      setCourseId(courses[0]?.id || '');
+      setMeetingNumber('1');
+      setMeetingTopic('');
+      setUserNotes('');
+    }
+  }, [visible, courses]);
+
+  // Shutter action
+  const handleCapturePhoto = async () => {
+    if (cameraRef.current && !isTakingPicture) {
+      try {
+        setIsTakingPicture(true);
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.85,
+          skipProcessing: false,
+        });
+        if (photo?.uri) {
+          setCapturedPhotoUri(photo.uri);
+          setStep('PREVIEW');
+        }
+      } catch (err) {
+        Alert.alert('Gagal Memotret', 'Terjadi masalah saat mengambil foto kamera: ' + err.message);
+      } finally {
+        setIsTakingPicture(false);
+      }
+    }
+  };
+
+  // Submit action
+  const handleSubmitForm = async () => {
+    if (!title.trim()) {
+      Alert.alert('Perhatian', 'Harap masukkan judul materi hasil scan.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await onSaveMaterial({
+        imageUri: capturedPhotoUri,
+        title: title.trim(),
+        courseId: courseId || (courses[0]?.id || 'crs_1'),
+        meetingNumber: parseInt(meetingNumber, 10) || 1,
+        meetingTopic: meetingTopic.trim(),
+        userNotes: userNotes.trim(),
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000000' }}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+        {/* 1. Permission Check */}
+        {!permission ? (
+          <View style={styles.cameraPermissionBox}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600' }}>
+              Memeriksa izin akses kamera...
+            </Text>
+          </View>
+        ) : !permission.granted ? (
+          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.cameraPermissionBox}>
+            <View style={styles.cameraPermissionIconWrap}>
+              <Ionicons
+                name={permission.canAskAgain === false ? 'camera-off-outline' : 'camera-outline'}
+                size={56}
+                color={permission.canAskAgain === false ? COLORS.error : COLORS.primary}
+              />
+            </View>
+            <Text style={styles.cameraPermissionTitle}>Izin Kamera Diperlukan</Text>
+            {permission.canAskAgain === false ? (
+              <>
+                <Text style={styles.cameraPermissionSubtitle}>
+                  Izin kamera telah ditolak secara permanen. Untuk menggunakan Smart Material Scanner,
+                  buka Pengaturan Android → Aplikasi → StudyMate → Izin → Kamera, lalu aktifkan izin kamera secara manual.
+                </Text>
+                <View style={[styles.cameraPermissionGrantBtn, { backgroundColor: COLORS.textSecondary }]}>
+                  <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.cameraPermissionGrantBtnText}>Buka Pengaturan Android</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.cameraPermissionSubtitle}>
+                  StudyMate Smart Material Scanner memerlukan izin untuk mengakses kamera perangkat Anda.
+                  Kamera digunakan secara langsung untuk memotret papan tulis, slide materi kuliah dosen, atau catatan belajar.
+                </Text>
+                <TouchableOpacity
+                  style={styles.cameraPermissionGrantBtn}
+                  onPress={requestPermission}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+                  <Text style={styles.cameraPermissionGrantBtnText}>Berikan Izin Kamera</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.cameraPermissionBackBtn}
+              onPress={onClose}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.cameraPermissionBackBtnText}>Batal / Kembali ke Katalog Materi</Text>
+            </TouchableOpacity>
+          </SafeAreaView>
+        ) : step === 'CAMERA' ? (
+          /* 2. Step CAMERA: Live Viewfinder */
+          <View style={{ flex: 1 }}>
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFillObject}
+              facing={facing}
+              flash={torch ? 'torch' : 'off'}
+            />
+
+            {/* Top Toolbar */}
+            <SafeAreaView edges={['top']} style={styles.cameraLiveTopBar}>
+              <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
+                <Ionicons name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <View style={styles.cameraLiveTitleBadge}>
+                <Ionicons name="scan" size={15} color="#FFFFFF" />
+                <Text style={styles.cameraLiveTitleText}>Smart Material Scanner</Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.cameraCircleBtn, torch && { backgroundColor: COLORS.amber }]}
+                  onPress={() => setTorch(!torch)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name={torch ? 'flash' : 'flash-off'} size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.cameraCircleBtn}
+                  onPress={() => setFacing(facing === 'back' ? 'front' : 'back')}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+
+            {/* Center Viewfinder Guide */}
+            <View style={styles.cameraViewfinderContainer} pointerEvents="none">
+              <View style={styles.cameraViewfinderFrame}>
+                <View style={[styles.cornerGuide, styles.cornerTL]} />
+                <View style={[styles.cornerGuide, styles.cornerTR]} />
+                <View style={[styles.cornerGuide, styles.cornerBL]} />
+                <View style={[styles.cornerGuide, styles.cornerBR]} />
+              </View>
+              <View style={styles.cameraGuideBadge}>
+                <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                <Text style={styles.cameraGuideText}>
+                  Arahkan kamera ke papan tulis, slide, atau catatan
+                </Text>
+              </View>
+            </View>
+
+            {/* Bottom Shutter Controls */}
+            <SafeAreaView edges={['bottom']} style={styles.cameraLiveBottomBar}>
+              <View style={{ alignItems: 'center' }}>
+                <TouchableOpacity
+                  style={styles.cameraShutterOuter}
+                  onPress={handleCapturePhoto}
+                  disabled={isTakingPicture}
+                  activeOpacity={0.7}
+                >
+                  {isTakingPicture ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <View style={styles.cameraShutterInner} />
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.cameraShutterHintText}>Ketuk untuk Memotret</Text>
+              </View>
+            </SafeAreaView>
+          </View>
+        ) : step === 'PREVIEW' ? (
+          /* 3. Step PREVIEW: Photo Review with Retake and Use Photo */
+          <View style={{ flex: 1, backgroundColor: '#090D16' }}>
+            <SafeAreaView edges={['top']} style={styles.cameraPreviewTopBar}>
+              <TouchableOpacity
+                style={styles.cameraCircleBtn}
+                onPress={() => {
+                  setCapturedPhotoUri(null);
+                  setStep('CAMERA');
+                }}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+              <Text style={styles.cameraPreviewTitle}>Preview Foto Materi</Text>
+              <View style={{ width: 40 }} />
+            </SafeAreaView>
+
+            <View style={styles.cameraPreviewImageWrapper}>
+              <Image
+                source={{ uri: capturedPhotoUri }}
+                style={styles.cameraPreviewImage}
+                resizeMode="contain"
+              />
+            </View>
+
+            <SafeAreaView edges={['bottom']} style={styles.cameraPreviewBottomBar}>
+              <TouchableOpacity
+                style={styles.cameraRetakeBtn}
+                onPress={() => {
+                  setCapturedPhotoUri(null);
+                  setStep('CAMERA');
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.cameraRetakeBtnText}>Ambil Ulang</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cameraUsePhotoBtn}
+                onPress={() => {
+                  const currentCourse = courses.find((c) => c.id === courseId) || courses[0];
+                  if (!title.trim()) {
+                    setTitle(`Catatan Slide ${currentCourse?.code || ''} - Pertemuan ${meetingNumber}`);
+                  }
+                  if (!meetingTopic.trim()) {
+                    setMeetingTopic(`Dokumentasi Slide / Papan Tulis Pertemuan ${meetingNumber}`);
+                  }
+                  setStep('FORM');
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                <Text style={styles.cameraUsePhotoBtnText}>Gunakan Foto</Text>
+              </TouchableOpacity>
+            </SafeAreaView>
+          </View>
+        ) : (
+          /* 4. Step FORM: Material Info Form */
+          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.cameraFormWrapper}>
+            <View style={styles.cameraFormHeader}>
+              <TouchableOpacity
+                onPress={() => setStep('PREVIEW')}
+                style={styles.cameraFormBackBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={22} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.cameraFormHeaderTitle}>Informasi Materi Scan</Text>
+              <TouchableOpacity onPress={onClose} style={styles.cameraFormBackBtn} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.cameraFormScroll}
+              contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Photo Preview Thumbnail */}
+              <View style={styles.cameraFormPhotoCard}>
+                <Image
+                  source={{ uri: capturedPhotoUri }}
+                  style={styles.cameraFormPhotoThumb}
+                  resizeMode="cover"
+                />
+                <View style={styles.cameraFormPhotoBadge}>
+                  <Ionicons name="camera" size={13} color="#FFFFFF" />
+                  <Text style={styles.cameraFormPhotoBadgeText}>Hasil Pemindaian Kamera</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.cameraFormRetakeFloatBtn}
+                  onPress={() => setStep('PREVIEW')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
+                  <Text style={styles.cameraFormRetakeFloatText}>Perbesar</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Judul Materi */}
+              <Text style={styles.scannerFormLabel}>Judul Materi Perkuliahan *</Text>
+              <TextInput
+                style={styles.scannerFormInput}
+                placeholder="Contoh: Slide Struktur Data Graph & Pohon"
+                placeholderTextColor={COLORS.textMuted}
+                value={title}
+                onChangeText={setTitle}
+              />
+
+              {/* Mata Kuliah */}
+              <Text style={styles.scannerFormLabel}>Mata Kuliah *</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 14 }}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                {courses.map((crs) => {
+                  const isSelected = crs.id === courseId;
+                  return (
+                    <TouchableOpacity
+                      key={crs.id}
+                      style={[
+                        styles.scannerCourseChip,
+                        isSelected && { backgroundColor: crs.color, borderColor: crs.color },
+                      ]}
+                      onPress={() => setCourseId(crs.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.scannerCourseChipText,
+                          isSelected && { color: '#FFFFFF', fontWeight: '800' },
+                        ]}
+                      >
+                        {crs.code} – {crs.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Pertemuan */}
+              <Text style={styles.scannerFormLabel}>Pertemuan Keberapa? *</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 14 }}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((num) => {
+                  const isSelected = String(num) === String(meetingNumber);
+                  return (
+                    <TouchableOpacity
+                      key={num}
+                      style={[
+                        styles.scannerMeetingChip,
+                        isSelected && styles.scannerMeetingChipActive,
+                      ]}
+                      onPress={() => setMeetingNumber(String(num))}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.scannerMeetingChipText,
+                          isSelected && styles.scannerMeetingChipTextActive,
+                        ]}
+                      >
+                        P{num}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Topik Pertemuan */}
+              <Text style={styles.scannerFormLabel}>Topik Pertemuan / Bahasan</Text>
+              <TextInput
+                style={styles.scannerFormInput}
+                placeholder="Contoh: Implementasi Traversal BFS & DFS"
+                placeholderTextColor={COLORS.textMuted}
+                value={meetingTopic}
+                onChangeText={setMeetingTopic}
+              />
+
+              {/* Catatan Tambahan */}
+              <Text style={styles.scannerFormLabel}>Deskripsi atau Catatan Tambahan (Opsional)</Text>
+              <TextInput
+                style={[styles.scannerFormInput, { height: 75, textAlignVertical: 'top' }]}
+                placeholder="Tulis catatan penting dosen saat memaparkan slide atau materi ini..."
+                placeholderTextColor={COLORS.textMuted}
+                value={userNotes}
+                onChangeText={setUserNotes}
+                multiline
+              />
+
+              {/* Penjelasan Penyimpanan Lokal Persisten */}
+              <View style={styles.scannerStorageInfoCard}>
+                <Ionicons name="folder-open-outline" size={20} color={COLORS.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.scannerStorageInfoTitle}>Penyimpanan Foto Lokal Persisten</Text>
+                  <Text style={styles.scannerStorageInfoDesc}>
+                    Foto disalin ke direktori dokumen lokal HP Anda secara permanen. Materi dan foto tetap dapat dibuka kembali kapan saja meskipun aplikasi ditutup atau tanpa internet.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                <TouchableOpacity
+                  style={styles.scannerCancelBtn}
+                  onPress={() => setStep('PREVIEW')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.scannerCancelBtnText}>Kembali ke Foto</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.scannerSubmitBtn}
+                  onPress={handleSubmitForm}
+                  disabled={isSaving}
+                  activeOpacity={0.8}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                      <Text style={styles.scannerSubmitBtnText}>Simpan ke Materi</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </SafeAreaView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+// =================================================================
+// WEEK 7 – ANGGOTA 2: FULL-SCREEN SCANNED PHOTO VIEWER MODAL
+// =================================================================
+function PhotoViewerModal({ material, insets, onClose, onDelete }) {
+  if (!material || !material.imageUri) return null;
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        title: material.title,
+        message: `Materi Kuliah StudyMate: ${material.title} (${material.courseName} - Pertemuan ${material.meetingNumber})`,
+        url: material.imageUri,
+      });
+    } catch {}
+  };
+
+  return (
+    <Modal visible={true} animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#090D16' }}>
+        <StatusBar barStyle="light-content" backgroundColor="#090D16" />
+
+        {/* Top Header */}
+        <SafeAreaView edges={['top']} style={styles.photoViewerTopBar}>
+          <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
+            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, marginHorizontal: 12 }}>
+            <Text style={styles.photoViewerTitle} numberOfLines={1}>
+              {material.title}
+            </Text>
+            <Text style={styles.photoViewerSubtitle} numberOfLines={1}>
+              {material.courseName} • Pertemuan {material.meetingNumber}
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={styles.cameraCircleBtn} onPress={handleShare} activeOpacity={0.75}>
+              <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.cameraCircleBtn, { backgroundColor: COLORS.rose + '33' }]}
+              onPress={() => onDelete(material.id)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+
+        {/* Image Full Center */}
+        <View style={styles.photoViewerImageWrapper}>
+          <Image
+            source={{ uri: material.imageUri }}
+            style={styles.photoViewerImage}
+            resizeMode="contain"
+          />
+        </View>
+
+        {/* Bottom Info Bar */}
+        <SafeAreaView edges={['bottom']} style={styles.photoViewerBottomBar}>
+          <View style={styles.photoViewerBottomMetaRow}>
+            <Ionicons name="document-text-outline" size={16} color={COLORS.accent} />
+            <Text style={styles.photoViewerBottomTopic} numberOfLines={2}>
+              {material.meetingTopic || 'Hasil Scan Papan Tulis / Slide'}
+            </Text>
+          </View>
+          {material.userNotes ? (
+            <Text style={styles.photoViewerNotesText} numberOfLines={3}>
+              📝 Catatan: {material.userNotes}
+            </Text>
+          ) : null}
+          <View style={styles.photoViewerStorageBadge}>
+            <Ionicons name="save-outline" size={13} color="#94A3B8" />
+            <Text style={styles.photoViewerStorageText}>
+              Tersimpan Permanen di Memori HP (Offline Ready)
+            </Text>
+          </View>
+        </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -4810,6 +5588,612 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textMuted,
     fontWeight: '600',
+  },
+
+  // =================================================================
+  // WEEK 7 – DEVICE SENSORS & SMART MATERIAL SCANNER STYLES
+  // =================================================================
+
+  // Scan Button in Materials Header
+  scanMaterialBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 5,
+  },
+  scanMaterialBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  // Material Card Scanned Thumbnail
+  materialPhotoThumbBox: {
+    position: 'relative',
+    height: 140,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginTop: 8,
+    marginBottom: 4,
+    backgroundColor: '#0F172A',
+  },
+  materialPhotoThumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  materialPhotoThumbOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+  },
+  materialPhotoThumbBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  materialPhotoThumbBadgeText: {
+    color: '#EDE9FE',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  materialPhotoExpandBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  materialPhotoExpandText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  // Footer Action Pill for Scan
+  actionPillScan: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 4,
+  },
+  actionPillScanText: {
+    color: '#7C3AED',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Camera Permission Box
+  cameraPermissionBox: {
+    flex: 1,
+    backgroundColor: '#090D16',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  cameraPermissionIconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cameraPermissionTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  cameraPermissionSubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  cameraPermissionGrantBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  cameraPermissionGrantBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  cameraPermissionBackBtn: {
+    paddingVertical: 14,
+    marginTop: 10,
+  },
+  cameraPermissionBackBtnText: {
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Camera Live Viewfinder
+  cameraLiveTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  cameraCircleBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraLiveTitleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(124, 58, 237, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  cameraLiveTitleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  cameraViewfinderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraViewfinderFrame: {
+    width: '84%',
+    height: '65%',
+    position: 'relative',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  cornerGuide: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderColor: '#A78BFA',
+  },
+  cornerTL: {
+    top: -2,
+    left: -2,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderTopLeftRadius: 16,
+  },
+  cornerTR: {
+    top: -2,
+    right: -2,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderTopRightRadius: 16,
+  },
+  cornerBL: {
+    bottom: -2,
+    left: -2,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderBottomLeftRadius: 16,
+  },
+  cornerBR: {
+    bottom: -2,
+    right: -2,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderBottomRightRadius: 16,
+  },
+  cameraGuideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginTop: 18,
+  },
+  cameraGuideText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cameraLiveBottomBar: {
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  cameraShutterOuter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  cameraShutterInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FFFFFF',
+  },
+  cameraShutterHintText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+
+  // Camera Preview Screen
+  cameraPreviewTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#0F172A',
+  },
+  cameraPreviewTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  cameraPreviewImageWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+  },
+  cameraPreviewImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  cameraPreviewBottomBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    backgroundColor: '#0F172A',
+    gap: 12,
+  },
+  cameraRetakeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#475569',
+    gap: 6,
+  },
+  cameraRetakeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cameraUsePhotoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    gap: 6,
+  },
+  cameraUsePhotoBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  // Camera Info Form
+  cameraFormWrapper: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  cameraFormHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.cardBorder,
+    backgroundColor: COLORS.card,
+  },
+  cameraFormBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBackground,
+  },
+  cameraFormHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+  },
+  cameraFormScroll: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  cameraFormPhotoCard: {
+    position: 'relative',
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+    marginBottom: 16,
+  },
+  cameraFormPhotoThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  cameraFormPhotoBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  cameraFormPhotoBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cameraFormRetakeFloatBtn: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(124, 58, 237, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  cameraFormRetakeFloatText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  scannerFormLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  scannerFormInput: {
+    backgroundColor: COLORS.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    marginBottom: 14,
+  },
+  scannerCourseChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.card,
+  },
+  scannerCourseChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  scannerMeetingChip: {
+    width: 44,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scannerMeetingChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  scannerMeetingChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  scannerMeetingChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  scannerStorageInfoCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.primaryLight,
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginBottom: 10,
+  },
+  scannerStorageInfoTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
+    marginBottom: 2,
+  },
+  scannerStorageInfoDesc: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  scannerCancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  scannerSubmitBtn: {
+    flex: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    gap: 6,
+  },
+  scannerSubmitBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // Full-Screen Photo Viewer
+  photoViewerTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+  },
+  photoViewerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  photoViewerSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  photoViewerImageWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 8,
+  },
+  photoViewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoViewerBottomBar: {
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  photoViewerBottomMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  photoViewerBottomTopic: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  photoViewerNotesText: {
+    fontSize: 12,
+    color: '#CBD5E1',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  photoViewerStorageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  photoViewerStorageText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+
+  // Floating Toast for Shake to Refresh
+  shakeFloatingToast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    backgroundColor: '#0F172AEB',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  shakeFloatingToastText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
   },
 
 });
