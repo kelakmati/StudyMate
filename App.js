@@ -14,7 +14,6 @@ import {
   Platform,
   Share,
   useWindowDimensions,
-  KeyboardAvoidingView,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -23,12 +22,12 @@ import {
 } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 
 // =================================================================
-// DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
+// 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
 // =================================================================
 const COLORS = {
   // Brand Colors
@@ -59,152 +58,212 @@ const COLORS = {
   divider: '#F1F5F9',
 };
 
-// =================================================================
-// =================================================================
-// PART 2 – ANGGOTA 2: LOCAL DATA SECURITY (STORAGE & VAULT ENGINE)
-// =================================================================
-// =================================================================
-// Penjelasan: Anggota 2 bertanggung jawab memisahkan data sensitif
-// (SecureStore) dan data non-sensitif (AsyncStorage), hashing password
-// satu arah (SHA-256), serta isolasi data multi-user berbasis userId.
-// =================================================================
+const STORAGE_KEYS = {
+  COURSES: '@studymate_courses_v2',
+  MATERIALS: '@studymate_materials_v2',
+  TASKS: '@studymate_tasks_v2',
+  NOTIFICATIONS: '@studymate_notifications_v2',
+  SETTINGS: '@studymate_settings_v2',
+  USER_PROFILE: '@studymate_profile_v2',
+};
 
-// 1. Storage Keys Definition
+// =================================================================
+// SPRINT 04 – ANGGOTA 1 (Backend Config)
+// API_URL: Ganti dengan IP lokal laptop Anda agar Expo Go di HP
+//          dapat mengakses backend XAMPP di jaringan Wi-Fi yang sama.
+//          JANGAN gunakan 'localhost' atau '127.0.0.1' dari HP.
+//
+// Cara cek IP lokal: buka CMD → ketik: ipconfig
+// Contoh: 'http://192.168.1.10/studymate-api'
+// =================================================================
+const API_URL = 'http://192.168.1.5/studymate-api'; // ← GANTI IP INI
+
+// Secure key untuk menyimpan token di SecureStore
 const SECURE_KEYS = {
-  TOKEN: 'studymate_secure_token',
-  SESSION_USER: 'studymate_secure_user_session',
-  USERS_VAULT: 'studymate_secure_vault_registered_users',
+  ACCESS_TOKEN: 'studymate_access_token',
+  USER_DATA: 'studymate_user_data',
 };
 
-const getAsyncUserKey = (prefix, userId) => `@studymate_${prefix}_usr_${userId}`;
+// =================================================================
+// SPRINT 04 – ANGGOTA 2: Secure Token Storage Helpers
+// Menyimpan, mengambil, dan menghapus token menggunakan Expo SecureStore
+// (BUKAN AsyncStorage, karena token adalah data kriptografis sensitif)
+// =================================================================
 
-// 2. Cross-Platform SecureStore Wrapper with Web Fallback
-const isNativeSecureSupported = Platform.OS === 'ios' || Platform.OS === 'android';
-
-const secureStorage = {
-  async setItem(key, value) {
-    try {
-      if (isNativeSecureSupported) {
-        await SecureStore.setItemAsync(key, value);
-      } else {
-        await AsyncStorage.setItem(`@vault_${key}`, value);
-      }
-      return true;
-    } catch (e) {
-      console.warn(`[SecureStore Error] Gagal simpan ${key}:`, e);
-      return false;
-    }
-  },
-
-  async getItem(key) {
-    try {
-      if (isNativeSecureSupported) {
-        return await SecureStore.getItemAsync(key);
-      } else {
-        return await AsyncStorage.getItem(`@vault_${key}`);
-      }
-    } catch (e) {
-      console.warn(`[SecureStore Error] Gagal baca ${key}:`, e);
-      return null;
-    }
-  },
-
-  async deleteItem(key) {
-    try {
-      if (isNativeSecureSupported) {
-        await SecureStore.deleteItemAsync(key);
-      } else {
-        await AsyncStorage.removeItem(`@vault_${key}`);
-      }
-      return true;
-    } catch (e) {
-      console.warn(`[SecureStore Error] Gagal hapus ${key}:`, e);
-      return false;
-    }
-  },
+/**
+ * Simpan access token ke Expo SecureStore (encrypted on-device storage)
+ */
+const saveAccessToken = async (token) => {
+  try {
+    await SecureStore.setItemAsync(SECURE_KEYS.ACCESS_TOKEN, token);
+    return true;
+  } catch (e) {
+    console.error('[SecureStore] Gagal menyimpan token:', e.message);
+    return false;
+  }
 };
 
-// 3. Cryptographic Pure JS SHA-256 Hashing Algorithm
-// Menghindari penyimpanan password dalam plain text tanpa dependensi binary native
-function hashSha256(ascii) {
-  function rightRotate(value, amount) {
-    return (value >>> amount) | (value << (32 - amount));
+/**
+ * Ambil access token dari SecureStore.
+ * Mengembalikan string token atau null jika tidak ada / error.
+ */
+const getAccessToken = async () => {
+  try {
+    return await SecureStore.getItemAsync(SECURE_KEYS.ACCESS_TOKEN);
+  } catch (e) {
+    console.error('[SecureStore] Gagal mengambil token:', e.message);
+    return null;
   }
-  const maxWord = Math.pow(2, 32);
-  let i, j;
-  let result = '';
-  const words = [];
-  const asciiBitLength = ascii.length * 8;
-  const hash = [];
-  const k = [];
-  let primeCounter = 0;
-  const isComposite = {};
-  for (let candidate = 2; primeCounter < 64; candidate++) {
-    if (!isComposite[candidate]) {
-      for (i = 0; i < 313; i += candidate) {
-        isComposite[i] = candidate;
-      }
-      hash[primeCounter] = (Math.pow(candidate, 0.5) * maxWord) | 0;
-      k[primeCounter++] = (Math.pow(candidate, 1 / 3) * maxWord) | 0;
-    }
-  }
-  ascii += '\x80';
-  while ((ascii.length % 64) - 56) ascii += '\x00';
-  for (i = 0; i < ascii.length; i++) {
-    j = ascii.charCodeAt(i);
-    words[i >> 2] |= j << ((3 - (i % 4)) * 8);
-  }
-  words[words.length] = (asciiBitLength / maxWord) | 0;
-  words[words.length] = asciiBitLength;
-  for (j = 0; j < words.length;) {
-    const w = words.slice(j, (j += 16));
-    const oldHash = hash.slice(0, 8);
-    for (i = 0; i < 64; i++) {
-      const w15 = w[i - 15],
-        w2 = w[i - 2];
-      const a = hash[0],
-        e = hash[4];
-      const temp1 =
-        hash[7] +
-        (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
-        ((e & hash[5]) ^ (~e & hash[6])) +
-        k[i] +
-        (w[i] =
-          i < 16
-            ? w[i]
-            : (w[i - 16] +
-              (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
-              w[i - 7] +
-              (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
-            0);
-      const temp2 =
-        (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
-        ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
-      hash.unshift((temp1 + temp2) | 0);
-      hash[4] = (hash[4] + temp1) | 0;
-    }
-    for (i = 0; i < 8; i++) {
-      hash[i] = (hash[i] + oldHash[i]) | 0;
-    }
-  }
-  for (i = 0; i < 8; i++) {
-    for (let i2 = 3; i2 >= 0; i2--) {
-      const b = (hash[i] >> (i2 * 8)) & 255;
-      result += (b < 16 ? '0' : '') + b.toString(16);
-    }
-  }
-  return result;
-}
-
-const secureHashPassword = (password, salt) => {
-  return hashSha256(`${password}_studymate_salt_${salt}`);
 };
 
-// 4. Default Seed Starter Templates for Newly Registered Users
-const getInitialCourseTemplates = (userId) => [
+/**
+ * Hapus access token dari SecureStore (dipanggil saat logout).
+ */
+const deleteAccessToken = async () => {
+  try {
+    await SecureStore.deleteItemAsync(SECURE_KEYS.ACCESS_TOKEN);
+    return true;
+  } catch (e) {
+    console.error('[SecureStore] Gagal menghapus token:', e.message);
+    return false;
+  }
+};
+
+/**
+ * Simpan data user ke SecureStore (nama, email, id)
+ */
+const saveUserData = async (userData) => {
+  try {
+    await SecureStore.setItemAsync(SECURE_KEYS.USER_DATA, JSON.stringify(userData));
+    return true;
+  } catch (e) {
+    console.error('[SecureStore] Gagal menyimpan user data:', e.message);
+    return false;
+  }
+};
+
+/**
+ * Ambil data user dari SecureStore.
+ * Mengembalikan objek user atau null.
+ */
+const getUserData = async () => {
+  try {
+    const raw = await SecureStore.getItemAsync(SECURE_KEYS.USER_DATA);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.error('[SecureStore] Gagal mengambil user data:', e.message);
+    return null;
+  }
+};
+
+/**
+ * Hapus semua data user dari SecureStore (dipanggil saat logout).
+ */
+const deleteUserData = async () => {
+  try {
+    await SecureStore.deleteItemAsync(SECURE_KEYS.USER_DATA);
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+// =================================================================
+// SPRINT 04 – ANGGOTA 2: API Client Helpers
+// Fungsi wrapper untuk request ke backend PHP dengan Bearer Token
+// =================================================================
+
+/**
+ * POST request tanpa autentikasi (untuk register & login).
+ */
+// =================================================================
+// SPRINT 04 – ANGGOTA 2: API Client Helpers (BUG FIX: timeout + JSON error handling)
+// Timeout 10 detik mencegah loading berlanjut tanpa batas jika server tidak respond.
+// =================================================================
+
+/** Wrapper fetch dengan timeout menggunakan AbortController */
+const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // ═══ DEBUG LOG: tampil di terminal Expo (npx expo start) ═══
+  console.log('[FETCH] ➜', options.method || 'GET', url);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+};
+
+/** Parse response JSON dengan aman – jika bukan JSON (misal PHP HTML error), throw pesan jelas */
+const safeParseJson = async (response) => {
+  const text = await response.text();
+  // ═══ DEBUG LOG: tampil di terminal Expo ═══
+  console.log('[FETCH] ◀ HTTP', response.status, '| Body (200 chars):', text.substring(0, 200));
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Backend mengembalikan non-JSON (kemungkinan PHP error/notice/warning)
+    console.error('[API] ⚠️ Non-JSON response – kemungkinan PHP Warning/Error di output:', text.substring(0, 500));
+    throw new Error('Server mengembalikan respons tidak valid. Lihat terminal Expo untuk raw response.');
+  }
+};
+
+/**
+ * POST request tanpa autentikasi (untuk register & login).
+ * BUG FIX: Tambahkan timeout 10 detik dan safe JSON parsing.
+ */
+const apiPost = async (endpoint, body) => {
+  const response = await fetchWithTimeout(API_URL + endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await safeParseJson(response);
+  return { ok: response.ok, status: response.status, data };
+};
+
+/**
+ * POST request dengan Bearer Token (untuk protected endpoints seperti logout).
+ * BUG FIX: Tambahkan timeout 10 detik dan safe JSON parsing.
+ */
+const apiPostAuth = async (endpoint, body = {}) => {
+  const token = await getAccessToken();
+  const response = await fetchWithTimeout(API_URL + endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': 'Bearer ' + (token || ''),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await safeParseJson(response);
+  return { ok: response.ok, status: response.status, data };
+};
+
+/**
+ * GET request dengan Bearer Token (untuk protected endpoints seperti /users/me).
+ * BUG FIX: Tambahkan timeout 10 detik dan safe JSON parsing.
+ */
+const apiGetAuth = async (endpoint) => {
+  const token = await getAccessToken();
+  const response = await fetchWithTimeout(API_URL + endpoint, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer ' + (token || ''),
+    },
+  });
+  const data = await safeParseJson(response);
+  return { ok: response.ok, status: response.status, data };
+};
+
+// =================================================================
+// 2. INITIAL SEED DATA (MAHASISWA REALISTIS)
+// =================================================================
+const INITIAL_COURSES = [
   {
-    id: `crs_1_${userId}`,
-    userId,
+    id: 'crs_1',
     code: 'IF3101',
     name: 'Pemrograman Mobile',
     lecturer: 'Dr. Ir. Hendra Wijaya, M.Kom',
@@ -215,8 +274,7 @@ const getInitialCourseTemplates = (userId) => [
     color: '#4F46E5',
   },
   {
-    id: `crs_2_${userId}`,
-    userId,
+    id: 'crs_2',
     code: 'IF3102',
     name: 'Basis Data Lanjut',
     lecturer: 'Prof. Sri Rahayu, Ph.D',
@@ -227,8 +285,7 @@ const getInitialCourseTemplates = (userId) => [
     color: '#0EA5E9',
   },
   {
-    id: `crs_3_${userId}`,
-    userId,
+    id: 'crs_3',
     code: 'IF3103',
     name: 'Kecerdasan Buatan (AI)',
     lecturer: 'Budi Santoso, S.T., M.Sc',
@@ -239,8 +296,7 @@ const getInitialCourseTemplates = (userId) => [
     color: '#8B5CF6',
   },
   {
-    id: `crs_4_${userId}`,
-    userId,
+    id: 'crs_4',
     code: 'IF3104',
     name: 'Rekayasa Perangkat Lunak',
     lecturer: 'Dewi Lestari, M.T',
@@ -252,11 +308,10 @@ const getInitialCourseTemplates = (userId) => [
   },
 ];
 
-const getInitialMaterialTemplates = (userId) => [
+const INITIAL_MATERIALS = [
   {
-    id: `mat_1_${userId}`,
-    userId,
-    courseId: `crs_1_${userId}`,
+    id: 'mat_1',
+    courseId: 'crs_1',
     courseName: 'Pemrograman Mobile',
     meetingNumber: 1,
     meetingTopic: 'Pengenalan React Native & Expo Ecosystem',
@@ -266,345 +321,210 @@ const getInitialMaterialTemplates = (userId) => [
     fileSize: '4.2 MB',
     dateAdded: '2026-10-12',
     isStudied: true,
-    userNotes: 'Catatan pribadi: Gunakan SafeAreaProvider dan useSafeAreaInsets agar tidak bertabrakan dengan status bar.',
-    summary: 'Materi ini membahas arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer), perbedaan cross-platform, serta setup Expo Go.',
+    userNotes: 'Catatan penting: Jangan lupa gunakan Bun atau npm yang kompatibel dengan React 19. Expo Go sangat memudahkan live testing via QR Code.',
+    summary: 'Materi ini membahas fundamental arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer). Menjelaskan perbedaan pengembangan native vs cross-platform, instalasi CLI, serta keunggulan Expo Go dalam mempercepat prototyping aplikasi mobile tanpa kompilasi native yang berat.',
     keyPoints: [
       'React Native menggunakan konsep declarative UI dengan komponen native di iOS & Android.',
-      'Expo Go mengemas dependensi native siap pakai tanpa build Gradle berat.',
-      'State & Props adalah fondasi manajemen data komponen React.',
+      'Expo Go mengemas dependensi native siap pakai sehingga tidak butuh Xcode/Android Studio saat tahap belajar dasar.',
+      'JSX mengizinkan penulisan sintaks mirip HTML di dalam kode JavaScript murni.',
+      'State & Props adalah fondasi manajemen data komponen dalam React.',
     ],
     quiz: [
       {
-        question: 'Apa peran Fabric Renderer di arsitektur React Native modern?',
-        options: ['Mengubah PDF menjadi teks', 'Merender UI langsung ke thread native secara efisien', 'Mengompres foto galeri', 'Menghubungkan WiFi'],
+        question: 'Apa fungsi utama Fabric Renderer di arsitektur modern React Native?',
+        options: ['Mengubah file PDF menjadi teks', 'Melakukan render UI secara efisien langsung ke komponen native', 'Mengkompresi gambar kamera', 'Menyimpan database lokal SQLite'],
         correctIndex: 1,
-        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JS thread dan native view thread sehingga UI berjalan 60 FPS.',
+        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JavaScript thread dan native view thread sehingga perpindahan UI terasa instan 60 FPS.',
+      },
+      {
+        question: 'Kapan sebaiknya menggunakan Expo Go dibanding Bare React Native?',
+        options: ['Saat membutuhkan custom library C++ native tingkat lanjut', 'Untuk prototyping cepat dan belajar tanpa konfigurasi native yang rumit', 'Ketika tidak memiliki koneksi internet sama sekali', 'Saat membuat aplikasi sistem operasi baru'],
+        correctIndex: 1,
+        explanation: 'Expo Go dirancang agar mahasiswa langsung fokus ke logika aplikasi tanpa pusing konfigurasi Gradle atau CocoaPods.',
       },
     ],
   },
   {
-    id: `mat_2_${userId}`,
-    userId,
-    courseId: `crs_1_${userId}`,
+    id: 'mat_2',
+    courseId: 'crs_1',
     courseName: 'Pemrograman Mobile',
     meetingNumber: 2,
-    meetingTopic: 'Komponen UI, Flexbox & Responsive Layout',
+    meetingTopic: 'Komponen UI, Flexbox & State Management',
     title: 'Slide Kuliah: Flexbox Responsive & State React',
     fileType: 'PPT',
     fileName: 'Pertemuan_2_Flexbox_State.pptx',
     fileSize: '12.8 MB',
     dateAdded: '2026-10-19',
     isStudied: true,
-    userNotes: 'Default flexDirection di React Native adalah column (vertikal).',
-    summary: 'Membahas perancangan layout mobile fleksibel menggunakan Flexbox, alignItems, justifyContent, serta Hook useState.',
+    userNotes: 'Ingat! default flexDirection di React Native adalah "column", bukan "row" seperti di CSS web standar.',
+    summary: 'Membahas perancangan layout responsif mobile menggunakan Flexbox. Fokus pada properti alignItems, justifyContent, flexWrap, serta pengelolaan State lokal dengan React Hook useState dan useEffect untuk siklus hidup komponen.',
     keyPoints: [
-      'Default flexDirection adalah column.',
+      'Default flexDirection pada React Native adalah column (vertikal).',
       'justifyContent mengatur perataan sepanjang main axis.',
-      'alignItems mengatur perataan cross axis.',
+      'alignItems mengatur perataan tegak lurus terhadap cross axis.',
+      'useState memicu re-render UI setiap kali setter function dipanggil dengan state baru.',
     ],
     quiz: [
       {
-        question: 'Nilai default flexDirection di React Native adalah?',
-        options: ['row', 'column', 'grid', 'flex-start'],
+        question: 'Apa nilai default dari flexDirection di React Native?',
+        options: ['row', 'column', 'row-reverse', 'grid'],
         correctIndex: 1,
-        explanation: 'Berbeda dari web CSS yang default-nya row, React Native secara default adalah column.',
+        explanation: 'Berbeda dari CSS web yang default-nya row, React Native secara default berorientasi vertikal (column) sesuai layar smartphone.',
+      },
+    ],
+  },
+  {
+    id: 'mat_3',
+    courseId: 'crs_1',
+    courseName: 'Pemrograman Mobile',
+    meetingNumber: 3,
+    meetingTopic: 'Navigasi Antar Halaman & Async Storage',
+    title: 'Hands-on: React Navigation & Offline Persistence',
+    fileType: 'PDF',
+    fileName: 'Modul_03_AsyncStorage_BottomTabs.pdf',
+    fileSize: '3.5 MB',
+    dateAdded: '2026-10-26',
+    isStudied: false,
+    userNotes: 'Perlu latihan ulang: cara serialisasi JSON.stringify dan JSON.parse saat menyimpan array object ke AsyncStorage.',
+    summary: 'Mempelajari navigasi multi-layar (Stack Navigation, Bottom Tab Navigation) dan teknik penyimpanan offline-first menggunakan AsyncStorage. Mengupas siklus simpan-ambil data user secara asinkron.',
+    keyPoints: [
+      'AsyncStorage hanya dapat menyimpan data dalam format String nilai tunggal (gunakan JSON.stringify).',
+      'Bottom Tab Navigation memberikan akses cepat ke 4-5 menu utama aplikasi seluler.',
+      'Gunakan try-catch block untuk menangani error saat I/O AsyncStorage.',
+    ],
+    quiz: [
+      {
+        question: 'Tipe data apa yang didukung langsung oleh AsyncStorage React Native?',
+        options: ['Array murni', 'String murni', 'Binary Buffer murni', 'Boolean murni'],
+        correctIndex: 1,
+        explanation: 'AsyncStorage berbasis key-value string. Object atau array harus dikonversi via JSON.stringify() terlebih dahulu.',
+      },
+    ],
+  },
+  {
+    id: 'mat_4',
+    courseId: 'crs_2',
+    courseName: 'Basis Data Lanjut',
+    meetingNumber: 1,
+    meetingTopic: 'Query Optimization & Indexing B-Tree',
+    title: 'Slide: Konsep Indexing & Execution Plan',
+    fileType: 'PPT',
+    fileName: 'Pertemuan1_Database_Indexing.pptx',
+    fileSize: '8.4 MB',
+    dateAdded: '2026-10-13',
+    isStudied: true,
+    userNotes: 'Catatan dosen: Indeks mempercepat SELECT namun memperlambat INSERT/UPDATE karena pohon indeks harus direorganisasi.',
+    summary: 'Ringkasan mengenai struktur data B-Tree pada RDBMS (PostgreSQL/MySQL), cara membaca Query Execution Plan (EXPLAIN ANALYZE), dan strategi memilih kolom untuk composite indexing.',
+    keyPoints: [
+      'Clustered Index menentukan urutan fisik penyimpanan data pada disk.',
+      'Non-clustered Index membuat pointer penunjuk ke lokasi data aktual.',
+      'EXPLAIN ANALYZE digunakan untuk melihat estimasi cost vs actual runtime eksekusi query.',
+    ],
+    quiz: [
+      {
+        question: 'Apa dampak penambahan terlalu banyak indeks pada tabel database?',
+        options: ['Operasi SELECT menjadi sangat lambat', 'Operasi INSERT dan UPDATE membutuhkan waktu lebih lama', 'Database kehilangan data secara acak', 'Ukuran disk berkurang 50%'],
+        correctIndex: 1,
+        explanation: 'Setiap operasi penulisan (INSERT/UPDATE/DELETE) mewajibkan database memperbarui semua pohon indeks terkait.',
+      },
+    ],
+  },
+  {
+    id: 'mat_5',
+    courseId: 'crs_3',
+    courseName: 'Kecerdasan Buatan (AI)',
+    meetingNumber: 2,
+    meetingTopic: 'Heuristic Search & Algoritma A*',
+    title: 'Catatan Kuliah: A* Search vs Dijkstra Algorithm',
+    fileType: 'DOC',
+    fileName: 'Catatan_Pribadi_Algoritma_A_Star.txt',
+    fileSize: '145 KB',
+    dateAdded: '2026-10-20',
+    isStudied: false,
+    userNotes: 'Rumus f(n) = g(n) + h(n). g(n) = cost riil dari start ke n, h(n) = estimasi heuristik ke tujuan.',
+    summary: 'Komparasi algoritma pencarian rute terpendek. Algoritma A* menggunakan fungsi evaluasi f(n) = g(n) + h(n) di mana h(n) harus admissible (tidak pernah overestimasi biaya ke target) agar menjamin solusi optimal.',
+    keyPoints: [
+      'Algoritma Dijkstra adalah kasus khusus dari A* di mana nilai heuristik h(n) bernilai 0.',
+      'Heuristik admissible menjamin A* selalu menemukan jalur terpendek pertama kali.',
+      'A* banyak diaplikasikan dalam game development, GPS navigasi, dan robotika pathfinding.',
+    ],
+    quiz: [
+      {
+        question: 'Apa syarat agar fungsi heuristik h(n) disebut Admissible?',
+        options: ['h(n) harus selalu bernilai negatif', 'h(n) tidak boleh melebihi biaya riil sebenarnya ke tujuan', 'h(n) harus sama dengan nol di semua node', 'h(n) harus dihitung dengan machine learning'],
+        correctIndex: 1,
+        explanation: 'Jika h(n) tidak pernah mengestimasi lebih tinggi dari jarak sebenarnya, maka rute terpendek dijamin ditemukan.',
       },
     ],
   },
 ];
 
-const getInitialTaskTemplates = (userId) => [
+const INITIAL_TASKS = [
   {
-    id: `tsk_1_${userId}`,
-    userId,
-    courseId: `crs_1_${userId}`,
+    id: 'tsk_1',
+    courseId: 'crs_1',
     courseName: 'Pemrograman Mobile',
-    title: 'Tugas 1: Integrasi Autentikasi & SecureStore StudyMate',
+    title: 'Tugas 1: Bangun UI Aplikasi StudyMate',
     deadline: '2026-11-06',
     priority: 'Tinggi',
     completed: false,
-    description: 'Selesaikan pemisahan SecureStore untuk token dan AsyncStorage untuk data materi.',
+    description: 'Selesaikan layout dashboard, navigasi tab, dan modularisasi modal AI Assistant.',
   },
   {
-    id: `tsk_2_${userId}`,
-    userId,
-    courseId: `crs_2_${userId}`,
+    id: 'tsk_2',
+    courseId: 'crs_2',
     courseName: 'Basis Data Lanjut',
-    title: 'Praktikum SQL: Analisis Indexing B-Tree',
+    title: 'Praktikum SQL: Analisis Indexing EXPLAIN',
     deadline: '2026-11-08',
     priority: 'Sedang',
     completed: true,
-    description: 'Bandingkan waktu eksekusi query sebelum dan sesudah dibuatkan index.',
+    description: 'Buat laporan perbandingan waktu eksekusi query sebelum dan sesudah dibuatkan B-Tree Index.',
+  },
+  {
+    id: 'tsk_3',
+    courseId: 'crs_3',
+    courseName: 'Kecerdasan Buatan (AI)',
+    title: 'Resume Paper: Large Language Models for Education',
+    deadline: '2026-11-12',
+    priority: 'Rendah',
+    completed: false,
+    description: 'Buat resume 2 halaman tentang penerapan generative AI untuk ringkasan materi otomatis.',
   },
 ];
 
-// User-Scoped Local Data Operations (AsyncStorage with Try-Catch)
-const localDataService = {
-  async loadUserData(userId) {
-    try {
-      const coursesKey = getAsyncUserKey('courses', userId);
-      const materialsKey = getAsyncUserKey('materials', userId);
-      const tasksKey = getAsyncUserKey('tasks', userId);
-      const settingsKey = getAsyncUserKey('settings', userId);
-
-      const [storedCourses, storedMaterials, storedTasks, storedSettings] =
-        await Promise.all([
-          AsyncStorage.getItem(coursesKey),
-          AsyncStorage.getItem(materialsKey),
-          AsyncStorage.getItem(tasksKey),
-          AsyncStorage.getItem(settingsKey),
-        ]);
-
-      let courses = storedCourses ? JSON.parse(storedCourses) : null;
-      let materials = storedMaterials ? JSON.parse(storedMaterials) : null;
-      let tasks = storedTasks ? JSON.parse(storedTasks) : null;
-      let settings = storedSettings
-        ? JSON.parse(storedSettings)
-        : {
-          notifyBeforeClass: true,
-          notifyDeadlines: true,
-          autoSummarizeAi: true,
-        };
-
-      // Inisialisasi awal jika akun belum memiliki data
-      if (!courses || courses.length === 0) {
-        courses = getInitialCourseTemplates(userId);
-        await AsyncStorage.setItem(coursesKey, JSON.stringify(courses));
-      }
-      if (!materials || materials.length === 0) {
-        materials = getInitialMaterialTemplates(userId);
-        await AsyncStorage.setItem(materialsKey, JSON.stringify(materials));
-      }
-      if (!tasks || tasks.length === 0) {
-        tasks = getInitialTaskTemplates(userId);
-        await AsyncStorage.setItem(tasksKey, JSON.stringify(tasks));
-      }
-
-      return { courses, materials, tasks, settings };
-    } catch (error) {
-      console.error('[LocalDataService] Gagal memuat data akun:', error);
-      return {
-        courses: getInitialCourseTemplates(userId),
-        materials: getInitialMaterialTemplates(userId),
-        tasks: getInitialTaskTemplates(userId),
-        settings: { notifyBeforeClass: true, notifyDeadlines: true, autoSummarizeAi: true },
-      };
-    }
+const INITIAL_NOTIFICATIONS = [
+  {
+    id: 'notif_1',
+    title: 'Jadwal Kuliah Hari Ini!',
+    message: 'Mata Kuliah Pemrograman Mobile (Pertemuan 3) dimulai pukul 08:00 WIB di Lab Komputasi 3.',
+    time: '30 menit yang lalu',
+    read: false,
+    type: 'class',
   },
-
-  async saveCourses(userId, courses) {
-    try {
-      await AsyncStorage.setItem(getAsyncUserKey('courses', userId), JSON.stringify(courses));
-      return true;
-    } catch (e) {
-      console.error('[LocalDataService] Gagal simpan courses:', e);
-      return false;
-    }
+  {
+    id: 'notif_2',
+    title: 'Materi Belum Dibaca ⚠️',
+    message: 'Kamu belum membaca materi "Hands-on: React Navigation & Offline Persistence". Klik untuk pelajari.',
+    time: '2 jam yang lalu',
+    read: false,
+    type: 'material',
   },
-
-  async saveMaterials(userId, materials) {
-    try {
-      await AsyncStorage.setItem(getAsyncUserKey('materials', userId), JSON.stringify(materials));
-      return true;
-    } catch (e) {
-      console.error('[LocalDataService] Gagal simpan materials:', e);
-      return false;
-    }
+  {
+    id: 'notif_3',
+    title: 'Deadline Tugas H-4',
+    message: 'Tugas 1: Bangun UI Aplikasi StudyMate tenggat tanggal 06 November 2026.',
+    time: 'Kemarin',
+    read: true,
+    type: 'task',
   },
-
-  async saveTasks(userId, tasks) {
-    try {
-      await AsyncStorage.setItem(getAsyncUserKey('tasks', userId), JSON.stringify(tasks));
-      return true;
-    } catch (e) {
-      console.error('[LocalDataService] Gagal simpan tasks:', e);
-      return false;
-    }
-  },
-
-  async saveSettings(userId, settings) {
-    try {
-      await AsyncStorage.setItem(getAsyncUserKey('settings', userId), JSON.stringify(settings));
-      return true;
-    } catch (e) {
-      console.error('[LocalDataService] Gagal simpan settings:', e);
-      return false;
-    }
-  },
-};
+];
 
 // =================================================================
-// REUSABLE UI COMPONENTS (SHARED ATOMIC DESIGN)
+// 3. REUSABLE ATOMIC & MOLECULAR UI COMPONENTS
 // =================================================================
-// ==========================================
-// PART 1 - ANGGOTA 1
-// DATA MODELING & API REQUEST
-// ==========================================
-/**
- * TANGGUNG JAWAB ANGGOTA 1:
- * 1. Menganalisis kebutuhan data dan pemodelan entitas StudyMate (Course, Material, Task, Note).
- * 2. Menentukan arsitektur DTO (Data Transfer Object) untuk integrasi REST API.
- * 3. Menetapkan konfigurasi Endpoint dan HTTP Method (GET).
- * 4. Mengimplementasikan Network Request menggunakan Fetch API dengan async/await.
- * 5. Melakukan validasi status response (response.ok) dan parsing JSON stream (response.json()).
- * 6. Menangani kesalahan jaringan (network error, HTTP non-200, timeout).
- */
 
-// DATA MODEL SPESIFIKASI ENTITAS STUDYMATE:
-// - Course:   { id: number, name: string, lecturer: string, room: string, day: string, time: string }
-// - Material: { id: number, title: string, description: string, courseId: number, meeting: number, type: string, status: string }
-// - Task:     { id: number, title: string, courseId: number, deadline: string, status: string }
-// - Note:     { id: number, title: string, content: string, courseId: number }
-
-// KONFIGURASI REST API ENDPOINT (JSONPlaceholder Public REST API)
-const REST_API_CONFIG = {
-  ENDPOINT: 'https://jsonplaceholder.typicode.com/posts?_limit=10',
-  METHOD: 'GET',
-  TIMEOUT_MS: 10000,
-};
-
-/**
- * Service: fetchApiReferencesService
- * Melakukan HTTP GET Request ke REST API server publik JSONPlaceholder.
- * Menerima stream response, memvalidasi response.ok, dan melakukan JSON parsing.
- * 
- * @returns {Promise<Array>} Array of raw items dari server
- */
-const fetchApiReferencesService = async () => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REST_API_CONFIG.TIMEOUT_MS);
-
-  try {
-    const response = await fetch(REST_API_CONFIG.ENDPOINT, {
-      method: REST_API_CONFIG.METHOD,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    // Validasi HTTP Status code (200 OK)
-    if (!response.ok) {
-      throw new Error(`HTTP Error! Status: ${response.status} (${response.statusText || 'Gagal mengambil data dari server'})`);
-    }
-
-    // JSON Parsing: konversi response body stream ke format JavaScript Array of Objects
-    const rawData = await response.json();
-
-    if (!Array.isArray(rawData)) {
-      throw new Error('Format response tidak valid: data yang diterima bukan bertipe array');
-    }
-
-    return rawData;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Koneksi timeout: Server tidak merespons dalam waktu 10 detik.');
-    }
-    throw error;
-  }
-};
-// ==========================================
-// END OF PART 1 - ANGGOTA 1
-// ==========================================
-
-
-// ==========================================
-// PART 2 - ANGGOTA 2
-// DATA MAPPING & DYNAMIC UI
-// ==========================================
-/**
- * TANGGUNG JAWAB ANGGOTA 2:
- * 1. Melakukan Data Mapping dari raw JSON response ke format DTO StudyMate.
- * 2. Transformasi struktur:
- *      Raw Server: { userId: number, id: number, title: string, body: string }
- *      Target DTO: { id: number, title: string, description: string, authorId: number }
- * 3. Menghindari penambahan field fiktif (seperti image atau status palsu) yang tidak ada pada response.
- * 4. Membangun Reusable Component: ApiReferenceCard dengan tampilan visual yang rapi dan konsisten.
- * 5. Menyiapkan elemen UI dinamis untuk state Loading, Error, Empty, dan Populated.
- */
-
-/**
- * mapApiResponseToDto:
- * Mengubah array data mentah API menjadi struktur DTO StudyMate yang bersih.
- * @param {Array} rawItems Array hasil JSON parsing dari REST API
- * @returns {Array} Array objek sesuai DTO StudyMate
- */
-const mapApiResponseToDto = (rawItems) => {
-  if (!Array.isArray(rawItems)) return [];
-
-  return rawItems.map((item) => ({
-    id: Number(item.id),
-    title: String(item.title || '').trim(),
-    description: String(item.body || '').trim(),
-    authorId: Number(item.userId),
-  }));
-};
-
-/**
- * Reusable Component: ApiReferenceCard
- * Komponen kartu untuk menampilkan data referensi eksternal dari REST API secara dinamis.
- */
-const ApiReferenceCard = ({ reference, onPress }) => {
-  if (!reference) return null;
-
-  return (
-    <View style={styles.apiCardContainer}>
-      {/* Top Meta Row */}
-      <View style={styles.apiCardHeader}>
-        <View style={styles.apiBadgeRow}>
-          <View style={styles.apiIdBadge}>
-            <Ionicons name="document-text-outline" size={12} color={COLORS.primary} />
-            <Text style={styles.apiIdBadgeText}>Ref #{reference.id}</Text>
-          </View>
-          <View style={styles.apiAuthorBadge}>
-            <Ionicons name="person-outline" size={11} color={COLORS.secondary} />
-            <Text style={styles.apiAuthorBadgeText}>Author ID: {reference.authorId}</Text>
-          </View>
-        </View>
-        <View style={styles.apiSourcePill}>
-          <Text style={styles.apiSourcePillText}>REST API</Text>
-        </View>
-      </View>
-
-      {/* Title */}
-      <Text style={styles.apiCardTitle} numberOfLines={2}>
-        {reference.title}
-      </Text>
-
-      {/* Description */}
-      <Text style={styles.apiCardDescription} numberOfLines={3}>
-        {reference.description}
-      </Text>
-
-      {/* Bottom Footer */}
-      <View style={styles.apiCardFooter}>
-        <View style={styles.apiStatusIndicator}>
-          <View style={styles.apiStatusDot} />
-          <Text style={styles.apiStatusText}>JSONPlaceholder Public Feed</Text>
-        </View>
-        {onPress && (
-          <TouchableOpacity
-            style={styles.apiDetailLink}
-            onPress={() => onPress(reference)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.apiDetailLinkText}>Pelajari</Text>
-            <Ionicons name="arrow-forward" size={12} color={COLORS.primary} />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-};
-// ==========================================
-// END OF PART 2 - ANGGOTA 2
-// ==========================================
-
-const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload, onOpenSecurityModal }) => (
+// Reusable Header Component with Safe Status Bar Handling (Anggota 1)
+const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUpload }) => (
   <View style={styles.headerContainer}>
     <View style={styles.headerTextGroup}>
       <Text style={styles.headerSubtitle} numberOfLines={1}>
@@ -615,16 +535,6 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
       </Text>
     </View>
     <View style={styles.headerActions}>
-      {onOpenSecurityModal && (
-        <TouchableOpacity
-          style={[styles.headerIconButton, { borderColor: COLORS.accent + '40' }]}
-          onPress={onOpenSecurityModal}
-          accessibilityLabel="Audit Keamanan Data"
-          activeOpacity={0.7}
-        >
-          <Ionicons name="shield-checkmark" size={19} color={COLORS.accent} />
-        </TouchableOpacity>
-      )}
       {onOpenScheduleUpload && (
         <TouchableOpacity
           style={styles.headerIconButton}
@@ -632,7 +542,7 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
           accessibilityLabel="Unggah Jadwal Kuliah"
           activeOpacity={0.7}
         >
-          <Ionicons name="calendar-outline" size={19} color={COLORS.primary} />
+          <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
         </TouchableOpacity>
       )}
       <TouchableOpacity
@@ -641,7 +551,7 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
         accessibilityLabel="Pusat Notifikasi"
         activeOpacity={0.7}
       >
-        <Ionicons name="notifications-outline" size={19} color={COLORS.textPrimary} />
+        <Ionicons name="notifications-outline" size={20} color={COLORS.textPrimary} />
         {unreadCount > 0 && (
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>{unreadCount}</Text>
@@ -652,6 +562,7 @@ const AppHeader = ({ title, subtitle, onOpenNotif, unreadCount, onOpenScheduleUp
   </View>
 );
 
+// Reusable Badge Chip
 const Badge = ({ label, color, bg, icon }) => (
   <View style={[styles.badgeContainer, { backgroundColor: bg || COLORS.primaryLight }]}>
     {icon && <Ionicons name={icon} size={11} color={color || COLORS.primary} style={{ marginRight: 4 }} />}
@@ -661,6 +572,7 @@ const Badge = ({ label, color, bg, icon }) => (
   </View>
 );
 
+// Dynamic Stat Card for Dashboard (Anggota 1)
 const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth }) => (
   <View style={[styles.statCard, { width: cardWidth, borderLeftColor: iconColor, borderLeftWidth: 4 }]}>
     <View style={[styles.statIconBox, { backgroundColor: bgColor }]}>
@@ -682,7 +594,15 @@ const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth 
   </View>
 );
 
-const MaterialCard = ({ material, onPress, onToggleStudied, onOpenAi, onOpenNotes, onDelete }) => {
+// Material Card Component (Anggota 2)
+const MaterialCard = ({
+  material,
+  onPress,
+  onToggleStudied,
+  onOpenAi,
+  onOpenNotes,
+  onDelete,
+}) => {
   const getFileBadge = (type) => {
     switch (type) {
       case 'PDF':
@@ -694,19 +614,31 @@ const MaterialCard = ({ material, onPress, onToggleStudied, onOpenAi, onOpenNote
         return { color: COLORS.secondary, bg: COLORS.secondaryLight, icon: 'newspaper' };
     }
   };
+
   const badgeInfo = getFileBadge(material.fileType);
 
   return (
     <View style={styles.materialCard}>
+      {/* Top Meta Header */}
       <View style={styles.materialCardTop}>
         <View style={styles.materialMetaRow}>
-          <Badge label={material.fileType} color={badgeInfo.color} bg={badgeInfo.bg} icon={badgeInfo.icon} />
-          <Badge label={`Pertemuan ${material.meetingNumber}`} color={COLORS.textSecondary} bg={COLORS.inputBackground} />
+          <Badge
+            label={material.fileType}
+            color={badgeInfo.color}
+            bg={badgeInfo.bg}
+            icon={badgeInfo.icon}
+          />
+          <Badge
+            label={`Pertemuan ${material.meetingNumber}`}
+            color={COLORS.textSecondary}
+            bg={COLORS.inputBackground}
+          />
           <Text style={styles.materialCourseTag} numberOfLines={1}>
             {material.courseName}
           </Text>
         </View>
 
+        {/* Studied Toggle Button */}
         <TouchableOpacity
           onPress={() => onToggleStudied(material.id)}
           style={styles.checkCircleButton}
@@ -721,6 +653,7 @@ const MaterialCard = ({ material, onPress, onToggleStudied, onOpenAi, onOpenNote
         </TouchableOpacity>
       </View>
 
+      {/* Main Material Title & Topic */}
       <TouchableOpacity activeOpacity={0.75} onPress={() => onPress(material)}>
         <Text style={styles.materialTitle} numberOfLines={2}>
           {material.title}
@@ -733,14 +666,27 @@ const MaterialCard = ({ material, onPress, onToggleStudied, onOpenAi, onOpenNote
         </Text>
       </TouchableOpacity>
 
+      {/* Action Footer */}
       <View style={styles.materialCardFooter}>
-        <TouchableOpacity style={styles.actionPillAi} onPress={() => onOpenAi(material)} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.actionPillAi}
+          onPress={() => onOpenAi(material)}
+          activeOpacity={0.7}
+        >
           <Ionicons name="sparkles" size={13} color="#7C3AED" />
           <Text style={styles.actionPillAiText}>StudyMate AI</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionPillNotes} onPress={() => onOpenNotes(material)} activeOpacity={0.7}>
-          <Ionicons name={material.userNotes ? 'document-text' : 'create-outline'} size={13} color={COLORS.primary} />
+        <TouchableOpacity
+          style={styles.actionPillNotes}
+          onPress={() => onOpenNotes(material)}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={material.userNotes ? 'document-text' : 'create-outline'}
+            size={13}
+            color={COLORS.primary}
+          />
           <Text style={styles.actionPillNotesText}>
             {material.userNotes ? 'Lihat Catatan' : '+ Catatan'}
           </Text>
@@ -759,8 +705,10 @@ const MaterialCard = ({ material, onPress, onToggleStudied, onOpenAi, onOpenNote
   );
 };
 
+// Course Card Component (Anggota 2)
 const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
-  const progressPercent = materialCount > 0 ? Math.round((studiedCount / materialCount) * 100) : 0;
+  const progressPercent =
+    materialCount > 0 ? Math.round((studiedCount / materialCount) * 100) : 0;
 
   return (
     <TouchableOpacity
@@ -793,9 +741,10 @@ const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
         </View>
       </View>
 
+      {/* Progress Bar Material Organizer */}
       <View style={styles.courseProgressContainer}>
         <View style={styles.courseProgressRow}>
-          <Text style={styles.courseProgressLabel}>Progres Terpelajari</Text>
+          <Text style={styles.courseProgressLabel}>Progres Materi Terpelajari</Text>
           <Text style={styles.courseProgressValue}>
             {studiedCount}/{materialCount} ({progressPercent}%)
           </Text>
@@ -813,6 +762,7 @@ const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
   );
 };
 
+// Task Item Component (Anggota 2)
 const TaskItem = ({ task, onToggle, onDelete }) => (
   <View style={[styles.taskItemCard, task.completed && styles.taskItemCardCompleted]}>
     <TouchableOpacity
@@ -829,7 +779,13 @@ const TaskItem = ({ task, onToggle, onDelete }) => (
     </TouchableOpacity>
 
     <View style={styles.taskDetailsCol}>
-      <Text style={[styles.taskTitle, task.completed && styles.taskTitleCompleted]} numberOfLines={2}>
+      <Text
+        style={[
+          styles.taskTitle,
+          task.completed && styles.taskTitleCompleted,
+        ]}
+        numberOfLines={2}
+      >
         {task.title}
       </Text>
       <Text style={styles.taskCourseSubtitle} numberOfLines={1}>
@@ -879,6 +835,7 @@ const TaskItem = ({ task, onToggle, onDelete }) => (
   </View>
 );
 
+// Empty State View
 const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
   <View style={styles.emptyContainer}>
     <View style={styles.emptyIconCircle}>
@@ -895,68 +852,69 @@ const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
 );
 
 // =================================================================
-// =================================================================
-// PART 1 & 3: MAIN APP (AUTH FLOW & INTEGRATION)
-// =================================================================
+// 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
 // =================================================================
 function StudyMateApp() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
+  // Responsive flags
   const isSmallScreen = width < 360;
   const isTabletOrLandscape = width > 600;
 
+  // Dynamic bottom padding to ensure zero bottom-nav overlap (Anggota 3)
   const bottomNavHeight = 58 + Math.max(insets.bottom, 8);
   const scrollContentPaddingBottom = bottomNavHeight + 16;
 
+  // Stat card dynamic width
   const statCardWidth = useMemo(() => {
-    if (isTabletOrLandscape) return (width - 32 - 36) / 4;
-    return (width - 32 - 12) / 2;
+    if (isTabletOrLandscape) {
+      return (width - 32 - 36) / 4; // 4 columns
+    }
+    return (width - 32 - 12) / 2; // 2 columns
   }, [width, isTabletOrLandscape]);
-
-  // -------------------------------------------------------------
-  // PART 1 – ANGGOTA 1: AUTHENTICATION FLOW STATES
-  // -------------------------------------------------------------
-  // 'checking' | 'login' | 'register' | 'authenticated'
-  const [authFlow, setAuthFlow] = useState('checking');
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
-  const [authErrorMsg, setAuthErrorMsg] = useState('');
-
-  // Form States
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regNim, setRegNim] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [showRegPassword, setShowRegPassword] = useState(false);
-
-  // App Data States
-  const [courses, setCourses] = useState([]);
-  const [materials, setMaterials] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 'notif_1',
-      title: 'Selamat Datang di StudyMate! 🎓',
-      message: 'Materi kuliah dan tugasmu kini tersimpan aman secara personal.',
-      time: 'Baru saja',
-      read: false,
-      type: 'class',
-    },
-  ]);
-  const [settings, setSettings] = useState({
-    notifyBeforeClass: true,
-    notifyDeadlines: true,
-    autoSummarizeAi: true,
-  });
 
   // Navigation Tabs: 'Home' | 'Courses' | 'Materials' | 'Tasks' | 'Schedule'
   const [currentTab, setCurrentTab] = useState('Home');
+
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: Authentication State
+  // authScreen: 'login' | 'register'
+  // isAuthenticated: apakah user sudah login via REST API
+  // apiUser: data user dari backend (id, name, email)
+  // =================================================================
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authScreen, setAuthScreen] = useState('login');
+  const [apiUser, setApiUser] = useState(null);
+
+  // Auth form fields
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+
+  // Sprint 04 – Anggota 3: Protected API test state
+  const [apiTestResult, setApiTestResult] = useState(null);
+  const [isApiTesting, setIsApiTesting] = useState(false);
+
+  // Core Data States
+  const [courses, setCourses] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [userProfile, setUserProfile] = useState({
+    name: 'Ahmad Faiz Pratama',
+    nim: '2201010199',
+    major: 'Teknik Informatika - Semester 5',
+    campus: 'Universitas Indonesia',
+    studyStreakDays: 14,
+  });
+
+  // Loading & Filter States
+  const [isLoading, setIsLoading] = useState(true);
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
   const [selectedMeetingFilter, setSelectedMeetingFilter] = useState('ALL');
@@ -965,37 +923,389 @@ function StudyMateApp() {
   // Modals Visibility
   const [materialModalVisible, setMaterialModalVisible] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
+
   const [courseModalVisible, setCourseModalVisible] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
+
   const [taskModalVisible, setTaskModalVisible] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+
   const [notesModalVisible, setNotesModalVisible] = useState(false);
   const [activeNotesMaterial, setActiveNotesMaterial] = useState(null);
   const [currentNoteText, setCurrentNoteText] = useState('');
+
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [activeAiMaterial, setActiveAiMaterial] = useState(null);
   const [aiSubTab, setAiSubTab] = useState('summary');
   const [quizRevealedMap, setQuizRevealedMap] = useState({});
+
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [isParsingSchedule, setIsParsingSchedule] = useState(false);
+
   const [notifModalVisible, setNotifModalVisible] = useState(false);
 
-  
+  // Settings State
+  const [settings, setSettings] = useState({
+    notifyBeforeClass: true,
+    notifyDeadlines: true,
+    autoSummarizeAi: true,
+  });
 
-  // =============================================================
-  // PART 2 & 3: APP DATA CRUD OPERATIONS (USER-SCOPED)
-  // =============================================================
+  // =================================================================
+  // 5. DATA PERSISTENCE & INITIALIZATION
+  // Sprint 04 – Anggota 2: Session Recovery (restore token & user from SecureStore)
+  // =================================================================
+  useEffect(() => {
+    initializeApp();
+  }, []);
+
+  /**
+   * initializeApp:
+   * BUG FIX Sprint 04:
+   * - Tambahkan outer try-finally untuk MEMASTIKAN setIsLoading(false) selalu terpanggil
+   * - Tambahkan timeout pada validasi backend saat startup
+   * - Jika backend tidak bisa dijangkau saat startup, jangan hapus token –
+   *   tampilkan login tapi pertahankan token di SecureStore untuk retry berikutnya
+   */
+  const initializeApp = async () => {
+    try {
+      // Ambil token & user dari SecureStore secara paralel
+      let storedToken = null;
+      let storedUser = null;
+      try {
+        [storedToken, storedUser] = await Promise.all([
+          getAccessToken(),
+          getUserData(),
+        ]);
+      } catch (secureStoreErr) {
+        console.warn('[Init] SecureStore read error:', secureStoreErr.message);
+        // Lanjutkan ke tampilan Login jika SecureStore tidak bisa dibaca
+      }
+
+      if (storedToken && storedUser) {
+        // Ada sesi tersimpan – validasi ke backend dengan timeout
+        try {
+          const result = await apiGetAuth('/users/me.php'); // sudah ada timeout 10 detik
+          if (result.ok && result.data.success) {
+            // Token valid – restore sesi
+            setIsAuthenticated(true);
+            setApiUser(result.data.user);
+            setIsLoading(false); // Reset loading dulu
+            await loadAllData(); // Muat data lokal (punya isLoading tersendiri)
+            return;
+          } else {
+            // Token tidak valid di server – hapus sesi
+            console.warn('[Init] Token tidak valid di backend, hapus sesi.');
+            await deleteAccessToken().catch(() => { });
+            await deleteUserData().catch(() => { });
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') {
+            // Timeout – backend tidak respond. Jangan hapus token, tampilkan login
+            console.warn('[Init] Backend timeout saat startup, tampilkan Login.');
+          } else {
+            // Network error – sama, jangan hapus token
+            console.warn('[Init] Network error saat startup:', e.message);
+          }
+          // Tetap tampilkan Login (tidak hapus token – bisa retry saat user login manual)
+        }
+      }
+    } catch (outerErr) {
+      console.error('[Init] Error tidak terduga:', outerErr.message);
+    } finally {
+      // BUG FIX: Outer finally MEMASTIKAN loading selalu direset
+      setIsLoading(false);
+    }
+  };
+
+  const loadAllData = async () => {
+    try {
+      setIsLoading(true);
+      const [storedCourses, storedMaterials, storedTasks, storedNotifs, storedSettings, storedProfile] =
+        await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.COURSES),
+          AsyncStorage.getItem(STORAGE_KEYS.MATERIALS),
+          AsyncStorage.getItem(STORAGE_KEYS.TASKS),
+          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
+          AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
+          AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
+        ]);
+
+      if (storedCourses) {
+        setCourses(JSON.parse(storedCourses));
+      } else {
+        setCourses(INITIAL_COURSES);
+        await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(INITIAL_COURSES));
+      }
+
+      if (storedMaterials) {
+        setMaterials(JSON.parse(storedMaterials));
+      } else {
+        setMaterials(INITIAL_MATERIALS);
+        await AsyncStorage.setItem(STORAGE_KEYS.MATERIALS, JSON.stringify(INITIAL_MATERIALS));
+      }
+
+      if (storedTasks) {
+        setTasks(JSON.parse(storedTasks));
+      } else {
+        setTasks(INITIAL_TASKS);
+        await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
+      }
+
+      if (storedNotifs) {
+        setNotifications(JSON.parse(storedNotifs));
+      } else {
+        setNotifications(INITIAL_NOTIFICATIONS);
+        await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
+      }
+
+      if (storedSettings) setSettings(JSON.parse(storedSettings));
+      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
+    } catch (error) {
+      console.error('Error loading StudyMate storage:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const persistData = async (key, data) => {
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+      console.warn('Failed to persist to AsyncStorage:', key, e);
+    }
+  };
+
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
+  // =================================================================
+
+  /**
+   * handleApiRegister:
+   * BUG FIX Sprint 04:
+   * - Sebelumnya memanggil handleApiLogin() di dalam try-block → double isAuthLoading
+   * - Sekarang register hanya mendaftarkan akun, lalu redirect ke Login
+   * - Alur lebih aman: user login sendiri → token hanya diterbitkan via /auth/login.php
+   */
+  const handleApiRegister = async () => {
+    // Cegah double submit
+    if (isAuthLoading) return;
+    setAuthError('');
+
+    // Validasi input sisi client
+    if (!authName.trim() || !authEmail.trim() || !authPassword) {
+      setAuthError('Semua field wajib diisi.');
+      return;
+    }
+    if (!authEmail.includes('@') || !authEmail.includes('.')) {
+      setAuthError('Format email tidak valid.');
+      return;
+    }
+    if (authPassword.length < 6) {
+      setAuthError('Password minimal 6 karakter.');
+      return;
+    }
+    if (authPassword !== authConfirmPassword) {
+      setAuthError('Password dan konfirmasi password tidak cocok.');
+      return;
+    }
+
+    console.log('[REGISTER] Memulai registrasi untuk:', authEmail.trim().toLowerCase());
+    console.log('[REGISTER] API_URL:', API_URL);
+    setIsAuthLoading(true);
+    try {
+      const result = await apiPost('/auth/register.php', {
+        name: authName.trim(),
+        email: authEmail.trim().toLowerCase(),
+        password: authPassword,
+      });
+      console.log('[REGISTER] Response:', JSON.stringify(result.data).substring(0, 150));
+
+      if (result.ok && result.data.success) {
+        // BUG FIX: Jangan panggil handleApiLogin() di sini (menyebabkan double loading state)
+        // Tampilkan pesan sukses & arahkan ke Login agar user login sendiri
+        setAuthError(''); // clear error
+        Alert.alert(
+          'Registrasi Berhasil! 🎉',
+          'Akun berhasil dibuat. Silakan masuk menggunakan email dan password yang sudah didaftarkan.',
+          [{
+            text: 'Masuk Sekarang',
+            onPress: () => {
+              setAuthScreen('login');
+              setAuthName('');
+              setAuthConfirmPassword('');
+              // Pertahankan email & password agar tidak perlu ketik ulang
+            },
+          }]
+        );
+      } else {
+        setAuthError(result.data.message || 'Registrasi gagal. Coba lagi.');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setAuthError('Request timeout (10 detik). Periksa koneksi dan pastikan XAMPP berjalan.');
+      } else {
+        setAuthError(e.message || 'Tidak dapat terhubung ke server. Pastikan XAMPP berjalan dan IP sudah benar.');
+      }
+    } finally {
+      // BUG FIX: finally SELALU mengembalikan loading ke false
+      setIsAuthLoading(false);
+    }
+  };
+
+  /**
+   * handleApiLogin:
+   * BUG FIX Sprint 04:
+   * - Tambahkan guard: cegah double-submit jika sudah loading
+   * - Tambahkan timeout message yang jelas
+   * - Pisahkan penyimpanan SecureStore ke try-catch terpisah agar error SecureStore
+   *   tidak menyebabkan loading stuck
+   * - loadAllData() di-wrap agar error-nya tidak bubble ke catch utama
+   */
+  const handleApiLogin = async (emailOverride, passwordOverride) => {
+    // Cegah double submit
+    if (isAuthLoading) return;
+    setAuthError('');
+
+    const email = (emailOverride || authEmail).trim().toLowerCase();
+    const password = passwordOverride || authPassword;
+
+    if (!email || !password) {
+      setAuthError('Email dan password wajib diisi.');
+      return;
+    }
+
+    console.log('[LOGIN] Memulai login untuk:', email);
+    console.log('[LOGIN] API_URL:', API_URL);
+    setIsAuthLoading(true);
+    try {
+      // Step 1: Kirim kredensial ke backend PHP
+      const result = await apiPost('/auth/login.php', { email, password });
+      console.log('[LOGIN] Response:', JSON.stringify(result.data).substring(0, 150));
+
+      if (result.ok && result.data.success) {
+        const { access_token, user } = result.data;
+
+        // Step 2: Simpan token & data ke SecureStore (wrap terpisah agar error tidak stuck)
+        try {
+          await saveAccessToken(access_token);
+          await saveUserData(user);
+        } catch (secureStoreErr) {
+          console.warn('[Login] SecureStore error (non-fatal):', secureStoreErr.message);
+          // Tetap lanjutkan login meskipun SecureStore gagal (sesi tidak persisten)
+        }
+
+        // Step 3: Update state autentikasi – ini yang membuka Dashboard
+        setApiUser(user);
+        setUserProfile((prev) => ({ ...prev, name: user.name }));
+        setIsAuthenticated(true);
+        // isAuthLoading akan di-false oleh finally sebelum loadAllData
+      } else {
+        setAuthError(result.data.message || 'Email atau password salah.');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setAuthError('Request timeout (10 detik). Periksa koneksi Wi-Fi dan pastikan XAMPP berjalan.');
+      } else {
+        setAuthError(e.message || 'Tidak dapat terhubung ke server. Pastikan API_URL sudah benar.');
+      }
+    } finally {
+      // BUG FIX: selalu reset loading di sini – SEBELUM loadAllData agar UI tidak freeze
+      setIsAuthLoading(false);
+    }
+
+    // Step 4: Muat data lokal – dipanggil tanpa await agar tidak blocking
+    // (loadAllData menggunakan isLoading state tersendiri, bukan isAuthLoading)
+    // Catatan: isAuthenticated masih false di sini karena setState bersifat async,
+    // loadAllData() dipanggil langsung tanpa kondisi – sudah aman karena tidak
+    // bergantung pada auth state, hanya membaca AsyncStorage.
+    loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
+  };
+
+  /**
+   * handleApiLogout:
+   * Sprint 04 – Anggota 3: Session Cleared
+   * 1. Kirim POST /auth/logout.php agar token dicabut di server (stateful revocation).
+   * 2. Hapus token & data user dari SecureStore.
+   * 3. Reset state dan arahkan ke halaman login.
+   */
+  const handleApiLogout = async () => {
+    Alert.alert(
+      'Konfirmasi Logout',
+      'Apakah kamu yakin ingin keluar dari StudyMate?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Cabut token di server
+              await apiPostAuth('/auth/logout.php');
+            } catch (e) {
+              console.warn('[Logout] Tidak bisa menghubungi server, tetap logout lokal.');
+            }
+
+            // Hapus token dari SecureStore (PENTING: dilakukan terlepas dari respons server)
+            await deleteAccessToken();
+            await deleteUserData();
+
+            // Bersihkan seluruh state sesi
+            setApiUser(null);
+            setIsAuthenticated(false);
+            setAuthScreen('login');
+            setAuthEmail('');
+            setAuthPassword('');
+            setAuthName('');
+            setAuthConfirmPassword('');
+            setAuthError('');
+            setApiTestResult(null);
+          },
+        },
+      ]
+    );
+  };
+
+  /**
+   * handleTestProtectedApi:
+   * Sprint 04 – Anggota 3: Test Authenticated Request ke GET /users/me.php
+   * Membuktikan bahwa Authorization Header + Bearer Token berfungsi.
+   */
+  const handleTestProtectedApi = async () => {
+    setIsApiTesting(true);
+    setApiTestResult(null);
+    try {
+      const result = await apiGetAuth('/users/me.php');
+      setApiTestResult({
+        success: result.ok && result.data.success,
+        status: result.status,
+        data: result.data,
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+      });
+    } catch (e) {
+      setApiTestResult({
+        success: false,
+        status: 0,
+        data: { message: 'Network error: ' + e.message },
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+      });
+    } finally {
+      setIsApiTesting(false);
+    }
+  };
+
+  // =================================================================
+  // 6. ACTION HANDLERS (MATERIAL, NOTES, AI, TASKS, SCHEDULE)
+  // =================================================================
   const handleToggleMaterialStudied = async (materialId) => {
-    if (!currentUser) return;
     const updated = materials.map((m) =>
       m.id === materialId ? { ...m, isStudied: !m.isStudied } : m
     );
     setMaterials(updated);
-    await localDataService.saveMaterials(currentUser.id, updated);
+    await persistData(STORAGE_KEYS.MATERIALS, updated);
   };
 
   const handleDeleteMaterial = (materialId) => {
-    if (!currentUser) return;
     Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini?', [
       { text: 'Batal', style: 'cancel' },
       {
@@ -1004,25 +1314,24 @@ function StudyMateApp() {
         onPress: async () => {
           const updated = materials.filter((m) => m.id !== materialId);
           setMaterials(updated);
-          await localDataService.saveMaterials(currentUser.id, updated);
+          await persistData(STORAGE_KEYS.MATERIALS, updated);
         },
       },
     ]);
   };
 
   const handleSaveMaterial = async (formData) => {
-    if (!currentUser) return;
     let updated;
     const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
 
     const generatedSummary =
       formData.summary ||
-      `Ringkasan cerdas oleh StudyMate AI untuk mata kuliah ${courseObj.name} pada pertemuan ke-${formData.meetingNumber}. Mencakup fondasi teori dan penerapan praktis untuk mendukung pembelajaran mandiri.`;
+      `Ringkasan cerdas oleh StudyMate AI untuk mata kuliah ${courseObj.name} pada pertemuan ke-${formData.meetingNumber}. Mencakup fondasi teori, arsitektur, dan penerapan praktis untuk mendukung pembelajaran mandiri mahasiswa.`;
 
     const generatedKeyPoints = formData.keyPoints || [
       `Fokus utama topik adalah penguasaan ${formData.meetingTopic}.`,
-      `Pahami implementasi dan pola konsep pada materi pertemuan ke-${formData.meetingNumber}.`,
-      'Gunakan catatan pribadi untuk mencatat intisari dosen pengampu.',
+      `Pahami implementasi dan pola penulisan kode pada materi pertemuan ke-${formData.meetingNumber}.`,
+      'Gunakan catatan pribadi untuk mencatat penjelasan spesifik dari dosen pengampu.',
     ];
 
     const generatedQuiz = formData.quiz || [
@@ -1030,7 +1339,7 @@ function StudyMateApp() {
         question: `Apa konsep inti yang dibahas pada ${formData.title}?`,
         options: ['Pemahaman fondasi dan implementasi praktis', 'Hafalan tanpa latihan', 'Menunggu arahan asisten lab', 'Kompilasi tanpa pengujian'],
         correctIndex: 0,
-        explanation: 'Pemahaman konsep dasar dan implementasi mandiri adalah kunci retensi materi perkuliahan jangka panjang.',
+        explanation: 'Pemahaman konsep dasar dan implementasi mandiri adalah kunci retensi materi kuliah jangka panjang.',
       },
     ];
 
@@ -1050,7 +1359,6 @@ function StudyMateApp() {
     } else {
       const newMaterial = {
         id: `mat_${Date.now()}`,
-        userId: currentUser.id,
         ...formData,
         courseName: courseObj.name,
         dateAdded: new Date().toISOString().split('T')[0],
@@ -1064,7 +1372,7 @@ function StudyMateApp() {
     }
 
     setMaterials(updated);
-    await localDataService.saveMaterials(currentUser.id, updated);
+    await persistData(STORAGE_KEYS.MATERIALS, updated);
     setMaterialModalVisible(false);
     setEditingMaterial(null);
   };
@@ -1076,12 +1384,12 @@ function StudyMateApp() {
   };
 
   const handleSaveNotes = async () => {
-    if (!activeNotesMaterial || !currentUser) return;
+    if (!activeNotesMaterial) return;
     const updated = materials.map((m) =>
       m.id === activeNotesMaterial.id ? { ...m, userNotes: currentNoteText } : m
     );
     setMaterials(updated);
-    await localDataService.saveMaterials(currentUser.id, updated);
+    await persistData(STORAGE_KEYS.MATERIALS, updated);
     setNotesModalVisible(false);
     setActiveNotesMaterial(null);
   };
@@ -1094,16 +1402,14 @@ function StudyMateApp() {
   };
 
   const handleToggleTaskCompleted = async (taskId) => {
-    if (!currentUser) return;
     const updated = tasks.map((t) =>
       t.id === taskId ? { ...t, completed: !t.completed } : t
     );
     setTasks(updated);
-    await localDataService.saveTasks(currentUser.id, updated);
+    await persistData(STORAGE_KEYS.TASKS, updated);
   };
 
   const handleDeleteTask = (taskId) => {
-    if (!currentUser) return;
     Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas ini?', [
       { text: 'Batal', style: 'cancel' },
       {
@@ -1112,14 +1418,13 @@ function StudyMateApp() {
         onPress: async () => {
           const updated = tasks.filter((t) => t.id !== taskId);
           setTasks(updated);
-          await localDataService.saveTasks(currentUser.id, updated);
+          await persistData(STORAGE_KEYS.TASKS, updated);
         },
       },
     ]);
   };
 
   const handleSaveTask = async (formData) => {
-    if (!currentUser) return;
     let updated;
     const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
 
@@ -1130,7 +1435,6 @@ function StudyMateApp() {
     } else {
       const newTask = {
         id: `tsk_${Date.now()}`,
-        userId: currentUser.id,
         ...formData,
         courseName: courseObj.name,
         completed: false,
@@ -1139,7 +1443,7 @@ function StudyMateApp() {
     }
 
     setTasks(updated);
-    await localDataService.saveTasks(currentUser.id, updated);
+    await persistData(STORAGE_KEYS.TASKS, updated);
     setTaskModalVisible(false);
     setEditingTask(null);
   };
@@ -1181,25 +1485,2345 @@ function StudyMateApp() {
       setIsParsingSchedule(false);
       Alert.alert(
         'Jadwal Berhasil Dianalisis! 🚀',
-        `StudyMate telah mendeteksi 4 Mata Kuliah dari berkas "${fileName}" dan menyelaraskannya dengan akun ${currentUser?.name || ''}.`
+        `StudyMate telah mendeteksi 4 Mata Kuliah dari dokumen "${fileName}" dan menyelaraskannya dengan jadwal belajar harian Anda.`
       );
       const newNotif = {
         id: `notif_${Date.now()}`,
         title: 'Jadwal Berhasil Disinkronkan',
-        message: `Mata kuliah telah diselaraskan dengan berkas ${fileName}. Materi kini terhubung dengan hari kuliah.`,
+        message: `Mata kuliah telah disesuaikan dengan berkas ${fileName}. Materi kini terhubung dengan hari kuliah.`,
         time: 'Baru saja',
         read: false,
         type: 'schedule',
       };
-      setNotifications([newNotif, ...notifications]);
+      const updatedNotifs = [newNotif, ...notifications];
+      setNotifications(updatedNotifs);
+      await persistData(STORAGE_KEYS.NOTIFICATIONS, updatedNotifs);
       setScheduleModalVisible(false);
     }, 1400);
   };
 
-  
+  // =================================================================
+  // 7. COMPUTED DATA & DASHBOARD STATS
+  // =================================================================
+  const totalMaterials = materials.length;
+  const studiedMaterialsCount = materials.filter((m) => m.isStudied).length;
+  const unstudiedMaterialsCount = totalMaterials - studiedMaterialsCount;
+  const studyProgressPercent =
+    totalMaterials > 0 ? Math.round((studiedMaterialsCount / totalMaterials) * 100) : 0;
+
+  const activeTasksCount = tasks.filter((t) => !t.completed).length;
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+
+  const filteredMaterials = useMemo(() => {
+    return materials.filter((item) => {
+      const query = materialSearchQuery.toLowerCase().trim();
+      const matchSearch =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        item.courseName.toLowerCase().includes(query) ||
+        item.meetingTopic.toLowerCase().includes(query);
+
+      const matchCourse =
+        selectedCourseFilter === 'ALL' || item.courseId === selectedCourseFilter;
+
+      const matchMeeting =
+        selectedMeetingFilter === 'ALL' ||
+        String(item.meetingNumber) === String(selectedMeetingFilter);
+
+      const matchStatus =
+        selectedStatusFilter === 'ALL' ||
+        (selectedStatusFilter === 'STUDIED' && item.isStudied) ||
+        (selectedStatusFilter === 'UNSTUDIED' && !item.isStudied);
+
+      return matchSearch && matchCourse && matchMeeting && matchStatus;
+    });
+  }, [
+    materials,
+    materialSearchQuery,
+    selectedCourseFilter,
+    selectedMeetingFilter,
+    selectedStatusFilter,
+  ]);
+
+  const todayCourse = useMemo(() => {
+    const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const currentDay = daysMap[new Date().getDay()];
+    const found = courses.find((c) => c.day.toLowerCase() === currentDay.toLowerCase());
+    return found || courses[0];
+  }, [courses]);
+
+  const recommendedMaterial = useMemo(() => {
+    if (!todayCourse) return materials[0];
+    const unread = materials.find(
+      (m) => m.courseId === todayCourse.id && !m.isStudied
+    );
+    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0];
+  }, [todayCourse, materials]);
+
+  // =================================================================
+  // 8. SCREEN RENDERERS WITH OPTIMAL SCROLLING & RESPONSIVENESS
+  // =================================================================
+
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: AUTH SCREENS (Login & Register)
+  // Ditampilkan jika isAuthenticated === false
+  // =================================================================
+  const renderAuthScreen = () => {
+    const isRegister = authScreen === 'register';
+
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+            paddingVertical: 32,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Logo & Brand */}
+          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 22,
+                backgroundColor: COLORS.primary,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 14,
+                shadowColor: COLORS.primary,
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.3,
+                shadowRadius: 10,
+                elevation: 8,
+              }}
+            >
+              <Ionicons name="school" size={36} color="#FFFFFF" />
+            </View>
+            <Text style={{ fontSize: 26, fontWeight: '900', color: COLORS.textPrimary }}>
+              StudyMate
+            </Text>
+            <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>
+              Personal Study Material Organizer
+            </Text>
+          </View>
+
+          {/* Card Auth */}
+          <View
+            style={{
+              backgroundColor: COLORS.card,
+              borderRadius: 20,
+              padding: 24,
+              borderWidth: 1,
+              borderColor: COLORS.cardBorder,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.06,
+              shadowRadius: 12,
+              elevation: 4,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: '800',
+                color: COLORS.textPrimary,
+                marginBottom: 4,
+              }}
+            >
+              {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali 👋'}
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                color: COLORS.textMuted,
+                marginBottom: 20,
+              }}
+            >
+              {isRegister
+                ? 'Daftarkan akun mahasiswa untuk mulai belajar'
+                : 'Masuk untuk melanjutkan belajarmu'}
+            </Text>
+
+            {/* Name (Register only) */}
+            {isRegister && (
+              <View style={{ marginBottom: 14 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                  Nama Lengkap
+                </Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: COLORS.inputBackground,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: COLORS.cardBorder,
+                    paddingHorizontal: 14,
+                    height: 48,
+                  }}
+                >
+                  <Ionicons name="person-outline" size={18} color={COLORS.textMuted} />
+                  <TextInput
+                    style={{
+                      flex: 1,
+                      marginLeft: 10,
+                      fontSize: 15,
+                      color: COLORS.textPrimary,
+                    }}
+                    placeholder="Nama lengkap kamu"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={authName}
+                    onChangeText={setAuthName}
+                    autoCapitalize="words"
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Email */}
+            <View style={{ marginBottom: 14 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                Email Mahasiswa
+              </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: COLORS.inputBackground,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: COLORS.cardBorder,
+                  paddingHorizontal: 14,
+                  height: 48,
+                }}
+              >
+                <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
+                <TextInput
+                  style={{
+                    flex: 1,
+                    marginLeft: 10,
+                    fontSize: 15,
+                    color: COLORS.textPrimary,
+                  }}
+                  placeholder="email@kampus.ac.id"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={authEmail}
+                  onChangeText={setAuthEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            {/* Password */}
+            <View style={{ marginBottom: isRegister ? 14 : 20 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                Password
+              </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: COLORS.inputBackground,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: COLORS.cardBorder,
+                  paddingHorizontal: 14,
+                  height: 48,
+                }}
+              >
+                <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
+                <TextInput
+                  style={{
+                    flex: 1,
+                    marginLeft: 10,
+                    fontSize: 15,
+                    color: COLORS.textPrimary,
+                  }}
+                  placeholder="Minimal 6 karakter"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={authPassword}
+                  onChangeText={setAuthPassword}
+                  secureTextEntry={!showAuthPassword}
+                />
+                <TouchableOpacity onPress={() => setShowAuthPassword((v) => !v)}>
+                  <Ionicons
+                    name={showAuthPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={18}
+                    color={COLORS.textMuted}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Confirm Password (Register only) */}
+            {isRegister && (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                  Konfirmasi Password
+                </Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: COLORS.inputBackground,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: COLORS.cardBorder,
+                    paddingHorizontal: 14,
+                    height: 48,
+                  }}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.textMuted} />
+                  <TextInput
+                    style={{
+                      flex: 1,
+                      marginLeft: 10,
+                      fontSize: 15,
+                      color: COLORS.textPrimary,
+                    }}
+                    placeholder="Ulangi password"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={authConfirmPassword}
+                    onChangeText={setAuthConfirmPassword}
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Error Message */}
+            {!!authError && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  backgroundColor: COLORS.roseLight,
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: '#FECACA',
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} style={{ marginTop: 1 }} />
+                <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: COLORS.rose, fontWeight: '600' }}>
+                  {authError}
+                </Text>
+              </View>
+            )}
+
+            {/* Submit Button */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: isAuthLoading ? COLORS.textMuted : COLORS.primary,
+                borderRadius: 14,
+                height: 50,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+              }}
+              onPress={() => (isRegister ? handleApiRegister() : handleApiLogin())}
+              disabled={isAuthLoading}
+              activeOpacity={0.8}
+            >
+              {isAuthLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={isRegister ? 'person-add-outline' : 'log-in-outline'}
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                  <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
+                    {isRegister ? 'Daftar Sekarang' : 'Masuk ke StudyMate'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Switch Login/Register */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 20 }}>
+            <Text style={{ fontSize: 14, color: COLORS.textMuted }}>
+              {isRegister ? 'Sudah punya akun? ' : 'Belum punya akun? '}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setAuthScreen(isRegister ? 'login' : 'register');
+                setAuthError('');
+                setAuthName('');
+                setAuthPassword('');
+                setAuthConfirmPassword('');
+              }}
+            >
+              <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '800' }}>
+                {isRegister ? 'Login' : 'Daftar'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Note HTTPS */}
+          <Text
+            style={{
+              fontSize: 10,
+              color: COLORS.textMuted,
+              textAlign: 'center',
+              marginTop: 16,
+              lineHeight: 15,
+            }}
+          >
+            {'🔒'} Koneksi lokal menggunakan HTTP (pengembangan).{'\n'}
+            Deploy produksi wajib menggunakan HTTPS.
+          </Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  };
+
+  // SCREEN 1: DASHBOARD AKTIVITAS BELAJAR (Anggota 1)
+  const renderHomeScreen = () => (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: scrollContentPaddingBottom },
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
+      <AppHeader
+        title="Dashboard Belajar"
+        subtitle={`Semangat, ${userProfile.name.split(' ')[0]}! 🔥`}
+        unreadCount={unreadNotifCount}
+        onOpenNotif={() => setNotifModalVisible(true)}
+        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+      />
+
+      {/* Hero Progress Banner */}
+      <View style={styles.heroBanner}>
+        <View style={styles.heroBannerContent}>
+          <View style={styles.heroStreakRow}>
+            <Ionicons name="flame" size={18} color="#F59E0B" />
+            <Text style={styles.heroStreakText}>
+              {userProfile.studyStreakDays} Hari Belajar Berturut-turut!
+            </Text>
+          </View>
+          <Text style={styles.heroTitle}>Progres Semester Ini</Text>
+          <Text style={styles.heroSubtitle}>
+            {studiedMaterialsCount} dari {totalMaterials} materi telah kamu kuasai ({studyProgressPercent}%)
+          </Text>
+
+          <View style={styles.heroProgressBarBg}>
+            <View
+              style={[
+                styles.heroProgressBarFill,
+                { width: `${Math.min(100, Math.max(0, studyProgressPercent))}%` },
+              ]}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* Responsive Stats Grid */}
+      <View style={styles.statsGrid}>
+        <StatCard
+          title="Total Materi"
+          value={totalMaterials}
+          subtitle="Tersimpan di Cloud"
+          icon="library-outline"
+          iconColor={COLORS.primary}
+          bgColor={COLORS.primaryLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Sudah Dibaca"
+          value={studiedMaterialsCount}
+          subtitle="Tuntas dipahami"
+          icon="checkmark-done-circle-outline"
+          iconColor={COLORS.emerald}
+          bgColor={COLORS.emeraldLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Belum Dipelajari"
+          value={unstudiedMaterialsCount}
+          subtitle="Perlu di-review"
+          icon="time-outline"
+          iconColor={COLORS.amber}
+          bgColor={COLORS.amberLight}
+          cardWidth={statCardWidth}
+        />
+        <StatCard
+          title="Tugas Aktif"
+          value={activeTasksCount}
+          subtitle="Perlu diselesaikan"
+          icon="alarm-outline"
+          iconColor={COLORS.rose}
+          bgColor={COLORS.roseLight}
+          cardWidth={statCardWidth}
+        />
+      </View>
+
+      {/* Responsive Quick Action Bar */}
+      <View style={styles.quickActionBar}>
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            setEditingMaterial(null);
+            setMaterialModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight }]}>
+            <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Upload Materi
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => setScheduleModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.secondaryLight }]}>
+            <Ionicons name="scan-outline" size={20} color={COLORS.secondary} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Upload Jadwal
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            setEditingTask(null);
+            setTaskModalVisible(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.amberLight }]}>
+            <Ionicons name="add-circle-outline" size={20} color={COLORS.amber} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            Tambah Tugas
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => {
+            if (materials.length > 0) handleOpenAiAssistant(materials[0]);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.accentLight }]}>
+            <Ionicons name="sparkles" size={20} color={COLORS.accent} />
+          </View>
+          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+            AI Assistant
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Recommended Today's Study Section */}
+      <View style={styles.sectionHeaderRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            Rekomendasi Belajar Hari Ini 🎯
+          </Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>
+            Sesuai jadwal: {todayCourse?.name} ({todayCourse?.day})
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
+          <Text style={styles.sectionActionText}>Semua</Text>
+        </TouchableOpacity>
+      </View>
+
+      {recommendedMaterial ? (
+        <MaterialCard
+          material={recommendedMaterial}
+          onPress={(m) => handleOpenAiAssistant(m)}
+          onToggleStudied={handleToggleMaterialStudied}
+          onOpenAi={handleOpenAiAssistant}
+          onOpenNotes={handleOpenNotes}
+          onDelete={handleDeleteMaterial}
+        />
+      ) : (
+        <EmptyState
+          title="Belum ada materi untuk hari ini"
+          subtitle="Tambahkan materi kuliah agar StudyMate dapat menghubungkan jadwalmu."
+        />
+      )}
+
+      {/* Urgent Tasks Section */}
+      <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            Tugas Mendekati Deadline ⏳
+          </Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>
+            Kumpulkan sebelum batas waktu berakhir
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setCurrentTab('Tasks')} activeOpacity={0.7}>
+          <Text style={styles.sectionActionText}>Semua</Text>
+        </TouchableOpacity>
+      </View>
+
+      {tasks
+        .filter((t) => !t.completed)
+        .slice(0, 2)
+        .map((t) => (
+          <TaskItem
+            key={t.id}
+            task={t}
+            onToggle={handleToggleTaskCompleted}
+            onDelete={handleDeleteTask}
+          />
+        ))}
+
+      {activeTasksCount === 0 && (
+        <View style={styles.allClearCard}>
+          <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
+          <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
+          <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+
+  // SCREEN 2: DAFTAR MATA KULIAH & DETAIL PERTEMUAN (Anggota 2)
+  const renderCoursesScreen = () => (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: scrollContentPaddingBottom },
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
+      <AppHeader
+        title="Mata Kuliah"
+        subtitle="Semester Ganjil 2026/2027"
+        unreadCount={unreadNotifCount}
+        onOpenNotif={() => setNotifModalVisible(true)}
+        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+      />
+
+      <View style={styles.screenBannerRow}>
+        <Text style={styles.screenBannerText}>
+          Kelola materi perkuliahan berdasarkan mata kuliah dan pertemuan 1-16 secara terstruktur.
+        </Text>
+        <TouchableOpacity
+          style={styles.primaryAddButton}
+          onPress={() => {
+            setEditingCourse(null);
+            setCourseModalVisible(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={18} color="#FFFFFF" />
+          <Text style={styles.primaryAddButtonText}>Tambah</Text>
+        </TouchableOpacity>
+      </View>
+
+      {courses.map((course) => {
+        const courseMaterials = materials.filter((m) => m.courseId === course.id);
+        const studied = courseMaterials.filter((m) => m.isStudied).length;
+
+        return (
+          <CourseCard
+            key={course.id}
+            course={course}
+            materialCount={courseMaterials.length}
+            studiedCount={studied}
+            onPress={() => {
+              setSelectedCourseFilter(course.id);
+              setCurrentTab('Materials');
+            }}
+          />
+        );
+      })}
+
+      {courses.length === 0 && (
+        <EmptyState
+          title="Belum Ada Mata Kuliah"
+          subtitle="Tambahkan mata kuliah atau unggah jadwal kuliah untuk membuat otomatis."
+          actionText="+ Tambah Mata Kuliah"
+          onAction={() => setCourseModalVisible(true)}
+        />
+      )}
+    </ScrollView>
+  );
+
+  // SCREEN 3: KATALOG MATERI - SEARCH & FILTER (Anggota 2)
+  const renderMaterialsScreen = () => {
+    const meetingNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+    return (
+      <View style={styles.screenContainer}>
+        {/* Fixed Header & Search Section to maintain high performance */}
+        <View style={styles.materialsHeaderWrapper}>
+          <AppHeader
+            title="Katalog Materi"
+            subtitle="Organisasi per Matkul & Pertemuan"
+            unreadCount={unreadNotifCount}
+            onOpenNotif={() => setNotifModalVisible(true)}
+            onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+          />
+
+          {/* Search Bar */}
+          <View style={styles.searchBarContainer}>
+            <Ionicons name="search" size={18} color={COLORS.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Cari modul, topik pertemuan, mata kuliah..."
+              placeholderTextColor={COLORS.textMuted}
+              value={materialSearchQuery}
+              onChangeText={setMaterialSearchQuery}
+            />
+            {materialSearchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setMaterialSearchQuery('')}>
+                <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Status Filter Chips */}
+          <View style={styles.filterPillRow}>
+            <TouchableOpacity
+              style={[
+                styles.statusFilterPill,
+                selectedStatusFilter === 'ALL' && styles.statusFilterPillActive,
+              ]}
+              onPress={() => setSelectedStatusFilter('ALL')}
+            >
+              <Text
+                style={[
+                  styles.statusFilterText,
+                  selectedStatusFilter === 'ALL' && styles.statusFilterTextActive,
+                ]}
+              >
+                Semua ({materials.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.statusFilterPill,
+                selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterPillActive,
+              ]}
+              onPress={() => setSelectedStatusFilter('UNSTUDIED')}
+            >
+              <Text
+                style={[
+                  styles.statusFilterText,
+                  selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterTextActive,
+                ]}
+              >
+                Belum Dibaca ({unstudiedMaterialsCount})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.statusFilterPill,
+                selectedStatusFilter === 'STUDIED' && styles.statusFilterPillActive,
+              ]}
+              onPress={() => setSelectedStatusFilter('STUDIED')}
+            >
+              <Text
+                style={[
+                  styles.statusFilterText,
+                  selectedStatusFilter === 'STUDIED' && styles.statusFilterTextActive,
+                ]}
+              >
+                Selesai ({studiedMaterialsCount})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Horizontal Course Filters */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.horizontalFilterScroll}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.courseFilterChip,
+                selectedCourseFilter === 'ALL' && styles.courseFilterChipActive,
+              ]}
+              onPress={() => setSelectedCourseFilter('ALL')}
+            >
+              <Text
+                style={[
+                  styles.courseFilterChipText,
+                  selectedCourseFilter === 'ALL' && styles.courseFilterChipTextActive,
+                ]}
+              >
+                Semua Matkul
+              </Text>
+            </TouchableOpacity>
+
+            {courses.map((crs) => (
+              <TouchableOpacity
+                key={crs.id}
+                style={[
+                  styles.courseFilterChip,
+                  selectedCourseFilter === crs.id && styles.courseFilterChipActive,
+                  selectedCourseFilter === crs.id && { backgroundColor: crs.color },
+                ]}
+                onPress={() => setSelectedCourseFilter(crs.id)}
+              >
+                <Text
+                  style={[
+                    styles.courseFilterChipText,
+                    selectedCourseFilter === crs.id && styles.courseFilterChipTextActive,
+                  ]}
+                >
+                  {crs.code}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Horizontal Meeting Filters */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.meetingFilterScroll}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.meetingFilterChip,
+                selectedMeetingFilter === 'ALL' && styles.meetingFilterChipActive,
+              ]}
+              onPress={() => setSelectedMeetingFilter('ALL')}
+            >
+              <Text
+                style={[
+                  styles.meetingFilterChipText,
+                  selectedMeetingFilter === 'ALL' && styles.meetingFilterChipTextActive,
+                ]}
+              >
+                Semua Pertemuan
+              </Text>
+            </TouchableOpacity>
+            {meetingNumbers.slice(0, 8).map((num) => (
+              <TouchableOpacity
+                key={num}
+                style={[
+                  styles.meetingFilterChip,
+                  selectedMeetingFilter === String(num) && styles.meetingFilterChipActive,
+                ]}
+                onPress={() => setSelectedMeetingFilter(String(num))}
+              >
+                <Text
+                  style={[
+                    styles.meetingFilterChipText,
+                    selectedMeetingFilter === String(num) && styles.meetingFilterChipTextActive,
+                  ]}
+                >
+                  Pertemuan {num}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Scrollable Materials List with bottom padding */}
+        <ScrollView
+          style={{ flex: 1, paddingHorizontal: 16 }}
+          contentContainerStyle={{
+            paddingTop: 8,
+            paddingBottom: scrollContentPaddingBottom,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.listCountText}>
+              Menampilkan {filteredMaterials.length} materi
+            </Text>
+            <TouchableOpacity
+              style={styles.addMaterialSmallBtn}
+              onPress={() => {
+                setEditingMaterial(null);
+                setMaterialModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={15} color="#FFFFFF" />
+              <Text style={styles.addMaterialSmallBtnText}>Upload Materi</Text>
+            </TouchableOpacity>
+          </View>
+
+          {filteredMaterials.map((item) => (
+            <MaterialCard
+              key={item.id}
+              material={item}
+              onPress={(m) => handleOpenAiAssistant(m)}
+              onToggleStudied={handleToggleMaterialStudied}
+              onOpenAi={handleOpenAiAssistant}
+              onOpenNotes={handleOpenNotes}
+              onDelete={handleDeleteMaterial}
+            />
+          ))}
+
+          {filteredMaterials.length === 0 && (
+            <EmptyState
+              title="Tidak ada materi yang cocok"
+              subtitle="Coba ubah kata kunci pencarian atau reset filter pertemuan."
+              actionText="+ Upload Materi Baru"
+              onAction={() => {
+                setEditingMaterial(null);
+                setMaterialModalVisible(true);
+              }}
+            />
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // SCREEN 4: PENGELOLAAN TUGAS DAN DEADLINE (Anggota 2)
+  const renderTasksScreen = () => {
+    const activeTasks = tasks.filter((t) => !t.completed);
+    const completedTasks = tasks.filter((t) => t.completed);
+
+    return (
+      <ScrollView
+        style={styles.screenContainer}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: scrollContentPaddingBottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <AppHeader
+          title="Tugas & Deadline"
+          subtitle="Pantau Target Akademik"
+          unreadCount={unreadNotifCount}
+          onOpenNotif={() => setNotifModalVisible(true)}
+          onOpenScheduleUpload={() => setScheduleModalVisible(true)}
+        />
+
+        <View style={styles.screenBannerRow}>
+          <Text style={styles.screenBannerText}>
+            Jangan biarkan tugas terlewat. Setiap tugas terhubung langsung dengan mata kuliah.
+          </Text>
+          <TouchableOpacity
+            style={styles.primaryAddButton}
+            onPress={() => {
+              setEditingTask(null);
+              setTaskModalVisible(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Text style={styles.primaryAddButtonText}>Tambah</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Section Aktif */}
+        <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>
+          Tugas Aktif ({activeTasks.length})
+        </Text>
+
+        {activeTasks.map((t) => (
+          <TaskItem
+            key={t.id}
+            task={t}
+            onToggle={handleToggleTaskCompleted}
+            onDelete={handleDeleteTask}
+          />
+        ))}
+
+        {activeTasks.length === 0 && (
+          <View style={styles.allClearCard}>
+            <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
+            <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
+            <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
+          </View>
+        )}
+
+        {/* Section Selesai */}
+        {completedTasks.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 8 }]}>
+              Sudah Selesai ({completedTasks.length})
+            </Text>
+            {completedTasks.map((t) => (
+              <TaskItem
+                key={t.id}
+                task={t}
+                onToggle={handleToggleTaskCompleted}
+                onDelete={handleDeleteTask}
+              />
+            ))}
+          </>
+        )}
+      </ScrollView>
+    );
+  };
+
+  // SCREEN 5: JADWAL KULIAH, PENGATURAN & PROFIL (Anggota 2 & 3)
+  const renderScheduleProfileScreen = () => (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: scrollContentPaddingBottom },
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
+      <AppHeader
+        title="Jadwal & Profil"
+        subtitle="Sinkronisasi & Pengaturan"
+        unreadCount={unreadNotifCount}
+        onOpenNotif={() => setNotifModalVisible(true)}
+      />
+
+      {/* Profil Mahasiswa Card */}
+      <View style={styles.profileHeroCard}>
+        <View style={styles.profileAvatarBox}>
+          <Text style={styles.profileAvatarInitials}>
+            {userProfile.name
+              .split(' ')
+              .map((n) => n[0])
+              .slice(0, 2)
+              .join('')}
+          </Text>
+        </View>
+        <View style={styles.profileInfoCol}>
+          <Text style={styles.profileNameText} numberOfLines={1}>
+            {userProfile.name}
+          </Text>
+          <Text style={styles.profileNimText}>NIM: {userProfile.nim}</Text>
+          <Text style={styles.profileMajorText} numberOfLines={1}>
+            {userProfile.major}
+          </Text>
+          <Text style={styles.profileCampusText} numberOfLines={1}>
+            {userProfile.campus}
+          </Text>
+        </View>
+      </View>
+
+      {/* Upload Jadwal Support Card */}
+      <View style={styles.scheduleUploadCard}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+          <View style={styles.scheduleIconCircle}>
+            <Ionicons name="document-attach" size={22} color={COLORS.primary} />
+          </View>
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.scheduleUploadTitle}>Upload Jadwal Kuliah (PDF / Screenshot)</Text>
+            <Text style={styles.scheduleUploadDesc}>
+              Jadwal kuliah digunakan sebagai pendukung untuk menghubungkan materi dengan aktivitas belajar harian.
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.uploadScheduleButton}
+          onPress={() => setScheduleModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.uploadScheduleButtonText}>Unggah Jadwal KRS</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Jadwal Kuliah Mingguan Preview */}
+      <Text style={[styles.sectionTitle, { marginTop: 18, marginBottom: 10 }]}>
+        Jadwal Kuliah Mingguan 📅
+      </Text>
+
+      {courses.map((crs) => (
+        <View key={crs.id} style={styles.scheduleItemRow}>
+          <View style={[styles.scheduleDayBadge, { backgroundColor: crs.color }]}>
+            <Text style={styles.scheduleDayText}>{crs.day}</Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.scheduleCourseName} numberOfLines={1}>
+              {crs.name}
+            </Text>
+            <Text style={styles.scheduleTimeRoom} numberOfLines={1}>
+              ⏰ {crs.time} • 📍 {crs.room}
+            </Text>
+          </View>
+          <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
+        </View>
+      ))}
+
+      {/* Pengaturan Notifikasi */}
+      <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
+        Preferensi Notifikasi & AI ⚙️
+      </Text>
+
+      <View style={styles.settingsContainer}>
+        <View style={styles.settingRow}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={styles.settingLabel}>Pengingat Materi Sebelum Kuliah</Text>
+            <Text style={styles.settingDesc}>Notifikasi materi yang belum dipelajari sebelum jam kelas.</Text>
+          </View>
+          <Switch
+            value={settings.notifyBeforeClass}
+            onValueChange={(val) => {
+              const updated = { ...settings, notifyBeforeClass: val };
+              setSettings(updated);
+              persistData(STORAGE_KEYS.SETTINGS, updated);
+            }}
+            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+          />
+        </View>
+
+        <View style={styles.settingDivider} />
+
+        <View style={styles.settingRow}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={styles.settingLabel}>Peringatan Deadline Tugas H-1</Text>
+            <Text style={styles.settingDesc}>Ingatkan otomatis sebelum deadline tugas berakhir.</Text>
+          </View>
+          <Switch
+            value={settings.notifyDeadlines}
+            onValueChange={(val) => {
+              const updated = { ...settings, notifyDeadlines: val };
+              setSettings(updated);
+              persistData(STORAGE_KEYS.SETTINGS, updated);
+            }}
+            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+          />
+        </View>
+
+        <View style={styles.settingDivider} />
+
+        <View style={styles.settingRow}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={styles.settingLabel}>Auto-Generate Ringkasan AI</Text>
+            <Text style={styles.settingDesc}>Otomatis ekstrak poin penting saat mengunggah materi baru.</Text>
+          </View>
+          <Switch
+            value={settings.autoSummarizeAi}
+            onValueChange={(val) => {
+              const updated = { ...settings, autoSummarizeAi: val };
+              setSettings(updated);
+              persistData(STORAGE_KEYS.SETTINGS, updated);
+            }}
+            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+          />
+        </View>
+      </View>
+
+      {/* ================================================================= */}
+      {/* SPRINT 04 – ANGGOTA 3: Authenticated User Info & Protected API Test */}
+      {/* ================================================================= */}
+      {isAuthenticated && apiUser && (
+        <View
+          style={{
+            marginHorizontal: 0,
+            marginTop: 20,
+            backgroundColor: COLORS.primaryLight,
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: '#C7D2FE',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <Ionicons name="shield-checkmark" size={20} color={COLORS.primary} />
+            <Text style={{ fontSize: 15, fontWeight: '800', color: COLORS.primary, marginLeft: 8 }}>
+              Sesi Terautentikasi
+            </Text>
+          </View>
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
+            Nama: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.name}</Text>
+          </Text>
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
+            Email: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.email}</Text>
+          </Text>
+          <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
+            Token tersimpan di Expo SecureStore (terenkripsi)
+          </Text>
+
+          {/* Protected API Test Button */}
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: COLORS.primary,
+              borderRadius: 10,
+              paddingVertical: 10,
+              marginTop: 12,
+            }}
+            onPress={handleTestProtectedApi}
+            disabled={isApiTesting}
+            activeOpacity={0.8}
+          >
+            {isApiTesting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="flask-outline" size={15} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700', marginLeft: 6 }}>
+                  Test GET /users/me.php (Protected API)
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Test Result */}
+          {apiTestResult && (
+            <View
+              style={{
+                marginTop: 10,
+                backgroundColor: apiTestResult.success ? COLORS.emeraldLight : COLORS.roseLight,
+                borderRadius: 10,
+                padding: 10,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Ionicons
+                  name={apiTestResult.success ? 'checkmark-circle' : 'close-circle'}
+                  size={16}
+                  color={apiTestResult.success ? COLORS.emerald : COLORS.rose}
+                />
+                <Text
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 12,
+                    fontWeight: '800',
+                    color: apiTestResult.success ? COLORS.emerald : COLORS.rose,
+                  }}
+                >
+                  HTTP {apiTestResult.status} {apiTestResult.success ? '– 200 OK' : '– Error'}
+                  {'  '}\u2022 {apiTestResult.timestamp}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: COLORS.textSecondary, fontFamily: 'monospace' }}>
+                {JSON.stringify(apiTestResult.data, null, 2).substring(0, 200)}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Logout Button */}
+      {isAuthenticated && (
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: COLORS.roseLight,
+            borderRadius: 14,
+            paddingVertical: 14,
+            marginTop: 20,
+            borderWidth: 1,
+            borderColor: '#FECACA',
+          }}
+          onPress={handleApiLogout}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="log-out-outline" size={20} color={COLORS.rose} />
+          <Text style={{ color: COLORS.rose, fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
+            Logout dari StudyMate
+          </Text>
+        </TouchableOpacity>
+      )}
+
+    </ScrollView>
+  );
+
+  // =================================================================
+  // 9. MODALS WITH SAFE AREA INTEGRATION (Anggota 2 & 3)
+  // =================================================================
+
+  // MODAL 1: STUDYMATE AI ASSISTANT
+  const renderAiModal = () => {
+    if (!activeAiMaterial) return null;
+
+    return (
+      <Modal
+        visible={aiModalVisible}
+        animationType="slide"
+        onRequestClose={() => setAiModalVisible(false)}
+      >
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <View style={styles.aiBadgeIcon}>
+                <Ionicons name="sparkles" size={17} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalHeaderTitle}>StudyMate AI Assistant</Text>
+                <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
+                  {activeAiMaterial.title}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => setAiModalVisible(false)}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* AI Sub-Tabs */}
+          <View style={styles.aiTabContainer}>
+            <TouchableOpacity
+              style={[styles.aiTabButton, aiSubTab === 'summary' && styles.aiTabButtonActive]}
+              onPress={() => setAiSubTab('summary')}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={15}
+                color={aiSubTab === 'summary' ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.aiTabText,
+                  aiSubTab === 'summary' && styles.aiTabTextActive,
+                ]}
+              >
+                Ringkasan Cerdas
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.aiTabButton, aiSubTab === 'points' && styles.aiTabButtonActive]}
+              onPress={() => setAiSubTab('points')}
+            >
+              <Ionicons
+                name="bulb-outline"
+                size={15}
+                color={aiSubTab === 'points' ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.aiTabText,
+                  aiSubTab === 'points' && styles.aiTabTextActive,
+                ]}
+              >
+                Poin Penting
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.aiTabButton, aiSubTab === 'quiz' && styles.aiTabButtonActive]}
+              onPress={() => setAiSubTab('quiz')}
+            >
+              <Ionicons
+                name="help-circle-outline"
+                size={15}
+                color={aiSubTab === 'quiz' ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.aiTabText,
+                  aiSubTab === 'quiz' && styles.aiTabTextActive,
+                ]}
+              >
+                Latihan Soal
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
+            showsVerticalScrollIndicator={false}
+          >
+            {aiSubTab === 'summary' && (
+              <View style={styles.aiContentCard}>
+                <View style={styles.aiBannerPill}>
+                  <Ionicons name="time-outline" size={13} color="#7C3AED" />
+                  <Text style={styles.aiBannerPillText}>Waktu baca: ~3 Menit</Text>
+                </View>
+                <Text style={styles.aiSummaryTitle}>Intisari Materi Perkuliahan</Text>
+                <Text style={styles.aiSummaryParagraph}>{activeAiMaterial.summary}</Text>
+
+                <View style={styles.aiNoteCallout}>
+                  <Ionicons name="information-circle" size={18} color={COLORS.primary} />
+                  <Text style={styles.aiNoteCalloutText}>
+                    Ringkasan dirancang agar mahasiswa cepat memahami konsep kunci sebelum kelas dimulai.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.aiShareButton}
+                  onPress={() =>
+                    Share.share({
+                      message: `Ringkasan StudyMate AI:\n${activeAiMaterial.title}\n\n${activeAiMaterial.summary}`,
+                    })
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
+                  <Text style={styles.aiShareButtonText}>Bagikan Ringkasan</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {aiSubTab === 'points' && (
+              <View style={styles.aiContentCard}>
+                <Text style={styles.aiSummaryTitle}>Konsep Kunci & Rumus Inti</Text>
+                <Text style={styles.aiSectionSubtitle}>
+                  Fokus pada poin-poin berikut untuk persiapan ujian atau kuis dosen:
+                </Text>
+
+                {activeAiMaterial.keyPoints?.map((point, idx) => (
+                  <View key={idx} style={styles.keyPointRow}>
+                    <View style={styles.keyPointBullet}>
+                      <Text style={styles.keyPointBulletText}>{idx + 1}</Text>
+                    </View>
+                    <Text style={styles.keyPointContent}>{point}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {aiSubTab === 'quiz' && (
+              <View style={styles.aiContentCard}>
+                <Text style={styles.aiSummaryTitle}>Uji Pemahaman Mandiri</Text>
+                <Text style={styles.aiSectionSubtitle}>
+                  Jawab pertanyaan latihan berikut untuk menguji pemahaman konsep:
+                </Text>
+
+                {activeAiMaterial.quiz?.map((q, qIndex) => {
+                  const isRevealed = !!quizRevealedMap[qIndex];
+
+                  return (
+                    <View key={qIndex} style={styles.quizCard}>
+                      <Text style={styles.quizQuestionText}>
+                        {qIndex + 1}. {q.question}
+                      </Text>
+
+                      {q.options.map((opt, optIndex) => (
+                        <View
+                          key={optIndex}
+                          style={[
+                            styles.quizOptionBox,
+                            isRevealed &&
+                            optIndex === q.correctIndex &&
+                            styles.quizOptionCorrect,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.quizOptionLetter,
+                              isRevealed &&
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionLetterCorrect,
+                            ]}
+                          >
+                            {String.fromCharCode(65 + optIndex)}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.quizOptionLabel,
+                              isRevealed &&
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionLabelCorrect,
+                            ]}
+                          >
+                            {opt}
+                          </Text>
+                        </View>
+                      ))}
+
+                      <TouchableOpacity
+                        style={styles.quizRevealButton}
+                        onPress={() =>
+                          setQuizRevealedMap((prev) => ({
+                            ...prev,
+                            [qIndex]: !prev[qIndex],
+                          }))
+                        }
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name={isRevealed ? 'eye-off-outline' : 'eye-outline'}
+                          size={16}
+                          color={COLORS.primary}
+                        />
+                        <Text style={styles.quizRevealButtonText}>
+                          {isRevealed
+                            ? 'Sembunyikan Pembahasan'
+                            : 'Lihat Kunci Jawaban & Pembahasan'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {isRevealed && (
+                        <View style={styles.quizExplanationBox}>
+                          <Text style={styles.quizExplanationTitle}>💡 Penjelasan AI:</Text>
+                          <Text style={styles.quizExplanationText}>{q.explanation}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
+  // MODAL 2: CATATAN PRIBADI PER MATERI
+  const renderNotesModal = () => {
+    if (!activeNotesMaterial) return null;
+
+    return (
+      <Modal
+        visible={notesModalVisible}
+        animationType="slide"
+        onRequestClose={() => setNotesModalVisible(false)}
+      >
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalHeaderTitle}>Catatan Pribadi</Text>
+              <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
+                {activeNotesMaterial.title}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setNotesModalVisible(false)}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.notesContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+            <Text style={styles.notesInstructionText}>
+              Tulis rangkuman pribadi, hal-hal penting yang disampaikan dosen saat kelas, atau rumus yang perlu diingat:
+            </Text>
+
+            <TextInput
+              style={styles.notesTextInput}
+              multiline
+              textAlignVertical="top"
+              placeholder="Ketik catatan pribadimu di sini..."
+              placeholderTextColor={COLORS.textMuted}
+              value={currentNoteText}
+              onChangeText={setCurrentNoteText}
+            />
+
+            <TouchableOpacity
+              style={styles.saveNotesButton}
+              onPress={handleSaveNotes}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
+              <Text style={styles.saveNotesButtonText}>Simpan Catatan</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
+  // MODAL 3: UPLOAD JADWAL MODAL
+  const renderScheduleModal = () => (
+    <Modal
+      visible={scheduleModalVisible}
+      animationType="fade"
+      transparent
+      onRequestClose={() => setScheduleModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.scheduleModalBox}>
+          <View style={styles.scheduleModalHeader}>
+            <Ionicons name="calendar" size={24} color={COLORS.primary} />
+            <Text style={styles.scheduleModalTitle}>Upload Jadwal Kuliah</Text>
+          </View>
+
+          <Text style={styles.scheduleModalSubtitle}>
+            Unggah foto screenshot KRS atau berkas PDF jadwal. StudyMate akan otomatis mendeteksi jadwal untuk mengorganisasi materi belajarmu.
+          </Text>
+
+          {isParsingSchedule ? (
+            <View style={styles.parsingIndicatorBox}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.parsingStatusText}>
+                Memindai dokumen & menyelaraskan jadwal...
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.uploadOptionsRow}>
+              <TouchableOpacity
+                style={styles.uploadOptionBtn}
+                onPress={handlePickScheduleImage}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="image-outline" size={30} color={COLORS.secondary} />
+                <Text style={styles.uploadOptionBtnTitle}>Screenshot Foto</Text>
+                <Text style={styles.uploadOptionBtnSub}>Dari Galeri / Kamera</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.uploadOptionBtn}
+                onPress={handlePickScheduleDocument}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="document-text-outline" size={30} color={COLORS.primary} />
+                <Text style={styles.uploadOptionBtnTitle}>File Berkas PDF</Text>
+                <Text style={styles.uploadOptionBtnSub}>Pilih Berkas KRS</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.scheduleCancelBtn}
+            onPress={() => setScheduleModalVisible(false)}
+          >
+            <Text style={styles.scheduleCancelBtnText}>Tutup</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // MODAL 4: PUSAT NOTIFIKASI
+  const renderNotificationModal = () => (
+    <Modal
+      visible={notifModalVisible}
+      animationType="slide"
+      onRequestClose={() => setNotifModalVisible(false)}
+    >
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modalHeaderTitle}>Pusat Notifikasi</Text>
+            <Text style={styles.modalHeaderSubtitle}>Pengingat Materi & Deadline</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setNotifModalVisible(false)}
+            style={styles.modalCloseButton}
+          >
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 30 + insets.bottom }}
+          showsVerticalScrollIndicator={false}
+        >
+          {notifications.map((n) => (
+            <View key={n.id} style={[styles.notifCard, !n.read && styles.notifCardUnread]}>
+              <View
+                style={[
+                  styles.notifIconCircle,
+                  {
+                    backgroundColor:
+                      n.type === 'class'
+                        ? COLORS.primaryLight
+                        : n.type === 'material'
+                          ? COLORS.amberLight
+                          : COLORS.roseLight,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    n.type === 'class'
+                      ? 'school-outline'
+                      : n.type === 'material'
+                        ? 'book-outline'
+                        : 'alarm-outline'
+                  }
+                  size={18}
+                  color={
+                    n.type === 'class'
+                      ? COLORS.primary
+                      : n.type === 'material'
+                        ? COLORS.amber
+                        : COLORS.rose
+                  }
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.notifItemTitle}>{n.title}</Text>
+                  <Text style={styles.notifItemTime}>{n.time}</Text>
+                </View>
+                <Text style={styles.notifItemMsg}>{n.message}</Text>
+              </View>
+            </View>
+          ))}
+
+          {notifications.length === 0 && (
+            <EmptyState
+              title="Belum Ada Notifikasi"
+              subtitle="Notifikasi jadwal dan pengingat materi akan tampil di sini."
+            />
+          )}
+
+          <TouchableOpacity
+            style={styles.markAllReadBtn}
+            onPress={async () => {
+              const updated = notifications.map((n) => ({ ...n, read: true }));
+              setNotifications(updated);
+              await persistData(STORAGE_KEYS.NOTIFICATIONS, updated);
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="checkmark-done" size={16} color={COLORS.primary} />
+            <Text style={styles.markAllReadBtnText}>Tandai Semua Sudah Dibaca</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+
+  // =================================================================
+  // 10. BOTTOM NAVIGATION BAR (Anggota 3)
+  // =================================================================
+  const renderBottomNav = () => {
+    const tabs = [
+      { id: 'Home', label: 'Beranda', iconActive: 'home', iconInactive: 'home-outline' },
+      { id: 'Courses', label: 'Matkul', iconActive: 'book', iconInactive: 'book-outline' },
+      { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
+      { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
+      { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+    ];
+
+    return (
+      <View
+        style={[
+          styles.bottomNavContainer,
+          {
+            paddingBottom: Math.max(insets.bottom, 8),
+            height: 58 + Math.max(insets.bottom, 8),
+          },
+        ]}
+      >
+        {tabs.map((tab) => {
+          const isActive = currentTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={styles.bottomNavItem}
+              onPress={() => setCurrentTab(tab.id)}
+              accessibilityLabel={`Menu ${tab.label}`}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.iconInactive}
+                size={22}
+                color={isActive ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.bottomNavLabel,
+                  isActive && styles.bottomNavLabelActive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
+              {isActive && <View style={styles.bottomNavActiveDot} />}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // Loading Screen Fallback
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.screenContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ marginTop: 12, color: COLORS.textSecondary, fontWeight: '600' }}>
+          Menyiapkan StudyMate...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  // Sprint 04 – Anggota 2: Tampilkan halaman Auth jika belum login via API
+  if (!isAuthenticated) {
+    return renderAuthScreen();
+  }
+
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeAreaContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      <View style={styles.mainContentFlex}>
+        {currentTab === 'Home' && renderHomeScreen()}
+        {currentTab === 'Courses' && renderCoursesScreen()}
+        {currentTab === 'Materials' && renderMaterialsScreen()}
+        {currentTab === 'Tasks' && renderTasksScreen()}
+        {currentTab === 'Schedule' && renderScheduleProfileScreen()}
+      </View>
+
+      {/* Persistent Bottom Navigation with Safe Area Padding */}
+      {renderBottomNav()}
+
+      {/* All Sub-Modals */}
+      <MaterialFormModal
+        visible={materialModalVisible}
+        editingMaterial={editingMaterial}
+        courses={courses}
+        insets={insets}
+        onClose={() => setMaterialModalVisible(false)}
+        onSave={handleSaveMaterial}
+      />
+
+      <CourseFormModal
+        visible={courseModalVisible}
+        editingCourse={editingCourse}
+        insets={insets}
+        onClose={() => setCourseModalVisible(false)}
+        onSave={async (formData) => {
+          let updated;
+          if (editingCourse) {
+            updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
+          } else {
+            const newCourse = {
+              id: `crs_${Date.now()}`,
+              ...formData,
+              color: formData.color || COLORS.primary,
+            };
+            updated = [...courses, newCourse];
+          }
+          setCourses(updated);
+          await persistData(STORAGE_KEYS.COURSES, updated);
+          setCourseModalVisible(false);
+          setEditingCourse(null);
+        }}
+      />
+
+      <TaskFormModal
+        visible={taskModalVisible}
+        editingTask={editingTask}
+        courses={courses}
+        insets={insets}
+        onClose={() => setTaskModalVisible(false)}
+        onSave={handleSaveTask}
+      />
+
+      {renderNotesModal()}
+      {renderAiModal()}
+      {renderScheduleModal()}
+      {renderNotificationModal()}
+    </SafeAreaView>
+  );
+}
 
 // =================================================================
-// STYLESHEET (CLEAN, MODERN, ACCESSIBLE)
+// 11. MODAL FORMS SUB-COMPONENTS
+// =================================================================
+
+// Form Modal Tambah / Edit Materi
+function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0]?.id || '');
+  const [meetingNumber, setMeetingNumber] = useState('1');
+  const [meetingTopic, setMeetingTopic] = useState('');
+  const [fileType, setFileType] = useState('PDF');
+  const [fileName, setFileName] = useState('');
+  const [fileSize, setFileSize] = useState('3.8 MB');
+
+  useEffect(() => {
+    if (editingMaterial) {
+      setTitle(editingMaterial.title);
+      setCourseId(editingMaterial.courseId);
+      setMeetingNumber(String(editingMaterial.meetingNumber || 1));
+      setMeetingTopic(editingMaterial.meetingTopic || '');
+      setFileType(editingMaterial.fileType || 'PDF');
+      setFileName(editingMaterial.fileName || '');
+      setFileSize(editingMaterial.fileSize || '3.5 MB');
+    } else {
+      setTitle('');
+      setCourseId(courses[0]?.id || '');
+      setMeetingNumber('1');
+      setMeetingTopic('');
+      setFileType('PDF');
+      setFileName('');
+      setFileSize('3.2 MB');
+    }
+  }, [editingMaterial, visible, courses]);
+
+  const handlePickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setFileName(res.assets[0].name);
+        setFileSize('4.5 MB');
+        if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (e) {
+      setFileName('Materi_Kuliah_Pertemuan.pdf');
+    }
+  };
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
+      return;
+    }
+    onSave({
+      title: title.trim(),
+      courseId,
+      meetingNumber: parseInt(meetingNumber, 10) || 1,
+      meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
+      fileType,
+      fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
+      fileSize,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
+            <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
+            <Text style={styles.filePickerButtonTitle}>
+              {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
+            </Text>
+            <Text style={styles.filePickerButtonSub}>
+              Mendukung format PDF, PPT, PPTX, dan Dokumen
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.formLabel}>Judul Materi</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Modul 3 - React Navigation"
+            placeholderTextColor={COLORS.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
+
+          <Text style={styles.formLabel}>Mata Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {courses.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.formCourseOption,
+                  courseId === c.id && styles.formCourseOptionActive,
+                  courseId === c.id && { borderColor: c.color },
+                ]}
+                onPress={() => setCourseId(c.id)}
+              >
+                <Text
+                  style={[
+                    styles.formCourseOptionText,
+                    courseId === c.id && { color: c.color, fontWeight: '700' },
+                  ]}
+                >
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Pertemuan Ke-</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="1 - 16"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="numeric"
+                value={meetingNumber}
+                onChangeText={setMeetingNumber}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Format Berkas</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {['PDF', 'PPT', 'DOC'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.fileTypeChoice,
+                      fileType === type && styles.fileTypeChoiceActive,
+                    ]}
+                    onPress={() => setFileType(type)}
+                  >
+                    <Text
+                      style={[
+                        styles.fileTypeChoiceText,
+                        fileType === type && styles.fileTypeChoiceTextActive,
+                      ]}
+                    >
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <Text style={styles.formLabel}>Topik Pertemuan</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Komponen UI & Layouting Flexbox"
+            placeholderTextColor={COLORS.textMuted}
+            value={meetingTopic}
+            onChangeText={setMeetingTopic}
+          />
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// Form Modal Tambah / Edit Tugas
+function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0]?.id || '');
+  const [deadline, setDeadline] = useState('2026-11-10');
+  const [priority, setPriority] = useState('Sedang');
+  const [description, setDescription] = useState('');
+
+  useEffect(() => {
+    if (editingTask) {
+      setTitle(editingTask.title);
+      setCourseId(editingTask.courseId);
+      setDeadline(editingTask.deadline);
+      setPriority(editingTask.priority);
+      setDescription(editingTask.description || '');
+    } else {
+      setTitle('');
+      setCourseId(courses[0]?.id || '');
+      setDeadline('2026-11-10');
+      setPriority('Sedang');
+      setDescription('');
+    }
+  }, [editingTask, visible, courses]);
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Perhatian', 'Harap isi judul tugas.');
+      return;
+    }
+    onSave({
+      title: title.trim(),
+      courseId,
+      deadline,
+      priority,
+      description: description.trim(),
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingTask ? 'Edit Tugas' : 'Tambah Tugas Baru'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.formLabel}>Judul Tugas</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Buat Laporan Praktikum Modul 2"
+            placeholderTextColor={COLORS.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
+
+          <Text style={styles.formLabel}>Mata Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {courses.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.formCourseOption,
+                  courseId === c.id && styles.formCourseOptionActive,
+                  courseId === c.id && { borderColor: c.color },
+                ]}
+                onPress={() => setCourseId(c.id)}
+              >
+                <Text
+                  style={[
+                    styles.formCourseOptionText,
+                    courseId === c.id && { color: c.color, fontWeight: '700' },
+                  ]}
+                >
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.formLabel}>Tenggat Waktu (Deadline: YYYY-MM-DD)</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="2026-11-10"
+            placeholderTextColor={COLORS.textMuted}
+            value={deadline}
+            onChangeText={setDeadline}
+          />
+
+          <Text style={styles.formLabel}>Prioritas</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+            {['Tinggi', 'Sedang', 'Rendah'].map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[
+                  styles.priorityOptionBtn,
+                  priority === p && styles.priorityOptionBtnActive,
+                ]}
+                onPress={() => setPriority(p)}
+              >
+                <Text
+                  style={[
+                    styles.priorityOptionBtnText,
+                    priority === p && styles.priorityOptionBtnTextActive,
+                  ]}
+                >
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.formLabel}>Catatan Tambahan / Deskripsi</Text>
+          <TextInput
+            style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
+            multiline
+            placeholder="Detail instruksi tugas atau tautan pengumpulan..."
+            placeholderTextColor={COLORS.textMuted}
+            value={description}
+            onChangeText={setDescription}
+          />
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Tugas</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// Form Modal Tambah / Edit Mata Kuliah
+function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [lecturer, setLecturer] = useState('');
+  const [day, setDay] = useState('Senin');
+  const [time, setTime] = useState('08:00 - 10:30');
+  const [room, setRoom] = useState('Lab 1');
+  const [sks, setSks] = useState('3');
+
+  const daysList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+  useEffect(() => {
+    if (editingCourse) {
+      setName(editingCourse.name);
+      setCode(editingCourse.code);
+      setLecturer(editingCourse.lecturer);
+      setDay(editingCourse.day);
+      setTime(editingCourse.time);
+      setRoom(editingCourse.room);
+      setSks(String(editingCourse.sks || 3));
+    } else {
+      setName('');
+      setCode('');
+      setLecturer('');
+      setDay('Senin');
+      setTime('08:00 - 10:30');
+      setRoom('Lab 1');
+      setSks('3');
+    }
+  }, [editingCourse, visible]);
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      Alert.alert('Perhatian', 'Harap isi nama mata kuliah.');
+      return;
+    }
+    onSave({
+      name: name.trim(),
+      code: code.trim() || 'IF101',
+      lecturer: lecturer.trim() || 'Dosen Pengampu',
+      day,
+      time: time.trim() || '08:00 - 10:30',
+      room: room.trim() || 'Ruang Kuliah',
+      sks: parseInt(sks, 10) || 3,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalHeaderTitle}>
+            {editingCourse ? 'Edit Mata Kuliah' : 'Tambah Mata Kuliah'}
+          </Text>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalScrollBody}
+          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.formLabel}>Nama Mata Kuliah</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Contoh: Interaksi Manusia dan Komputer"
+            placeholderTextColor={COLORS.textMuted}
+            value={name}
+            onChangeText={setName}
+          />
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Kode Matkul</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="IF3201"
+                placeholderTextColor={COLORS.textMuted}
+                value={code}
+                onChangeText={setCode}
+              />
+            </View>
+            <View style={{ width: 100 }}>
+              <Text style={styles.formLabel}>SKS</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="3"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="numeric"
+                value={sks}
+                onChangeText={setSks}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.formLabel}>Dosen Pengampu</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Nama Dosen dan Gelar"
+            placeholderTextColor={COLORS.textMuted}
+            value={lecturer}
+            onChangeText={setLecturer}
+          />
+
+          <Text style={styles.formLabel}>Hari Kuliah</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {daysList.map((d) => (
+              <TouchableOpacity
+                key={d}
+                style={[styles.dayChoiceBtn, day === d && styles.dayChoiceBtnActive]}
+                onPress={() => setDay(d)}
+              >
+                <Text style={[styles.dayChoiceBtnText, day === d && styles.dayChoiceBtnTextActive]}>
+                  {d}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Jam Kuliah</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="08:00 - 10:30"
+                placeholderTextColor={COLORS.textMuted}
+                value={time}
+                onChangeText={setTime}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formLabel}>Ruangan</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Lab 203"
+                placeholderTextColor={COLORS.textMuted}
+                value={room}
+                onChangeText={setRoom}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.formSubmitButtonText}>Simpan Mata Kuliah</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// =================================================================
+// 12. ROOT EXPORT DENGAN SAFE AREA PROVIDER (Anggota 3)
+// =================================================================
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StudyMateApp />
+    </SafeAreaProvider>
+  );
+}
+
+// =================================================================
+// 13. STYLESHEET (CLEAN, RESPONSIVE, WCAG AAA ACCESSIBLE)
 // =================================================================
 const styles = StyleSheet.create({
   safeAreaContainer: {
@@ -1216,201 +3840,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-  },
-
-  // Splash Styles
-  splashLogoBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: COLORS.primary,
-    shadowOpacity: 0.35,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-  },
-  splashBrandTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: COLORS.textPrimary,
-    marginTop: 14,
-  },
-  splashBrandTagline: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginTop: 3,
-  },
-
-  // Auth Styles
-  authScrollContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
-  authBrandBox: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  authLogoIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-    elevation: 4,
-    shadowColor: COLORS.primary,
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-  },
-  authBrandTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: COLORS.textPrimary,
-  },
-  authBrandSubtitle: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 18,
-    paddingHorizontal: 16,
-  },
-  authSecurityPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primaryLight,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    gap: 4,
-    marginTop: 10,
-  },
-  authSecurityPillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  authTabSwitch: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.inputBackground,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 14,
-  },
-  authTabSwitchBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  authTabSwitchBtnActive: {
-    backgroundColor: COLORS.card,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 2,
-  },
-  authTabSwitchBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  authTabSwitchBtnTextActive: {
-    color: COLORS.primary,
-    fontWeight: '800',
-  },
-  authErrorAlertBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.roseLight,
-    borderWidth: 1,
-    borderColor: COLORS.rose + '40',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-    gap: 8,
-  },
-  authErrorAlertText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#991B1B',
-    lineHeight: 16,
-  },
-  authCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-  },
-  authInputLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-    marginTop: 4,
-  },
-  authInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBackground,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 44,
-    marginBottom: 10,
-  },
-  authTextInput: {
-    flex: 1,
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    marginLeft: 8,
-  },
-  authSubmitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 13,
-    gap: 8,
-    marginTop: 10,
-  },
-  authSubmitBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  authDemoCallout: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '30',
-  },
-  authDemoCalloutTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primaryDark,
-  },
-  authDemoCalloutText: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    lineHeight: 16,
-    marginTop: 2,
   },
 
   // App Header
@@ -1470,6 +3899,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  // Badge Component
   badgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1482,6 +3912,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  // Hero Progress Banner
   heroBanner: {
     backgroundColor: COLORS.primaryDark,
     borderRadius: 16,
@@ -1531,6 +3962,7 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
 
+  // Stats Grid (Responsive 2 Columns or 4 on Wide)
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1578,6 +4010,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
+  // Quick Action Bar
   quickActionBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1609,6 +4042,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  // Section Headers
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1631,6 +4065,7 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 
+  // Material Card
   materialCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -1725,6 +4160,7 @@ const styles = StyleSheet.create({
     padding: 5,
   },
 
+  // Course Card
   courseCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -1826,6 +4262,7 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
   },
 
+  // Task Item Card
   taskItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1878,6 +4315,7 @@ const styles = StyleSheet.create({
     padding: 6,
   },
 
+  // Materials Screen Wrapper
   materialsHeaderWrapper: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -1997,6 +4435,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
+  // Screen Banner & Add Button
   screenBannerRow: {
     backgroundColor: COLORS.primaryLight,
     borderRadius: 12,
@@ -2028,6 +4467,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  // Empty State
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -2088,6 +4528,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  // Profile & Schedule Screen
   profileHeroCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -2135,37 +4576,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.textMuted,
   },
-
-  securityAuditPillCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.accentLight,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.accent + '30',
-    marginBottom: 14,
-  },
-  securityAuditIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  securityAuditTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#6D28D9',
-  },
-  securityAuditSub: {
-    fontSize: 11,
-    color: '#7C3AED',
-    marginTop: 2,
-    lineHeight: 15,
-  },
-
   scheduleUploadCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
@@ -2268,25 +4678,8 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 1,
   },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.roseLight,
-    borderWidth: 1,
-    borderColor: COLORS.rose + '40',
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 6,
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  logoutButtonText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.rose,
-  },
 
+  // Modal Common Styles
   modalSafeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -2320,6 +4713,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
 
+  // AI Assistant Modal Styles
   aiBadgeIcon: {
     width: 30,
     height: 30,
@@ -2533,6 +4927,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
+  // Notes Modal Styles
   notesContainer: {
     flex: 1,
     padding: 16,
@@ -2570,6 +4965,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  // Form Components & Modals
   formLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -2709,6 +5105,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  // Schedule Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -2790,6 +5187,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
+  // Notification Modal Styles
   notifCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2826,356 +5224,21 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 15,
   },
-
-  // Security Audit Modal Styles
-  securitySummaryCard: {
-    backgroundColor: COLORS.accentLight,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.accent + '30',
-    marginBottom: 16,
-  },
-  securitySummaryTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#6D28D9',
-  },
-  securitySummaryDesc: {
-    fontSize: 12,
-    color: '#5B21B6',
-    lineHeight: 17,
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  retestSecurityBtn: {
+  markAllReadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.accent,
-    borderRadius: 10,
     paddingVertical: 10,
     gap: 6,
+    marginTop: 6,
   },
-  retestSecurityBtnText: {
-    color: '#FFFFFF',
+  markAllReadBtnText: {
     fontSize: 12,
-    fontWeight: '800',
-  },
-  testResultCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 8,
-  },
-  testResultScenario: {
-    fontSize: 13,
     fontWeight: '700',
-    color: COLORS.textPrimary,
-    flex: 1,
-  },
-  testResultDetail: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-    lineHeight: 16,
+    color: COLORS.primary,
   },
 
-  // Bottom Navigation Bar
-  // ==========================================
-  // SPRINT 03: REST API & DTO STYLES (PARTS 1-3)
-  // ==========================================
-  apiSectionWrapper: {
-    marginTop: 24,
-    marginBottom: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.cardBorder,
-  },
-  apiSectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  apiSectionTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  apiSectionIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  apiSectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  apiSectionSubtitle: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginTop: 1,
-  },
-  apiRefreshButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: COLORS.primaryLight,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  apiRefreshButtonDisabled: {
-    opacity: 0.6,
-    backgroundColor: COLORS.inputBackground,
-    borderColor: COLORS.cardBorder,
-  },
-  apiRefreshButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginLeft: 5,
-  },
-  apiLoadingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  apiLoadingText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginLeft: 10,
-    fontWeight: '600',
-  },
-  apiErrorBox: {
-    backgroundColor: COLORS.roseLight,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  apiErrorTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  apiErrorTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.rose,
-  },
-  apiErrorMessage: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-    lineHeight: 17,
-  },
-  apiRetryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.rose,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    alignSelf: 'flex-start',
-  },
-  apiRetryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-  apiEmptyBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    borderStyle: 'dashed',
-  },
-  apiEmptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginTop: 8,
-  },
-  apiEmptySubtitle: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    marginTop: 3,
-    marginBottom: 12,
-  },
-  apiLoadSmallBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  apiLoadSmallBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  apiListContainer: {
-    gap: 12,
-  },
-  apiListSummaryBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-    paddingHorizontal: 2,
-  },
-  apiListSummaryText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  apiSuccessBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.emeraldLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  apiSuccessBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.emerald,
-    marginLeft: 3,
-  },
-  apiCardContainer: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  },
-  apiCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  apiBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  apiIdBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primaryLight,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  apiIdBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginLeft: 3,
-  },
-  apiAuthorBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.secondaryLight,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  apiAuthorBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: COLORS.secondary,
-    marginLeft: 3,
-  },
-  apiSourcePill: {
-    backgroundColor: COLORS.inputBackground,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  apiSourcePillText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-    letterSpacing: 0.5,
-  },
-  apiCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    lineHeight: 20,
-    marginBottom: 6,
-    textTransform: 'capitalize',
-  },
-  apiCardDescription: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  apiCardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.divider,
-    paddingTop: 8,
-  },
-  apiStatusIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  apiStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.emerald,
-    marginRight: 5,
-  },
-  apiStatusText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-  apiDetailLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  apiDetailLinkText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginRight: 3,
-  },
-
+  // Bottom Navigation Bar (Anggota 3)
   bottomNavContainer: {
     flexDirection: 'row',
     backgroundColor: COLORS.card,
@@ -3214,4 +5277,4 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 2,
   },
-})};
+});
