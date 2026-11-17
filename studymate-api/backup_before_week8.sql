@@ -1,0 +1,30 @@
+-- ============================================================
+-- StudyMate API – Backup Notes Before Week 8 Migration
+-- Generated: Week 8 Sprint – User Data Isolation
+-- ============================================================
+--
+-- PRESERVATION NOTICE:
+--   The `users` table and all existing user accounts are PRESERVED.
+--   No existing user data will be dropped or modified by the
+--   week8_migration.sql script, except for the addition of
+--   the `avatar_path` column to the `users` table (safe ALTER).
+--
+-- NEW TABLES (Week 8):
+--   The following tables did NOT exist before Week 8 and contain
+--   NO pre-existing data. They are created fresh by the migration:
+--     - `courses`   – per-user mata kuliah (courses)
+--     - `tasks`     – per-user tugas / to-do list
+--     - `materials` – per-user materi perkuliahan
+--
+-- DATA ISOLATION:
+--   All new tables include a `user_id` foreign key referencing
+--   `users(id)` with ON DELETE CASCADE, ensuring each user only
+--   sees their own data and orphaned rows are auto-cleaned.
+--
+-- HOW TO USE:
+--   Run week8_migration.sql in phpMyAdmin (or via mysql CLI)
+--   against the `studymate_db` database to apply schema changes.
+--   This file is a documentation/backup note only — it contains
+--   no executable SQL statements that modify data.
+--
+-- ============================================================
