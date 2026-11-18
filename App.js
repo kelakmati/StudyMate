@@ -73,6 +73,571 @@ const STORAGE_KEYS = {
   SETTINGS: '@studymate_settings_v2',
   USER_PROFILE: '@studymate_profile_v2',
 };
+
+/**
+ * getFriendlyErrorMessage:
+ * Memetakan kode status HTTP dan kondisi error ke pesan bahasa Indonesia yang ramah pengguna.
+ * Menghindari pesan teknis mentah atau stack trace yang membingungkan mahasiswa.
+ */
+const getFriendlyErrorMessage = (status, responseData, errorType) => {
+  // Jika backend mengembalikan pesan error kustom dalam JSON (misal { success: false, message: "..." })
+  if (responseData && responseData.message) {
+    return responseData.message;
+  }
+  if (errorType === 'TIMEOUT') {
+    return 'Server membutuhkan waktu terlalu lama untuk merespons (Request Timeout). Silakan coba beberapa saat lagi.';
+  }
+  if (errorType === 'NETWORK' || errorType === 'OFFLINE') {
+    return 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda dan pastikan server XAMPP sedang aktif.';
+  }
+  if (errorType === 'PARSE_ERROR') {
+    return 'Respons server tidak sesuai format yang diharapkan (Invalid JSON format).';
+  }
+
+  switch (status) {
+    case 400:
+      return 'Permintaan tidak valid (Bad Request). Silakan periksa kembali data Anda.';
+    case 401:
+      return 'Sesi login telah berakhir atau tidak sah. Silakan login kembali.';
+    case 403:
+      return 'Akses ditolak. Anda tidak memiliki izin untuk melihat atau mengubah data ini.';
+    case 404:
+      return 'Layanan atau data yang diminta tidak ditemukan di server (404 Not Found).';
+    case 408:
+      return 'Waktu permintaan habis (Request Timeout).';
+    case 409:
+      return 'Terjadi konflik data (misalnya email sudah terdaftar dalam sistem).';
+    case 422:
+      return 'Validasi input gagal. Pastikan seluruh kolom terisi dengan format yang benar.';
+    case 500:
+      return 'Terjadi masalah pada server backend. Silakan coba beberapa saat lagi (500 Internal Error).';
+    case 502:
+      return 'Gateway server mengalami gangguan (502 Bad Gateway). Periksa web server Apache.';
+    case 503:
+      return 'Layanan server sedang tidak tersedia atau dalam pemeliharaan (503 Service Unavailable).';
+    case 504:
+      return 'Gateway server kehabisan waktu respons (504 Gateway Timeout).';
+    default:
+      return `Terjadi kesalahan saat berkomunikasi dengan server (Status: ${status || 'Unknown'}).`;
+  }
+};
+
+/**
+ * requestApi:
+ * Fungsi reusable utama untuk menangani semua request API di StudyMate.
+ * - Otomatis menambahkan header Content-Type & Accept
+ * - Otomatis menyertakan Bearer Token jika requiresAuth=true
+ * - Membatasi request dengan AbortController timeout (default: 10000ms)
+ * - Melakukan parsing JSON yang aman dengan proteksi terhadap HTML output
+ * - Mengembalikan objek terstruktur: { ok, status, data, error, isTimeout, isOffline }
+ */
+const requestApi = async (endpoint, options = {}) => {
+  const {
+    method = 'GET',
+    body = null,
+    requiresAuth = true,
+    timeoutMs = 10000,
+    headers: customHeaders = {},
+  } = options;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const url = endpoint.startsWith('http') ? endpoint : `${API_URL}${endpoint}`;
+  console.log(`[API REQUEST] ➜ ${method} ${url}`);
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...customHeaders,
+    };
+
+    if (requiresAuth) {
+      const token = await getAccessToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+
+    const fetchConfig = {
+      method,
+      headers,
+      signal: controller.signal,
+    };
+
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      fetchConfig.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchConfig);
+    const rawText = await response.text();
+    console.log(`[API RESPONSE] ◀ HTTP ${response.status} | Body length: ${rawText.length}`);
+
+    let data = null;
+    let parseFailed = false;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      parseFailed = true;
+      console.warn('[API] Non-JSON response received:', rawText.substring(0, 200));
+    }
+
+    if (parseFailed) {
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: getFriendlyErrorMessage(response.status, null, 'PARSE_ERROR'),
+        isTimeout: false,
+        isOffline: false,
+        rawText: rawText.substring(0, 300),
+      };
+    }
+
+    if (!response.ok) {
+      const friendlyError = getFriendlyErrorMessage(response.status, data);
+      return {
+        ok: false,
+        status: response.status,
+        data,
+        error: friendlyError,
+        isTimeout: false,
+        isOffline: false,
+      };
+    }
+
+    return {
+      ok: true,
+      status: response.status,
+      data,
+      error: null,
+      isTimeout: false,
+      isOffline: false,
+    };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn(`[API TIMEOUT] Request ke ${url} melebihi batas ${timeoutMs}ms`);
+      return {
+        ok: false,
+        status: 408,
+        data: null,
+        error: getFriendlyErrorMessage(408, null, 'TIMEOUT'),
+        isTimeout: true,
+        isOffline: false,
+      };
+    }
+
+    console.warn(`[API NETWORK ERROR] Gagal menghubungi ${url}:`, err.message);
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: getFriendlyErrorMessage(0, null, 'NETWORK'),
+      isTimeout: false,
+      isOffline: true,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/**
+ * Backward compatibility helpers yang membungkus requestApi
+ */
+const apiPost = (endpoint, body) => requestApi(endpoint, { method: 'POST', body, requiresAuth: false });
+const apiPostAuth = (endpoint, body = {}) => requestApi(endpoint, { method: 'POST', body, requiresAuth: true });
+const apiGetAuth = (endpoint) => requestApi(endpoint, { method: 'GET', requiresAuth: true });
+
+// =================================================================
+// 2. INITIAL SEED DATA (MAHASISWA REALISTIS)
+// =================================================================
+const INITIAL_COURSES = [
+  {
+    id: 'crs_1',
+    code: 'IF3101',
+    name: 'Pemrograman Mobile',
+    lecturer: 'Dr. Ir. Hendra Wijaya, M.Kom',
+    day: 'Senin',
+    time: '08:00 - 10:30',
+    room: 'Lab Komputasi 3',
+    sks: 3,
+    color: '#4F46E5',
+  },
+  {
+    id: 'crs_2',
+    code: 'IF3102',
+    name: 'Basis Data Lanjut',
+    lecturer: 'Prof. Sri Rahayu, Ph.D',
+    day: 'Selasa',
+    time: '10:45 - 13:15',
+    room: 'R. Seminar 204',
+    sks: 3,
+    color: '#0EA5E9',
+  },
+  {
+    id: 'crs_3',
+    code: 'IF3103',
+    name: 'Kecerdasan Buatan (AI)',
+    lecturer: 'Budi Santoso, S.T., M.Sc',
+    day: 'Rabu',
+    time: '13:30 - 16:00',
+    room: 'Gd. Fasilkom 301',
+    sks: 3,
+    color: '#8B5CF6',
+  },
+  {
+    id: 'crs_4',
+    code: 'IF3104',
+    name: 'Rekayasa Perangkat Lunak',
+    lecturer: 'Dewi Lestari, M.T',
+    day: 'Kamis',
+    time: '08:00 - 10:30',
+    room: 'Ruang Teori 102',
+    sks: 3,
+    color: '#10B981',
+  },
+];
+
+const INITIAL_MATERIALS = [
+  {
+    id: 'mat_1',
+    courseId: 'crs_1',
+    courseName: 'Pemrograman Mobile',
+    meetingNumber: 1,
+    meetingTopic: 'Pengenalan React Native & Expo Ecosystem',
+    title: 'Modul 1: React Native Architecture & Setup',
+    fileType: 'PDF',
+    fileName: 'Modul_01_ReactNative_Setup.pdf',
+    fileSize: '4.2 MB',
+    dateAdded: '2026-10-12',
+    isStudied: true,
+    userNotes: 'Catatan penting: Jangan lupa gunakan Bun atau npm yang kompatibel dengan React 19. Expo Go sangat memudahkan live testing via QR Code.',
+    summary: 'Materi ini membahas fundamental arsitektur React Native (JavaScript Thread, Native Bridge, dan Fabric Renderer). Menjelaskan perbedaan pengembangan native vs cross-platform, instalasi CLI, serta keunggulan Expo Go dalam mempercepat prototyping aplikasi mobile tanpa kompilasi native yang berat.',
+    keyPoints: [
+      'React Native menggunakan konsep declarative UI dengan komponen native di iOS & Android.',
+      'Expo Go mengemas dependensi native siap pakai sehingga tidak butuh Xcode/Android Studio saat tahap belajar dasar.',
+      'JSX mengizinkan penulisan sintaks mirip HTML di dalam kode JavaScript murni.',
+      'State & Props adalah fondasi manajemen data komponen dalam React.',
+    ],
+    quiz: [
+      {
+        question: 'Apa fungsi utama Fabric Renderer di arsitektur modern React Native?',
+        options: ['Mengubah file PDF menjadi teks', 'Melakukan render UI secara efisien langsung ke komponen native', 'Mengkompresi gambar kamera', 'Menyimpan database lokal SQLite'],
+        correctIndex: 1,
+        explanation: 'Fabric renderer mengoptimalkan komunikasi antara JavaScript thread dan native view thread sehingga perpindahan UI terasa instan 60 FPS.',
+      },
+      {
+        question: 'Kapan sebaiknya menggunakan Expo Go dibanding Bare React Native?',
+        options: ['Saat membutuhkan custom library C++ native tingkat lanjut', 'Untuk prototyping cepat dan belajar tanpa konfigurasi native yang rumit', 'Ketika tidak memiliki koneksi internet sama sekali', 'Saat membuat aplikasi sistem operasi baru'],
+        correctIndex: 1,
+        explanation: 'Expo Go dirancang agar mahasiswa langsung fokus ke logika aplikasi tanpa pusing konfigurasi Gradle atau CocoaPods.',
+      },
+    ],
+  },
+  {
+    id: 'mat_2',
+    courseId: 'crs_1',
+    courseName: 'Pemrograman Mobile',
+    meetingNumber: 2,
+    meetingTopic: 'Komponen UI, Flexbox & State Management',
+    title: 'Slide Kuliah: Flexbox Responsive & State React',
+    fileType: 'PPT',
+    fileName: 'Pertemuan_2_Flexbox_State.pptx',
+    fileSize: '12.8 MB',
+    dateAdded: '2026-10-19',
+    isStudied: true,
+    userNotes: 'Ingat! default flexDirection di React Native adalah "column", bukan "row" seperti di CSS web standar.',
+    summary: 'Membahas perancangan layout responsif mobile menggunakan Flexbox. Fokus pada properti alignItems, justifyContent, flexWrap, serta pengelolaan State lokal dengan React Hook useState dan useEffect untuk siklus hidup komponen.',
+    keyPoints: [
+      'Default flexDirection pada React Native adalah column (vertikal).',
+      'justifyContent mengatur perataan sepanjang main axis.',
+      'alignItems mengatur perataan tegak lurus terhadap cross axis.',
+      'useState memicu re-render UI setiap kali setter function dipanggil dengan state baru.',
+    ],
+    quiz: [
+      {
+        question: 'Apa nilai default dari flexDirection di React Native?',
+        options: ['row', 'column', 'row-reverse', 'grid'],
+        correctIndex: 1,
+        explanation: 'Berbeda dari CSS web yang default-nya row, React Native secara default berorientasi vertikal (column) sesuai layar smartphone.',
+      },
+    ],
+  },
+  {
+    id: 'mat_3',
+    courseId: 'crs_1',
+    courseName: 'Pemrograman Mobile',
+    meetingNumber: 3,
+    meetingTopic: 'Navigasi Antar Halaman & Async Storage',
+    title: 'Hands-on: React Navigation & Offline Persistence',
+    fileType: 'PDF',
+    fileName: 'Modul_03_AsyncStorage_BottomTabs.pdf',
+    fileSize: '3.5 MB',
+    dateAdded: '2026-10-26',
+    isStudied: false,
+    userNotes: 'Perlu latihan ulang: cara serialisasi JSON.stringify dan JSON.parse saat menyimpan array object ke AsyncStorage.',
+    summary: 'Mempelajari navigasi multi-layar (Stack Navigation, Bottom Tab Navigation) dan teknik penyimpanan offline-first menggunakan AsyncStorage. Mengupas siklus simpan-ambil data user secara asinkron.',
+    keyPoints: [
+      'AsyncStorage hanya dapat menyimpan data dalam format String nilai tunggal (gunakan JSON.stringify).',
+      'Bottom Tab Navigation memberikan akses cepat ke 4-5 menu utama aplikasi seluler.',
+      'Gunakan try-catch block untuk menangani error saat I/O AsyncStorage.',
+    ],
+    quiz: [
+      {
+        question: 'Tipe data apa yang didukung langsung oleh AsyncStorage React Native?',
+        options: ['Array murni', 'String murni', 'Binary Buffer murni', 'Boolean murni'],
+        correctIndex: 1,
+        explanation: 'AsyncStorage berbasis key-value string. Object atau array harus dikonversi via JSON.stringify() terlebih dahulu.',
+      },
+    ],
+  },
+  {
+    id: 'mat_4',
+    courseId: 'crs_2',
+    courseName: 'Basis Data Lanjut',
+    meetingNumber: 1,
+    meetingTopic: 'Query Optimization & Indexing B-Tree',
+    title: 'Slide: Konsep Indexing & Execution Plan',
+    fileType: 'PPT',
+    fileName: 'Pertemuan1_Database_Indexing.pptx',
+    fileSize: '8.4 MB',
+    dateAdded: '2026-10-13',
+    isStudied: true,
+    userNotes: 'Catatan dosen: Indeks mempercepat SELECT namun memperlambat INSERT/UPDATE karena pohon indeks harus direorganisasi.',
+    summary: 'Ringkasan mengenai struktur data B-Tree pada RDBMS (PostgreSQL/MySQL), cara membaca Query Execution Plan (EXPLAIN ANALYZE), dan strategi memilih kolom untuk composite indexing.',
+    keyPoints: [
+      'Clustered Index menentukan urutan fisik penyimpanan data pada disk.',
+      'Non-clustered Index membuat pointer penunjuk ke lokasi data aktual.',
+      'EXPLAIN ANALYZE digunakan untuk melihat estimasi cost vs actual runtime eksekusi query.',
+    ],
+    quiz: [
+      {
+        question: 'Apa dampak penambahan terlalu banyak indeks pada tabel database?',
+        options: ['Operasi SELECT menjadi sangat lambat', 'Operasi INSERT dan UPDATE membutuhkan waktu lebih lama', 'Database kehilangan data secara acak', 'Ukuran disk berkurang 50%'],
+        correctIndex: 1,
+        explanation: 'Setiap operasi penulisan (INSERT/UPDATE/DELETE) mewajibkan database memperbarui semua pohon indeks terkait.',
+      },
+    ],
+  },
+  {
+    id: 'mat_5',
+    courseId: 'crs_3',
+    courseName: 'Kecerdasan Buatan (AI)',
+    meetingNumber: 2,
+    meetingTopic: 'Heuristic Search & Algoritma A*',
+    title: 'Catatan Kuliah: A* Search vs Dijkstra Algorithm',
+    fileType: 'DOC',
+    fileName: 'Catatan_Pribadi_Algoritma_A_Star.txt',
+    fileSize: '145 KB',
+    dateAdded: '2026-10-20',
+    isStudied: false,
+    userNotes: 'Rumus f(n) = g(n) + h(n). g(n) = cost riil dari start ke n, h(n) = estimasi heuristik ke tujuan.',
+    summary: 'Komparasi algoritma pencarian rute terpendek. Algoritma A* menggunakan fungsi evaluasi f(n) = g(n) + h(n) di mana h(n) harus admissible (tidak pernah overestimasi biaya ke target) agar menjamin solusi optimal.',
+    keyPoints: [
+      'Algoritma Dijkstra adalah kasus khusus dari A* di mana nilai heuristik h(n) bernilai 0.',
+      'Heuristik admissible menjamin A* selalu menemukan jalur terpendek pertama kali.',
+      'A* banyak diaplikasikan dalam game development, GPS navigasi, dan robotika pathfinding.',
+    ],
+    quiz: [
+      {
+        question: 'Apa syarat agar fungsi heuristik h(n) disebut Admissible?',
+        options: ['h(n) harus selalu bernilai negatif', 'h(n) tidak boleh melebihi biaya riil sebenarnya ke tujuan', 'h(n) harus sama dengan nol di semua node', 'h(n) harus dihitung dengan machine learning'],
+        correctIndex: 1,
+        explanation: 'Jika h(n) tidak pernah mengestimasi lebih tinggi dari jarak sebenarnya, maka rute terpendek dijamin ditemukan.',
+      },
+    ],
+  },
+];
+
+const INITIAL_TASKS = [
+  {
+    id: 'tsk_1',
+    courseId: 'crs_1',
+    courseName: 'Pemrograman Mobile',
+    title: 'Tugas 1: Bangun UI Aplikasi StudyMate',
+    deadline: '2026-11-06',
+    priority: 'Tinggi',
+    completed: false,
+    description: 'Selesaikan layout dashboard, navigasi tab, dan modularisasi modal AI Assistant.',
+  },
+  {
+    id: 'tsk_2',
+    courseId: 'crs_2',
+    courseName: 'Basis Data Lanjut',
+    title: 'Praktikum SQL: Analisis Indexing EXPLAIN',
+    deadline: '2026-11-08',
+    priority: 'Sedang',
+    completed: true,
+    description: 'Buat laporan perbandingan waktu eksekusi query sebelum dan sesudah dibuatkan B-Tree Index.',
+  },
+  {
+    id: 'tsk_3',
+    courseId: 'crs_3',
+    courseName: 'Kecerdasan Buatan (AI)',
+    title: 'Resume Paper: Large Language Models for Education',
+    deadline: '2026-11-12',
+    priority: 'Rendah',
+    completed: false,
+    description: 'Buat resume 2 halaman tentang penerapan generative AI untuk ringkasan materi otomatis.',
+  },
+];
+
+const INITIAL_NOTIFICATIONS = [
+  {
+    id: 'notif_1',
+    title: 'Jadwal Kuliah Hari Ini!',
+    message: 'Mata Kuliah Pemrograman Mobile (Pertemuan 3) dimulai pukul 08:00 WIB di Lab Komputasi 3.',
+    time: '30 menit yang lalu',
+    read: false,
+    type: 'class',
+  },
+  {
+    id: 'notif_2',
+    title: 'Materi Belum Dibaca ⚠️',
+    message: 'Kamu belum membaca materi "Hands-on: React Navigation & Offline Persistence". Klik untuk pelajari.',
+    time: '2 jam yang lalu',
+    read: false,
+    type: 'material',
+  },
+  {
+    id: 'notif_3',
+    title: 'Deadline Tugas H-4',
+    message: 'Tugas 1: Bangun UI Aplikasi StudyMate tenggat tanggal 06 November 2026.',
+    time: 'Kemarin',
+    read: true,
+    type: 'task',
+  },
+];
+
+function StudyMateApp() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  // Responsive flags
+  const isSmallScreen = width < 360;
+  const isTabletOrLandscape = width > 600;
+
+  // Dynamic bottom padding to ensure zero bottom-nav overlap (Anggota 3)
+  const bottomNavHeight = 58 + Math.max(insets.bottom, 8);
+  const scrollContentPaddingBottom = bottomNavHeight + 16;
+
+  // Stat card dynamic width
+  const statCardWidth = useMemo(() => {
+    if (isTabletOrLandscape) {
+      return (width - 32 - 36) / 4; // 4 columns
+    }
+    return (width - 32 - 12) / 2; // 2 columns
+  }, [width, isTabletOrLandscape]);
+
+  // Navigation Tabs: 'Home' | 'Courses' | 'Materials' | 'Tasks' | 'Schedule'
+  const [currentTab, setCurrentTab] = useState('Home');
+
+  // =================================================================
+  // SPRINT 04 – ANGGOTA 2: Authentication State
+  // authScreen: 'login' | 'register'
+  // isAuthenticated: apakah user sudah login via REST API
+  // apiUser: data user dari backend (id, name, email)
+  // =================================================================
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authScreen, setAuthScreen] = useState('login');
+  const [apiUser, setApiUser] = useState(null);
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 3: Profile Management States
+  // Edit profil, foto avatar, dan penyimpanan per-pengguna
+  // =================================================================
+  const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [editProfilePhotoUri, setEditProfilePhotoUri] = useState(null);
+  const [editProfilePhotoPreview, setEditProfilePhotoPreview] = useState(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileAvatarUri, setProfileAvatarUri] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  // Auth form fields
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+
+  // Sprint 04 – Anggota 3: Protected API test state
+  const [apiTestResult, setApiTestResult] = useState(null);
+  const [isApiTesting, setIsApiTesting] = useState(false);
+
+  // =================================================================
+  // WEEK 6 – ANGGOTA 3: Offline Handling & Network Status State
+  // =================================================================
+  const [isOffline, setIsOffline] = useState(false);
+  const [isCheckingConnection, setIsCheckingConnection] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // =================================================================
+  // WEEK 6 – ANGGOTA 2: Feature-Level UI States (Loading, Error, Retry)
+  // =================================================================
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [coursesError, setCoursesError] = useState(null);
+
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [materialsError, setMaterialsError] = useState(null);
+
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState(null);
+
+  // Core Data States
+  const [courses, setCourses] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [userProfile, setUserProfile] = useState({
+    name: 'Ahmad Faiz Pratama',
+    nim: '2201010199',
+    major: '',
+    campus: '',
+    university: '',
+    semester: null,
+    studyStreakDays: 14,
+  });
+
+  // Loading & Filter States
+  const [isLoading, setIsLoading] = useState(true);
+  const [materialSearchQuery, setMaterialSearchQuery] = useState('');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
+  const [selectedMeetingFilter, setSelectedMeetingFilter] = useState('ALL');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
+
+  // Modals Visibility
+  const [materialModalVisible, setMaterialModalVisible] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState(null);
+
+  const [courseModalVisible, setCourseModalVisible] = useState(false);
+  const [editingCourse, setEditingCourse] = useState(null);
+
+  const [taskModalVisible, setTaskModalVisible] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+
+  const [notesModalVisible, setNotesModalVisible] = useState(false);
+  const [activeNotesMaterial, setActiveNotesMaterial] = useState(null);
+  const [currentNoteText, setCurrentNoteText] = useState('');
+
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [activeAiMaterial, setActiveAiMaterial] = useState(null);
+  const [aiSubTab, setAiSubTab] = useState('summary');
+  const [quizRevealedMap, setQuizRevealedMap] = useState({});
+
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [isParsingSchedule, setIsParsingSchedule] = useState(false);
+
+  const [notifModalVisible, setNotifModalVisible] = useState(false);
+
+  // =================================================================
+  // WEEK 7 – ANGGOTA 1 & 2: Smart Material Scanner States
+  // =================================================================
+  const [isScannerVisible, setIsScannerVisible] = useState(false);
+  const [viewingPhotoMaterial, setViewingPhotoMaterial] = useState(null);
+
   // =================================================================
   // WEEK 7 – ANGGOTA 3: Accelerometer & Shake to Refresh States & Refs
   // =================================================================
@@ -105,7 +670,8 @@ const STORAGE_KEYS = {
     scheduleModalVisible ||
     notifModalVisible ||
     isScannerVisible ||
-    viewingPhotoMaterial !== null;
+    viewingPhotoMaterial !== null ||
+    isEditProfileVisible;
 
   // =================================================================
   // 5. DATA PERSISTENCE & INITIALIZATION
@@ -196,11 +762,15 @@ const STORAGE_KEYS = {
 
         if (result.ok && result.data && result.data.success) {
           // Token valid & online
+          const freshUser = result.data.user;
           setIsAuthenticated(true);
-          setApiUser(result.data.user);
+          setApiUser(freshUser);
           setIsOffline(false);
           setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
-          await loadAllData();
+          // Muat avatar dari cache per-user
+          const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${freshUser.id}`);
+          if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+          await loadAllData(freshUser.id);
           return;
         } else if (result.status === 401) {
           // Token terbukti tidak valid (401 Unauthorized) – bersihkan sesi
@@ -213,7 +783,10 @@ const STORAGE_KEYS = {
           setIsOffline(true);
           setIsAuthenticated(true);
           setApiUser(storedUser);
-          await loadAllData();
+          // Muat avatar dari cache per-user
+          const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${storedUser.id}`);
+          if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+          await loadAllData(storedUser.id);
           return;
         }
       }
@@ -224,46 +797,30 @@ const STORAGE_KEYS = {
     }
   };
 
-  const loadAllData = async () => {
+  const loadAllData = async (userId = null) => {
+    // =================================================================
+    // WEEK 8 – ANGGOTA 2: Async API Integration + Promise.allSettled
+    // Data diambil dari REST API server (per-user), dengan fallback ke
+    // user-namespaced AsyncStorage cache saat offline.
+    // =================================================================
+    const uid = userId || apiUser?.id;
+    if (!uid) {
+      setIsLoading(false);
+      return;
+    }
+    const userKeys = getUserStorageKeys(uid);
+
     try {
       setIsLoading(true);
-      const [storedCourses, storedMaterials, storedTasks, storedNotifs, storedSettings, storedProfile] =
-        await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.COURSES),
-          AsyncStorage.getItem(STORAGE_KEYS.MATERIALS),
-          AsyncStorage.getItem(STORAGE_KEYS.TASKS),
-          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
-          AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
-          AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
-        ]);
+      setCoursesLoading(true);
+      setMaterialsLoading(true);
+      setTasksLoading(true);
 
-      if (storedCourses) {
-        setCourses(JSON.parse(storedCourses));
-      } else {
-        setCourses(INITIAL_COURSES);
-        await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(INITIAL_COURSES));
-      }
-
-      if (storedMaterials) {
-        setMaterials(JSON.parse(storedMaterials));
-      } else {
-        setMaterials(INITIAL_MATERIALS);
-        await AsyncStorage.setItem(STORAGE_KEYS.MATERIALS, JSON.stringify(INITIAL_MATERIALS));
-      }
-
-      if (storedTasks) {
-        setTasks(JSON.parse(storedTasks));
-      } else {
-        setTasks(INITIAL_TASKS);
-        await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
-      }
-
-      if (storedNotifs) {
-        setNotifications(JSON.parse(storedNotifs));
-      } else {
-        setNotifications(INITIAL_NOTIFICATIONS);
-        await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
-      }
+      // 1. Muat pengaturan & notifikasi dari cache (tidak ada endpoint server untuk ini)
+      const [storedSettings, storedNotifs] = await Promise.all([
+        AsyncStorage.getItem(userKeys.SETTINGS),
+        AsyncStorage.getItem(userKeys.NOTIFICATIONS),
+      ]);
 
       if (storedSettings) {
         const parsedSettings = JSON.parse(storedSettings);
@@ -275,12 +832,80 @@ const STORAGE_KEYS = {
           ...parsedSettings,
         });
       }
-      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
-      setCoursesError(null);
-      setMaterialsError(null);
-      setTasksError(null);
+      if (storedNotifs) {
+        setNotifications(JSON.parse(storedNotifs));
+      } else {
+        setNotifications(INITIAL_NOTIFICATIONS);
+      }
+
+      // 2. Muat avatar dari cache per-user
+      const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${uid}`);
+      if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+
+      // 3. Ambil data utama dari API secara paralel menggunakan Promise.allSettled
+      // Promise.allSettled: jika satu gagal, yang lain tetap berhasil dimuat
+      const [coursesRes, tasksRes, materialsRes] = await Promise.allSettled([
+        requestApi('/courses/index.php', { method: 'GET', requiresAuth: true }),
+        requestApi('/tasks/index.php', { method: 'GET', requiresAuth: true }),
+        requestApi('/materials/index.php', { method: 'GET', requiresAuth: true }),
+      ]);
+
+      // 4. Proses hasil courses
+      if (coursesRes.status === 'fulfilled' && coursesRes.value.ok && coursesRes.value.data?.courses) {
+        const apiCourses = coursesRes.value.data.courses;
+        setCourses(apiCourses);
+        setCoursesError(null);
+        await AsyncStorage.setItem(userKeys.COURSES, JSON.stringify(apiCourses));
+      } else {
+        // Fallback ke cache user-namespaced
+        const cached = await AsyncStorage.getItem(userKeys.COURSES);
+        if (cached) {
+          setCourses(JSON.parse(cached));
+        } else {
+          setCourses([]); // Akun baru: kosong, bukan data dummy
+        }
+        if (coursesRes.status === 'fulfilled' && !coursesRes.value.ok) {
+          setCoursesError(coursesRes.value.error);
+        }
+      }
+
+      // 5. Proses hasil tasks
+      if (tasksRes.status === 'fulfilled' && tasksRes.value.ok && tasksRes.value.data?.tasks) {
+        const apiTasks = tasksRes.value.data.tasks;
+        setTasks(apiTasks);
+        setTasksError(null);
+        await AsyncStorage.setItem(userKeys.TASKS, JSON.stringify(apiTasks));
+      } else {
+        const cached = await AsyncStorage.getItem(userKeys.TASKS);
+        if (cached) {
+          setTasks(JSON.parse(cached));
+        } else {
+          setTasks([]); // Akun baru: kosong
+        }
+        if (tasksRes.status === 'fulfilled' && !tasksRes.value.ok) {
+          setTasksError(tasksRes.value.error);
+        }
+      }
+
+      // 6. Proses hasil materials
+      if (materialsRes.status === 'fulfilled' && materialsRes.value.ok && materialsRes.value.data?.materials) {
+        const apiMaterials = materialsRes.value.data.materials;
+        setMaterials(apiMaterials);
+        setMaterialsError(null);
+        await AsyncStorage.setItem(userKeys.MATERIALS, JSON.stringify(apiMaterials));
+      } else {
+        const cached = await AsyncStorage.getItem(userKeys.MATERIALS);
+        if (cached) {
+          setMaterials(JSON.parse(cached));
+        } else {
+          setMaterials([]); // Akun baru: kosong
+        }
+        if (materialsRes.status === 'fulfilled' && !materialsRes.value.ok) {
+          setMaterialsError(materialsRes.value.error);
+        }
+      }
     } catch (error) {
-      console.error('Error loading StudyMate storage:', error);
+      console.error('[Week 8] Error loading data:', error.message);
     } finally {
       setIsLoading(false);
       setCoursesLoading(false);
@@ -295,26 +920,29 @@ const STORAGE_KEYS = {
 
   /**
    * handleRefreshCourses:
-   * Mengambil ulang mata kuliah dengan UI State (Loading -> Success/Error)
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request with Tri-State & Per-User Cache
    */
   const handleRefreshCourses = async () => {
     setCoursesLoading(true);
     setCoursesError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      // Cek konektivitas server
-      const isOnline = await checkServerConnectivity();
-      if (!isOnline) {
-        // Tetap gunakan data tersimpan di AsyncStorage
-        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-        if (stored) setCourses(JSON.parse(stored));
-        setCoursesError('Koneksi terputus. Data ditampilkan dari penyimpanan lokal perangkat.');
-      } else {
-        // Berhasil terhubung
-        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-        if (stored) setCourses(JSON.parse(stored));
+      const result = await requestApi('/courses/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.courses) {
+        setCourses(result.data.courses);
         setCoursesError(null);
+        await AsyncStorage.setItem(userKeys.COURSES, JSON.stringify(result.data.courses));
+      } else {
+        // Fallback ke cache lokal jika server tidak merespons
+        const stored = await AsyncStorage.getItem(userKeys.COURSES);
+        if (stored) setCourses(JSON.parse(stored));
+        setCoursesError(result.error || 'Gagal memuat mata kuliah dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.COURSES);
+      if (stored) setCourses(JSON.parse(stored));
       setCoursesError('Gagal memuat mata kuliah: ' + e.message);
     } finally {
       setCoursesLoading(false);
@@ -323,19 +951,28 @@ const STORAGE_KEYS = {
 
   /**
    * handleRefreshMaterials:
-   * Mengambil ulang materi perkuliahan dengan UI State
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request with Tri-State & Per-User Cache
    */
   const handleRefreshMaterials = async () => {
     setMaterialsLoading(true);
     setMaterialsError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      const isOnline = await checkServerConnectivity();
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.MATERIALS);
-      if (stored) setMaterials(JSON.parse(stored));
-      if (!isOnline) {
-        setMaterialsError('Koneksi terputus. Data materi menggunakan cache offline.');
+      const result = await requestApi('/materials/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.materials) {
+        setMaterials(result.data.materials);
+        setMaterialsError(null);
+        await AsyncStorage.setItem(userKeys.MATERIALS, JSON.stringify(result.data.materials));
+      } else {
+        const stored = await AsyncStorage.getItem(userKeys.MATERIALS);
+        if (stored) setMaterials(JSON.parse(stored));
+        setMaterialsError(result.error || 'Gagal memuat materi dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.MATERIALS);
+      if (stored) setMaterials(JSON.parse(stored));
       setMaterialsError('Gagal memuat katalog materi: ' + e.message);
     } finally {
       setMaterialsLoading(false);
@@ -344,19 +981,28 @@ const STORAGE_KEYS = {
 
   /**
    * handleRefreshTasks:
-   * Mengambil ulang tugas perkuliahan dengan UI State
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request for Tasks (Todo List)
    */
   const handleRefreshTasks = async () => {
     setTasksLoading(true);
     setTasksError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      const isOnline = await checkServerConnectivity();
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      if (stored) setTasks(JSON.parse(stored));
-      if (!isOnline) {
-        setTasksError('Koneksi terputus. Menampilkan tugas dari penyimpanan lokal.');
+      const result = await requestApi('/tasks/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.tasks) {
+        setTasks(result.data.tasks);
+        setTasksError(null);
+        await AsyncStorage.setItem(userKeys.TASKS, JSON.stringify(result.data.tasks));
+      } else {
+        const stored = await AsyncStorage.getItem(userKeys.TASKS);
+        if (stored) setTasks(JSON.parse(stored));
+        setTasksError(result.error || 'Gagal memuat tugas dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.TASKS);
+      if (stored) setTasks(JSON.parse(stored));
       setTasksError('Gagal memuat daftar tugas: ' + e.message);
     } finally {
       setTasksLoading(false);
@@ -365,7 +1011,18 @@ const STORAGE_KEYS = {
 
   const persistData = async (key, data) => {
     try {
-      await AsyncStorage.setItem(key, JSON.stringify(data));
+      // Jika key adalah salah satu storage keys global, map ke user-namespaced key jika user login
+      let resolvedKey = key;
+      if (apiUser?.id) {
+        const userKeys = getUserStorageKeys(apiUser.id);
+        if (key === STORAGE_KEYS.COURSES) resolvedKey = userKeys.COURSES;
+        else if (key === STORAGE_KEYS.MATERIALS) resolvedKey = userKeys.MATERIALS;
+        else if (key === STORAGE_KEYS.TASKS) resolvedKey = userKeys.TASKS;
+        else if (key === STORAGE_KEYS.NOTIFICATIONS) resolvedKey = userKeys.NOTIFICATIONS;
+        else if (key === STORAGE_KEYS.SETTINGS) resolvedKey = userKeys.SETTINGS;
+        else if (key === STORAGE_KEYS.USER_PROFILE) resolvedKey = userKeys.USER_PROFILE;
+      }
+      await AsyncStorage.setItem(resolvedKey, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to persist to AsyncStorage:', key, e);
     }
@@ -500,6 +1157,38 @@ const STORAGE_KEYS = {
   }, [settings.shakeToRefresh]);
 
   // =================================================================
+  // WEEK 8 – ANGGOTA 2: Asynchronous useEffect dengan Tab Synchronization & Cleanup
+  // Mengambil data spesifik saat pengguna berpindah tab dengan proteksi isMounted
+  // untuk mencegah state updates pada unmounted component atau setelah logout.
+  // =================================================================
+  useEffect(() => {
+    if (!isAuthenticated || !apiUser) return;
+    let isCurrent = true;
+
+    const syncTabData = async () => {
+      try {
+        if (currentTab === 'Courses') {
+          await handleRefreshCourses();
+        } else if (currentTab === 'Materials') {
+          await handleRefreshMaterials();
+        } else if (currentTab === 'Tasks') {
+          await handleRefreshTasks();
+        } else if (currentTab === 'Schedule') {
+          await handleLoadProfile();
+        }
+      } catch (err) {
+        if (isCurrent) console.warn('[Tab Sync Error]', err.message);
+      }
+    };
+
+    syncTabData();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentTab, isAuthenticated, apiUser?.id]);
+
+  // =================================================================
   // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
   // =================================================================
 
@@ -620,7 +1309,7 @@ const STORAGE_KEYS = {
 
         // Step 3: Update state autentikasi – ini yang membuka Dashboard
         setApiUser(user);
-        setUserProfile((prev) => ({ ...prev, name: user.name }));
+        setUserProfile((prev) => ({ ...prev, name: user.name, email: user.email }));
         setIsAuthenticated(true);
         // isAuthLoading akan di-false oleh finally sebelum loadAllData
       } else {
@@ -637,12 +1326,18 @@ const STORAGE_KEYS = {
       setIsAuthLoading(false);
     }
 
-    // Step 4: Muat data lokal – dipanggil tanpa await agar tidak blocking
-    // (loadAllData menggunakan isLoading state tersendiri, bukan isAuthLoading)
-    // Catatan: isAuthenticated masih false di sini karena setState bersifat async,
-    // loadAllData() dipanggil langsung tanpa kondisi – sudah aman karena tidak
-    // bergantung pada auth state, hanya membaca AsyncStorage.
-    loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
+    // Step 4: Muat data per-user dari API (Week 8: gunakan userId untuk namespace)
+    // Muat avatar dari cache per-user terlebih dahulu
+    if (result?.ok && result?.data?.success) {
+      const userId = result.data.user?.id;
+      if (userId) {
+        const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${userId}`);
+        if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+      }
+      loadAllData(result?.data?.user?.id).catch((e) => console.warn('[Login] loadAllData error:', e.message));
+    } else {
+      loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
+    }
   };
 
   /**
@@ -672,6 +1367,27 @@ const STORAGE_KEYS = {
             // Hapus token dari SecureStore (PENTING: dilakukan terlepas dari respons server)
             await deleteAccessToken();
             await deleteUserData();
+
+            // =================================================================
+            // WEEK 8 – ANGGOTA 1: User Data Isolation on Logout
+            // Bersihkan seluruh state data pengguna dari memori aplikasi agar
+            // akun berikutnya memulai dari kondisi bersih tanpa kebocoran data.
+            // =================================================================
+            setCourses([]);
+            setMaterials([]);
+            setTasks([]);
+            setNotifications([]);
+            setProfileAvatarUri(null);
+            setUserProfile({
+              name: '',
+              email: '',
+              nim: '',
+              major: '',
+              campus: '',
+              university: '',
+              semester: null,
+              studyStreakDays: 0,
+            });
 
             // Bersihkan seluruh state sesi
             setApiUser(null);
@@ -728,6 +1444,158 @@ const STORAGE_KEYS = {
   };
 
   // =================================================================
+  // WEEK 8 – ANGGOTA 3: PROFILE MANAGEMENT & EDIT PROFILE HANDLERS
+  // =================================================================
+  const handleLoadProfile = async () => {
+    setProfileLoading(true);
+    try {
+      const result = await requestApi('/users/me.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.user) {
+        const u = result.data.user;
+        setApiUser(u);
+        setUserProfile((prev) => ({
+          ...prev,
+          name: u.name,
+          email: u.email,
+          university: u.university || '',
+          major: u.major || '',
+          semester: u.semester || null,
+        }));
+        if (u.avatar_path) {
+          const avatarUrl = API_URL.startsWith('http')
+            ? `${API_URL.replace('/studymate-api', '')}/studymate-api/${u.avatar_path}`
+            : `http://192.168.1.5/studymate-api/${u.avatar_path}`;
+          setProfileAvatarUri(avatarUrl);
+          await AsyncStorage.setItem(`@studymate_avatar_${u.id}`, avatarUrl);
+        }
+      }
+    } catch (e) {
+      console.warn('[Profile Load Warning]', e.message);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handlePickProfilePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Izin Galeri Diperlukan',
+          'StudyMate membutuhkan izin akses galeri foto untuk memilih foto profil baru.'
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const pickedUri = result.assets[0].uri;
+        setEditProfilePhotoUri(pickedUri);
+        setEditProfilePhotoPreview(pickedUri);
+      }
+    } catch (err) {
+      Alert.alert('Gagal Membuka Galeri', 'Terjadi kesalahan saat memilih foto: ' + err.message);
+    }
+  };
+
+  const handleSaveProfile = async (newName, newUniversity, newMajor, newSemester) => {
+    if (!newName.trim()) {
+      Alert.alert('Perhatian', 'Nama lengkap pengguna wajib diisi.');
+      return;
+    }
+    setIsSavingProfile(true);
+    try {
+      // 1. Simpan nama, universitas, jurusan, semester ke server via PATCH /users/update-profile.php
+      const result = await requestApi('/users/update-profile.php', {
+        method: 'PATCH',
+        body: {
+          name: newName.trim(),
+          university: (newUniversity || '').trim(),
+          major: (newMajor || '').trim(),
+          semester: newSemester || null,
+        },
+        requiresAuth: true,
+      });
+
+      if (!result.ok) {
+        Alert.alert('Gagal Menyimpan Profil', result.error || 'Server menolak pembaruan profil.');
+        return;
+      }
+
+      const updatedUser = result.data?.user;
+      if (updatedUser) {
+        setApiUser((prev) => ({ ...prev, ...updatedUser }));
+        setUserProfile((prev) => ({
+          ...prev,
+          name: updatedUser.name,
+          university: updatedUser.university || '',
+          major: updatedUser.major || '',
+          semester: updatedUser.semester || null,
+        }));
+        await saveUserData({ ...apiUser, ...updatedUser });
+      }
+
+      // 2. Unggah foto avatar ke backend jika pengguna memilih foto baru dari galeri
+      if (editProfilePhotoUri) {
+        const persistentAvatarUri = await persistImageAsync(editProfilePhotoUri);
+
+        const token = await getAccessToken();
+        const formData = new FormData();
+        formData.append('avatar', {
+          uri: persistentAvatarUri,
+          name: `avatar_${apiUser?.id || 'usr'}_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        });
+
+        const uploadUrl = API_URL.startsWith('http')
+          ? `${API_URL}/users/upload-avatar.php`
+          : `http://192.168.1.5/studymate-api/users/upload-avatar.php`;
+
+        try {
+          const uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
+          const uploadData = await uploadRes.json();
+          if (uploadData.success && uploadData.avatar_url) {
+            setProfileAvatarUri(uploadData.avatar_url);
+            if (apiUser?.id) {
+              await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, uploadData.avatar_url);
+            }
+          } else {
+            setProfileAvatarUri(persistentAvatarUri);
+            if (apiUser?.id) {
+              await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, persistentAvatarUri);
+            }
+          }
+        } catch (uploadErr) {
+          console.warn('[Avatar Upload Network]', uploadErr.message);
+          setProfileAvatarUri(persistentAvatarUri);
+          if (apiUser?.id) {
+            await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, persistentAvatarUri);
+          }
+        }
+      }
+
+      setIsEditProfileVisible(false);
+      setEditProfilePhotoUri(null);
+      Alert.alert('Profil Diperbarui 🎉', 'Profil mahasiswa Anda berhasil disimpan.');
+    } catch (e) {
+      Alert.alert('Gagal', 'Terjadi masalah saat menyimpan profil: ' + e.message);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // =================================================================
   // 6. ACTION HANDLERS (MATERIAL, NOTES, AI, TASKS, SCHEDULE)
   // =================================================================
   const handleToggleMaterialStudied = async (materialId) => {
@@ -739,17 +1607,30 @@ const STORAGE_KEYS = {
   };
 
   const handleDeleteMaterial = (materialId) => {
-    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini?', [
+    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini dari server?', [
       { text: 'Batal', style: 'cancel' },
       {
         text: 'Hapus',
         style: 'destructive',
         onPress: async () => {
+          const previousMaterials = [...materials];
           const updated = materials.filter((m) => m.id !== materialId);
           setMaterials(updated);
           await persistData(STORAGE_KEYS.MATERIALS, updated);
           if (viewingPhotoMaterial && viewingPhotoMaterial.id === materialId) {
             setViewingPhotoMaterial(null);
+          }
+
+          try {
+            const result = await requestApi(`/materials/index.php?id=${materialId}`, {
+              method: 'DELETE',
+              requiresAuth: true,
+            });
+            if (!result.ok) {
+              console.warn('[Material Delete] Server delete warning:', result.error);
+            }
+          } catch (e) {
+            console.warn('[Material Delete] Network warning:', e.message);
           }
         },
       },
@@ -779,46 +1660,83 @@ const STORAGE_KEYS = {
       },
     ];
 
-    if (editingMaterial) {
-      updated = materials.map((m) =>
-        m.id === editingMaterial.id
-          ? {
-            ...m,
-            ...formData,
-            courseName: courseObj.name,
-            summary: generatedSummary,
-            keyPoints: generatedKeyPoints,
-            quiz: generatedQuiz,
-          }
-          : m
-      );
-    } else {
-      const newMaterial = {
-        id: `mat_${Date.now()}`,
-        ...formData,
-        courseName: courseObj.name,
-        dateAdded: new Date().toISOString().split('T')[0],
-        isStudied: false,
-        userNotes: '',
-        summary: generatedSummary,
-        keyPoints: generatedKeyPoints,
-        quiz: generatedQuiz,
-      };
-      updated = [newMaterial, ...materials];
-    }
+    try {
+      if (editingMaterial) {
+        // PUT ke backend
+        const result = await requestApi(`/materials/index.php?id=${editingMaterial.id}`, {
+          method: 'PUT',
+          body: {
+            title: formData.title,
+            meeting_topic: formData.meetingTopic,
+            meeting_number: parseInt(formData.meetingNumber, 10) || 1,
+            user_notes: formData.userNotes || '',
+          },
+          requiresAuth: true,
+        });
 
-    setMaterials(updated);
-    await persistData(STORAGE_KEYS.MATERIALS, updated);
-    setMaterialModalVisible(false);
-    setEditingMaterial(null);
+        updated = materials.map((m) =>
+          m.id === editingMaterial.id
+            ? {
+              ...m,
+              ...formData,
+              courseName: courseObj.name,
+              summary: generatedSummary,
+              keyPoints: generatedKeyPoints,
+              quiz: generatedQuiz,
+            }
+            : m
+        );
+      } else {
+        // POST ke backend
+        const result = await requestApi('/materials/index.php', {
+          method: 'POST',
+          body: {
+            title: formData.title,
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj?.name || 'Mata Kuliah',
+            meeting_number: parseInt(formData.meetingNumber, 10) || 1,
+            meeting_topic: formData.meetingTopic || '',
+            file_type: formData.fileType || 'PDF',
+            file_name: formData.fileName || '',
+            file_size: formData.fileSize || '',
+            user_notes: formData.userNotes || '',
+            is_scanned: 0,
+          },
+          requiresAuth: true,
+        });
+
+        const newId = result.ok && result.data?.material?.id ? result.data.material.id : `mat_${Date.now()}`;
+        const newMaterial = {
+          id: newId,
+          ...formData,
+          courseName: courseObj.name,
+          dateAdded: new Date().toISOString().split('T')[0],
+          isStudied: false,
+          userNotes: '',
+          summary: generatedSummary,
+          keyPoints: generatedKeyPoints,
+          quiz: generatedQuiz,
+        };
+        updated = [newMaterial, ...materials];
+      }
+
+      setMaterials(updated);
+      await persistData(STORAGE_KEYS.MATERIALS, updated);
+      setMaterialModalVisible(false);
+      setEditingMaterial(null);
+    } catch (e) {
+      Alert.alert('Peringatan', 'Materi disimpan ke cache lokal: ' + e.message);
+      setMaterialModalVisible(false);
+      setEditingMaterial(null);
+    }
   };
 
   /**
    * handleSaveScannedMaterial:
-   * WEEK 7 – ANGGOTA 2: Menyimpan hasil pemindaian Smart Material Scanner
+   * WEEK 7 & 8: Menyimpan hasil pemindaian Smart Material Scanner
    * - Menyimpan foto ke direktori dokumen lokal perangkat (FileSystem.documentDirectory)
-   * - Menyatukan materi ke dalam katalog mata kuliah yang sudah ada
-   * - Menyimpan metadata secara persisten di AsyncStorage
+   * - Mengirim metadata ke backend REST API (/materials/index.php)
+   * - Menyatukan materi ke dalam katalog mata kuliah & AsyncStorage
    */
   const handleSaveScannedMaterial = async (scannedData) => {
     try {
@@ -827,9 +1745,36 @@ const STORAGE_KEYS = {
       // 1. Salin foto dari cache kamera ke direktori dokumen persisten
       const persistentUri = await persistImageAsync(scannedData.imageUri);
 
-      // 2. Buat objek materi hasil scan lengkap
+      // 2. Kirim ke backend jika online
+      let serverId = null;
+      try {
+        const result = await requestApi('/materials/index.php', {
+          method: 'POST',
+          body: {
+            title: scannedData.title.trim(),
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj ? courseObj.name : 'Mata Kuliah',
+            meeting_number: parseInt(scannedData.meetingNumber, 10) || 1,
+            meeting_topic: scannedData.meetingTopic.trim() || `Dokumentasi Pertemuan ${scannedData.meetingNumber}`,
+            file_type: 'SCAN',
+            file_name: `Scan_${courseObj?.code || 'MAT'}_P${scannedData.meetingNumber}.jpg`,
+            file_size: '1.4 MB (Foto Kamera)',
+            photo_uri: persistentUri,
+            is_scanned: 1,
+            user_notes: scannedData.userNotes ? scannedData.userNotes.trim() : '',
+          },
+          requiresAuth: true,
+        });
+        if (result.ok && result.data?.material?.id) {
+          serverId = result.data.material.id;
+        }
+      } catch (apiErr) {
+        console.warn('[Scan Save] Backend API sync note:', apiErr.message);
+      }
+
+      // 3. Buat objek materi hasil scan lengkap
       const newScanned = {
-        id: `scan_${Date.now()}`,
+        id: serverId || `scan_${Date.now()}`,
         title: scannedData.title.trim(),
         courseId: courseObj ? courseObj.id : (courses[0]?.id || 'crs_1'),
         courseName: courseObj ? courseObj.name : 'Mata Kuliah',
@@ -902,51 +1847,156 @@ const STORAGE_KEYS = {
     setAiModalVisible(true);
   };
 
+  // =================================================================
+  // WEEK 8 – ANGGOTA 2: ASYNCHRONOUS TODO LIST API HANDLERS (TASKS)
+  // 1. GET: Dilakukan di handleRefreshTasks() & loadAllData()
+  // 2. Loading Indicator: tasksLoading & isSavingTask
+  // 3. POST: handleSaveTask() menambah tugas ke REST API
+  // 4. PATCH: handleToggleTaskCompleted() mengubah status via PATCH API
+  // 5. DELETE: handleDeleteTask() menghapus tugas via DELETE API
+  // 6. Error Handling: Try/Catch + Alert + Revert State (Optimistic Rollback)
+  // =================================================================
+  const [isSavingTask, setIsSavingTask] = useState(false);
+
   const handleToggleTaskCompleted = async (taskId) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const previousStatus = task.completed;
+    const newStatus = !previousStatus;
+
+    // Optimistic UI Update untuk UX responsif
+    const previousTasks = [...tasks];
     const updated = tasks.map((t) =>
-      t.id === taskId ? { ...t, completed: !t.completed } : t
+      t.id === taskId ? { ...t, completed: newStatus } : t
     );
     setTasks(updated);
-    await persistData(STORAGE_KEYS.TASKS, updated);
+
+    try {
+      // 4. Mengubah Status Todo (PATCH ke server)
+      const result = await requestApi(`/tasks/index.php?id=${taskId}`, {
+        method: 'PATCH',
+        body: { completed: newStatus },
+        requiresAuth: true,
+      });
+
+      if (result.ok && result.data?.task) {
+        // Sinkronisasi data resmi dari respons server
+        const synced = tasks.map((t) =>
+          t.id === taskId ? { ...t, completed: result.data.task.completed } : t
+        );
+        setTasks(synced);
+        await persistData(STORAGE_KEYS.TASKS, synced);
+      } else {
+        // Rollback jika server menolak
+        setTasks(previousTasks);
+        Alert.alert('Gagal Memperbarui Status', result.error || 'Server tidak dapat memperbarui status tugas.');
+      }
+    } catch (e) {
+      setTasks(previousTasks);
+      Alert.alert('Kesalahan Jaringan', 'Gagal menghubungi server untuk memperbarui status tugas: ' + e.message);
+    }
   };
 
   const handleDeleteTask = (taskId) => {
-    Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas ini?', [
+    Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas perkuliahan ini dari server?', [
       { text: 'Batal', style: 'cancel' },
       {
         text: 'Hapus',
         style: 'destructive',
         onPress: async () => {
+          const previousTasks = [...tasks];
           const updated = tasks.filter((t) => t.id !== taskId);
           setTasks(updated);
-          await persistData(STORAGE_KEYS.TASKS, updated);
+
+          try {
+            const result = await requestApi(`/tasks/index.php?id=${taskId}`, {
+              method: 'DELETE',
+              requiresAuth: true,
+            });
+
+            if (result.ok) {
+              await persistData(STORAGE_KEYS.TASKS, updated);
+            } else {
+              setTasks(previousTasks);
+              Alert.alert('Gagal Menghapus', result.error || 'Server menolak penghapusan tugas.');
+            }
+          } catch (e) {
+            setTasks(previousTasks);
+            Alert.alert('Kesalahan Jaringan', 'Gagal menghapus tugas dari server: ' + e.message);
+          }
         },
       },
     ]);
   };
 
   const handleSaveTask = async (formData) => {
-    let updated;
+    if (isSavingTask) return;
+    setIsSavingTask(true);
     const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
 
-    if (editingTask) {
-      updated = tasks.map((t) =>
-        t.id === editingTask.id ? { ...t, ...formData, courseName: courseObj.name } : t
-      );
-    } else {
-      const newTask = {
-        id: `tsk_${Date.now()}`,
-        ...formData,
-        courseName: courseObj.name,
-        completed: false,
-      };
-      updated = [newTask, ...tasks];
-    }
+    try {
+      if (editingTask) {
+        // 4. Update Todo (PATCH /tasks/index.php?id={id})
+        const result = await requestApi(`/tasks/index.php?id=${editingTask.id}`, {
+          method: 'PATCH',
+          body: {
+            title: formData.title,
+            description: formData.description,
+            deadline: formData.deadline,
+            priority: formData.priority,
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj?.name || 'Mata Kuliah',
+          },
+          requiresAuth: true,
+        });
 
-    setTasks(updated);
-    await persistData(STORAGE_KEYS.TASKS, updated);
-    setTaskModalVisible(false);
-    setEditingTask(null);
+        if (result.ok && result.data?.task) {
+          const updated = tasks.map((t) =>
+            t.id === editingTask.id
+              ? { ...t, ...result.data.task, courseName: courseObj?.name || t.courseName }
+              : t
+          );
+          setTasks(updated);
+          await persistData(STORAGE_KEYS.TASKS, updated);
+          setTaskModalVisible(false);
+          setEditingTask(null);
+        } else {
+          Alert.alert('Gagal Menyimpan', result.error || 'Terjadi kesalahan saat memperbarui tugas.');
+        }
+      } else {
+        // 3. Menambahkan Todo (POST /tasks/index.php)
+        const result = await requestApi('/tasks/index.php', {
+          method: 'POST',
+          body: {
+            title: formData.title,
+            description: formData.description,
+            deadline: formData.deadline,
+            priority: formData.priority,
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj?.name || 'Mata Kuliah',
+          },
+          requiresAuth: true,
+        });
+
+        if (result.ok && result.data?.task) {
+          const newTask = {
+            ...result.data.task,
+            courseName: courseObj?.name || 'Mata Kuliah',
+          };
+          const updated = [newTask, ...tasks];
+          setTasks(updated);
+          await persistData(STORAGE_KEYS.TASKS, updated);
+          setTaskModalVisible(false);
+          setEditingTask(null);
+        } else {
+          Alert.alert('Gagal Menambah Tugas', result.error || 'Server gagal menambahkan tugas.');
+        }
+      }
+    } catch (e) {
+      Alert.alert('Kesalahan', 'Gagal memproses penyimpanan tugas: ' + e.message);
+    } finally {
+      setIsSavingTask(false);
+    }
   };
 
   const handlePickScheduleImage = async () => {
@@ -1047,18 +2097,20 @@ const STORAGE_KEYS = {
   ]);
 
   const todayCourse = useMemo(() => {
+    if (!courses || courses.length === 0) return null;
     const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     const currentDay = daysMap[new Date().getDay()];
-    const found = courses.find((c) => c.day.toLowerCase() === currentDay.toLowerCase());
-    return found || courses[0];
+    const found = courses.find((c) => c.day && c.day.toLowerCase() === currentDay.toLowerCase());
+    return found || courses[0] || null;
   }, [courses]);
 
   const recommendedMaterial = useMemo(() => {
-    if (!todayCourse) return materials[0];
+    if (!materials || materials.length === 0) return null;
+    if (!todayCourse) return materials[0] || null;
     const unread = materials.find(
       (m) => m.courseId === todayCourse.id && !m.isStudied
     );
-    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0];
+    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0] || null;
   }, [todayCourse, materials]);
 
   // =================================================================
@@ -1401,10 +2453,9 @@ const STORAGE_KEYS = {
     >
       <AppHeader
         title="Dashboard Belajar"
-        subtitle={`Semangat, ${userProfile.name.split(' ')[0]}! 🔥`}
+        subtitle={`Semangat, ${(apiUser?.name || userProfile.name || 'Mahasiswa').trim().split(' ')[0]}! 🔥`}
         unreadCount={unreadNotifCount}
         onOpenNotif={() => setNotifModalVisible(true)}
-        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
       />
 
       {/* Week 6: Offline Banner */}
@@ -1549,7 +2600,7 @@ const STORAGE_KEYS = {
             Rekomendasi Belajar Hari Ini 🎯
           </Text>
           <Text style={styles.sectionSubtitle} numberOfLines={1}>
-            Sesuai jadwal: {todayCourse?.name} ({todayCourse?.day})
+            {todayCourse ? `Sesuai jadwal: ${todayCourse.name} (${todayCourse.day})` : 'Belum ada jadwal mata kuliah hari ini'}
           </Text>
         </View>
         <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
@@ -1569,7 +2620,12 @@ const STORAGE_KEYS = {
       ) : (
         <EmptyState
           title="Belum ada materi untuk hari ini"
-          subtitle="Tambahkan materi kuliah agar StudyMate dapat menghubungkan jadwalmu."
+          subtitle="Tambahkan mata kuliah dan materi agar StudyMate dapat menyelaraskan jadwal belajarmu."
+          actionText="+ Tambah Materi"
+          onAction={() => {
+            setEditingMaterial(null);
+            setMaterialModalVisible(true);
+          }}
         />
       )}
 
@@ -1600,13 +2656,23 @@ const STORAGE_KEYS = {
           />
         ))}
 
-      {activeTasksCount === 0 && (
+      {tasks.length === 0 ? (
+        <EmptyState
+          title="Belum Ada Tugas Kuliah"
+          subtitle="Tambahkan tugas perkuliahan untuk memantau deadline belajarmu."
+          actionText="+ Tambah Tugas"
+          onAction={() => {
+            setEditingTask(null);
+            setTaskModalVisible(true);
+          }}
+        />
+      ) : activeTasksCount === 0 ? (
         <View style={styles.allClearCard}>
           <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
           <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
           <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 
@@ -1625,7 +2691,6 @@ const STORAGE_KEYS = {
         subtitle="Semester Ganjil 2026/2027"
         unreadCount={unreadNotifCount}
         onOpenNotif={() => setNotifModalVisible(true)}
-        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
       />
 
       {/* Week 6: Offline Banner */}
@@ -1707,7 +2772,6 @@ const STORAGE_KEYS = {
             subtitle="Organisasi per Matkul & Pertemuan"
             unreadCount={unreadNotifCount}
             onOpenNotif={() => setNotifModalVisible(true)}
-            onOpenScheduleUpload={() => setScheduleModalVisible(true)}
           />
 
           {/* Week 6: Offline Banner */}
@@ -1999,7 +3063,6 @@ const STORAGE_KEYS = {
           subtitle="Pantau Target Akademik"
           unreadCount={unreadNotifCount}
           onOpenNotif={() => setNotifModalVisible(true)}
-          onOpenScheduleUpload={() => setScheduleModalVisible(true)}
         />
 
         {/* Week 6: Offline Banner */}
@@ -2053,13 +3116,23 @@ const STORAGE_KEYS = {
           />
         ))}
 
-        {activeTasks.length === 0 && (
+        {tasks.length === 0 ? (
+          <EmptyState
+            title="Belum Ada Tugas Perkuliahan"
+            subtitle="Buat tugas pertamamu untuk memantau deadline akademik secara teratur."
+            actionText="+ Tambah Tugas Baru"
+            onAction={() => {
+              setEditingTask(null);
+              setTaskModalVisible(true);
+            }}
+          />
+        ) : activeTasks.length === 0 ? (
           <View style={styles.allClearCard}>
             <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
             <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
             <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
           </View>
-        )}
+        ) : null}
 
         {/* Section Selesai */}
         {completedTasks.length > 0 && (
@@ -2101,25 +3174,56 @@ const STORAGE_KEYS = {
       {/* Profil Mahasiswa Card */}
       <View style={styles.profileHeroCard}>
         <View style={styles.profileAvatarBox}>
-          <Text style={styles.profileAvatarInitials}>
-            {userProfile.name
-              .split(' ')
-              .map((n) => n[0])
-              .slice(0, 2)
-              .join('')}
-          </Text>
+          {profileAvatarUri ? (
+            <Image
+              source={{ uri: profileAvatarUri }}
+              style={{ width: 60, height: 60, borderRadius: 30 }}
+            />
+          ) : (
+            <Text style={styles.profileAvatarInitials}>
+              {(apiUser?.name || userProfile.name || 'SM')
+                .split(' ')
+                .map((n) => n[0])
+                .slice(0, 2)
+                .join('')}
+            </Text>
+          )}
         </View>
         <View style={styles.profileInfoCol}>
-          <Text style={styles.profileNameText} numberOfLines={1}>
-            {userProfile.name}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.profileNameText, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+              {apiUser?.name || userProfile.name}
+            </Text>
+            {/* WEEK 8 – ANGGOTA 3: Tombol Edit Profil */}
+            <TouchableOpacity
+              style={styles.editProfilePillBtn}
+              onPress={() => {
+                setEditProfilePhotoUri(null);
+                setEditProfilePhotoPreview(profileAvatarUri);
+                setIsEditProfileVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="create-outline" size={13} color={COLORS.primary} />
+              <Text style={styles.editProfilePillBtnText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.profileNimText} numberOfLines={1}>
+            Email: {apiUser?.email || userProfile.email || 'mahasiswa@studymate.id'}
           </Text>
-          <Text style={styles.profileNimText}>NIM: {userProfile.nim}</Text>
-          <Text style={styles.profileMajorText} numberOfLines={1}>
-            {userProfile.major}
-          </Text>
-          <Text style={styles.profileCampusText} numberOfLines={1}>
-            {userProfile.campus}
-          </Text>
+          {(apiUser?.major || userProfile.major) ? (
+            <Text style={styles.profileMajorText} numberOfLines={1}>
+              {apiUser?.major || userProfile.major}
+              {(apiUser?.semester || userProfile.semester)
+                ? ` · Semester ${apiUser?.semester || userProfile.semester}`
+                : ''}
+            </Text>
+          ) : null}
+          {(apiUser?.university || userProfile.university || userProfile.campus) ? (
+            <Text style={styles.profileCampusText} numberOfLines={1}>
+              {apiUser?.university || userProfile.university || userProfile.campus}
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -2168,6 +3272,18 @@ const STORAGE_KEYS = {
           <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
         </View>
       ))}
+
+      {courses.length === 0 && (
+        <EmptyState
+          title="Belum Ada Jadwal Kuliah"
+          subtitle="Tambahkan mata kuliah atau unggah berkas jadwal KRS untuk membuat jadwal mingguan."
+          actionText="+ Tambah Mata Kuliah"
+          onAction={() => {
+            setEditingCourse(null);
+            setCourseModalVisible(true);
+          }}
+        />
+      )}
 
       {/* Pengaturan Notifikasi */}
       <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
@@ -2250,97 +3366,7 @@ const STORAGE_KEYS = {
         </View>
       </View>
 
-      {/* ================================================================= */}
-      {/* SPRINT 04 – ANGGOTA 3: Authenticated User Info & Protected API Test */}
-      {/* ================================================================= */}
-      {isAuthenticated && apiUser && (
-        <View
-          style={{
-            marginHorizontal: 0,
-            marginTop: 20,
-            backgroundColor: COLORS.primaryLight,
-            borderRadius: 16,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: '#C7D2FE',
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <Ionicons name="shield-checkmark" size={20} color={COLORS.primary} />
-            <Text style={{ fontSize: 15, fontWeight: '800', color: COLORS.primary, marginLeft: 8 }}>
-              Sesi Terautentikasi
-            </Text>
-          </View>
-          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
-            Nama: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.name}</Text>
-          </Text>
-          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
-            Email: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.email}</Text>
-          </Text>
-          <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
-            Token tersimpan di Expo SecureStore (terenkripsi)
-          </Text>
-
-          {/* Sprint 04 – Tombol Test Protected API */}
-          <TouchableOpacity
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: COLORS.primary,
-              borderRadius: 10,
-              paddingVertical: 10,
-              marginTop: 12,
-            }}
-            onPress={handleTestProtectedApi}
-            disabled={isApiTesting}
-            activeOpacity={0.8}
-          >
-            {isApiTesting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" />
-            )}
-            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginLeft: 8 }}>
-              {isApiTesting ? 'Menguji...' : 'Test Protected API (GET /users/me.php)'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Test Result */}
-          {apiTestResult && (
-            <View
-              style={{
-                marginTop: 10,
-                backgroundColor: apiTestResult.success ? COLORS.emeraldLight : COLORS.roseLight,
-                borderRadius: 10,
-                padding: 10,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                <Ionicons
-                  name={apiTestResult.success ? 'checkmark-circle' : 'close-circle'}
-                  size={16}
-                  color={apiTestResult.success ? COLORS.emerald : COLORS.rose}
-                />
-                <Text
-                  style={{
-                    marginLeft: 6,
-                    fontSize: 12,
-                    fontWeight: '800',
-                    color: apiTestResult.success ? COLORS.emerald : COLORS.rose,
-                  }}
-                >
-                  HTTP {apiTestResult.status} {apiTestResult.success ? '– 200 OK' : '– Error'}
-                  {'  '}\u2022 {apiTestResult.timestamp}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 11, color: COLORS.textSecondary, fontFamily: 'monospace' }}>
-                {JSON.stringify(apiTestResult.data, null, 2).substring(0, 200)}
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
+      {/* Auth session card removed – debug panel tidak ditampilkan ke pengguna */}
 
       {/* Logout Button */}
       {isAuthenticated && (
@@ -2861,7 +3887,7 @@ const STORAGE_KEYS = {
               >
                 {tab.label}
               </Text>
-              {isActive && <View style={styles.bottomNavActiveDot} />}
+
             </TouchableOpacity>
           );
         })}
@@ -2917,20 +3943,59 @@ const STORAGE_KEYS = {
         onClose={() => setCourseModalVisible(false)}
         onSave={async (formData) => {
           let updated;
-          if (editingCourse) {
-            updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
-          } else {
-            const newCourse = {
-              id: `crs_${Date.now()}`,
-              ...formData,
-              color: formData.color || COLORS.primary,
-            };
-            updated = [...courses, newCourse];
+          try {
+            if (editingCourse) {
+              // PUT /courses/index.php?id={id}
+              const result = await requestApi(`/courses/index.php?id=${editingCourse.id}`, {
+                method: 'PUT',
+                body: {
+                  code: formData.code,
+                  name: formData.name,
+                  lecturer: formData.lecturer,
+                  day: formData.day,
+                  time: formData.time,
+                  room: formData.room,
+                  sks: parseInt(formData.sks, 10) || 3,
+                  color: formData.color || COLORS.primary,
+                },
+                requiresAuth: true,
+              });
+
+              updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
+            } else {
+              // POST /courses/index.php
+              const result = await requestApi('/courses/index.php', {
+                method: 'POST',
+                body: {
+                  code: formData.code,
+                  name: formData.name,
+                  lecturer: formData.lecturer,
+                  day: formData.day,
+                  time: formData.time,
+                  room: formData.room,
+                  sks: parseInt(formData.sks, 10) || 3,
+                  color: formData.color || COLORS.primary,
+                },
+                requiresAuth: true,
+              });
+
+              const serverCourse = result.ok && result.data?.course ? result.data.course : null;
+              const newCourse = serverCourse || {
+                id: `crs_${Date.now()}`,
+                ...formData,
+                color: formData.color || COLORS.primary,
+              };
+              updated = [...courses, newCourse];
+            }
+            setCourses(updated);
+            await persistData(STORAGE_KEYS.COURSES, updated);
+            setCourseModalVisible(false);
+            setEditingCourse(null);
+          } catch (err) {
+            Alert.alert('Peringatan', 'Data mata kuliah disimpan ke memori lokal: ' + err.message);
+            setCourseModalVisible(false);
+            setEditingCourse(null);
           }
-          setCourses(updated);
-          await persistData(STORAGE_KEYS.COURSES, updated);
-          setCourseModalVisible(false);
-          setEditingCourse(null);
         }}
       />
 
@@ -2968,6 +4033,27 @@ const STORAGE_KEYS = {
         }}
       />
 
+      {/* WEEK 8 – ANGGOTA 3: Modal Edit Profil Mahasiswa */}
+      <EditProfileModal
+        visible={isEditProfileVisible}
+        currentName={apiUser?.name || userProfile.name || ''}
+        currentEmail={apiUser?.email || userProfile.email || ''}
+        currentAvatarUri={profileAvatarUri}
+        currentUniversity={apiUser?.university || userProfile.university || ''}
+        currentMajor={apiUser?.major || userProfile.major || ''}
+        currentSemester={apiUser?.semester || userProfile.semester || null}
+        photoPreview={editProfilePhotoPreview}
+        insets={insets}
+        onClose={() => {
+          setIsEditProfileVisible(false);
+          setEditProfilePhotoUri(null);
+          setEditProfilePhotoPreview(null);
+        }}
+        onPickPhoto={handlePickProfilePhoto}
+        onSave={handleSaveProfile}
+        isSaving={isSavingProfile}
+      />
+
       {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Floating Toast Feedback */}
       {shakeBanner && shakeBanner.visible && (
         <View style={[styles.shakeFloatingToast, { top: insets.top + 10 }]}>
@@ -2976,20 +4062,20 @@ const STORAGE_KEYS = {
               shakeBanner.status === 'loading'
                 ? 'sync'
                 : shakeBanner.status === 'success'
-                ? 'checkmark-circle'
-                : shakeBanner.status === 'warning'
-                ? 'cloud-offline'
-                : 'alert-circle'
+                  ? 'checkmark-circle'
+                  : shakeBanner.status === 'warning'
+                    ? 'cloud-offline'
+                    : 'alert-circle'
             }
             size={20}
             color={
               shakeBanner.status === 'loading'
                 ? '#38BDF8'
                 : shakeBanner.status === 'success'
-                ? '#34D399'
-                : shakeBanner.status === 'warning'
-                ? '#FBBF24'
-                : '#F87171'
+                  ? '#34D399'
+                  : shakeBanner.status === 'warning'
+                    ? '#FBBF24'
+                    : '#F87171'
             }
           />
           <Text style={styles.shakeFloatingToastText} numberOfLines={2}>
@@ -3004,6 +4090,276 @@ const STORAGE_KEYS = {
 // =================================================================
 // 11. MODAL FORMS SUB-COMPONENTS
 // =================================================================
+
+// =================================================================
+// WEEK 8 – ANGGOTA 3: Modal Edit Profil Mahasiswa
+// Fitur: Ubah nama, pilih foto dari galeri, preview foto, simpan/batal
+// =================================================================
+function EditProfileModal({
+  visible,
+  currentName,
+  currentEmail,
+  currentAvatarUri,
+  currentUniversity,
+  currentMajor,
+  currentSemester,
+  photoPreview,
+  insets,
+  onClose,
+  onPickPhoto,
+  onSave,
+  isSaving,
+}) {
+  const [name, setName] = useState('');
+  const [university, setUniversity] = useState('');
+  const [major, setMajor] = useState('');
+  const [semester, setSemester] = useState(null);
+  const [showSemesterPicker, setShowSemesterPicker] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setName(currentName || '');
+      setUniversity(currentUniversity || '');
+      setMajor(currentMajor || '');
+      setSemester(currentSemester || null);
+      setShowSemesterPicker(false);
+    }
+  }, [visible, currentName, currentUniversity, currentMajor, currentSemester]);
+
+  const activeAvatar = photoPreview || currentAvatarUri;
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.editProfileContainer}>
+        {/* Top Header */}
+        <View style={styles.editProfileHeader}>
+          <TouchableOpacity onPress={onClose} style={styles.editProfileHeaderBtn} disabled={isSaving}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.editProfileHeaderTitle}>Edit Profil Mahasiswa</Text>
+          <TouchableOpacity
+            onPress={() => onSave(name, university, major, semester)}
+            style={styles.editProfileSaveBtn}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.editProfileSaveBtnText}>Simpan</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 20 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Avatar Section */}
+          <View style={styles.editProfileAvatarSection}>
+            <View style={styles.editProfileAvatarWrapper}>
+              {activeAvatar ? (
+                <Image source={{ uri: activeAvatar }} style={styles.editProfileAvatarImage} />
+              ) : (
+                <View style={styles.editProfileAvatarPlaceholder}>
+                  <Text style={styles.editProfileAvatarPlaceholderText}>
+                    {(name || 'SM')
+                      .split(' ')
+                      .map((n) => n[0])
+                      .slice(0, 2)
+                      .join('')}
+                  </Text>
+                </View>
+              )}
+              {/* Badge Camera Overlay */}
+              <TouchableOpacity
+                style={styles.editProfileAvatarBadge}
+                onPress={onPickPhoto}
+                disabled={isSaving}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.editProfileChangePhotoBtn}
+              onPress={onPickPhoto}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="image-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.editProfileChangePhotoBtnText}>Ganti Foto dari Galeri</Text>
+            </TouchableOpacity>
+            {photoPreview && (
+              <Text style={styles.editProfilePreviewBadge}>Preview Foto Baru Terpilih ✨</Text>
+            )}
+          </View>
+
+          {/* ── Informasi Pribadi ── */}
+          <Text style={styles.editProfileSectionHeader}>Informasi Pribadi</Text>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Nama Lengkap Mahasiswa *</Text>
+            <TextInput
+              style={styles.editProfileInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Masukkan nama lengkap Anda"
+              placeholderTextColor={COLORS.textMuted}
+              editable={!isSaving}
+              maxLength={100}
+            />
+          </View>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Email Akun StudyMate</Text>
+            <View style={[styles.editProfileInput, { backgroundColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center' }]}>
+              <Ionicons name="lock-closed" size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
+              <Text style={{ color: COLORS.textSecondary, fontSize: 14 }}>{currentEmail || 'Akun Terdaftar'}</Text>
+            </View>
+            <Text style={styles.editProfileHelperText}>
+              Email adalah identitas akun utama dan tidak dapat diubah tanpa verifikasi ulang.
+            </Text>
+          </View>
+
+          {/* ── Informasi Akademik ── */}
+          <Text style={styles.editProfileSectionHeader}>Informasi Akademik</Text>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Nama Universitas</Text>
+            <TextInput
+              style={styles.editProfileInput}
+              value={university}
+              onChangeText={setUniversity}
+              placeholder="Contoh: Universitas Indonesia"
+              placeholderTextColor={COLORS.textMuted}
+              editable={!isSaving}
+              maxLength={150}
+            />
+          </View>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Jurusan / Program Studi</Text>
+            <TextInput
+              style={styles.editProfileInput}
+              value={major}
+              onChangeText={setMajor}
+              placeholder="Contoh: Teknik Informatika"
+              placeholderTextColor={COLORS.textMuted}
+              editable={!isSaving}
+              maxLength={150}
+            />
+          </View>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Semester</Text>
+            <TouchableOpacity
+              style={[
+                styles.editProfileInput,
+                { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+              ]}
+              onPress={() => !isSaving && setShowSemesterPicker(!showSemesterPicker)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: semester ? COLORS.textPrimary : COLORS.textMuted,
+                }}
+              >
+                {semester ? `Semester ${semester}` : 'Pilih semester Anda'}
+              </Text>
+              <Ionicons
+                name={showSemesterPicker ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={COLORS.textMuted}
+              />
+            </TouchableOpacity>
+            {showSemesterPicker && (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: COLORS.cardBorder,
+                  borderRadius: 10,
+                  marginTop: 6,
+                  backgroundColor: COLORS.card,
+                  overflow: 'hidden',
+                }}
+              >
+                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((s) => (
+                    <TouchableOpacity
+                      key={s}
+                      style={{
+                        paddingVertical: 11,
+                        paddingHorizontal: 16,
+                        backgroundColor: semester === s ? COLORS.primaryLight : 'transparent',
+                        borderBottomWidth: s < 14 ? 1 : 0,
+                        borderBottomColor: '#F1F5F9',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                      onPress={() => {
+                        setSemester(s);
+                        setShowSemesterPicker(false);
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          color: semester === s ? COLORS.primary : COLORS.textPrimary,
+                          fontWeight: semester === s ? '700' : '400',
+                        }}
+                      >
+                        Semester {s}
+                      </Text>
+                      {semester === s && (
+                        <Ionicons name="checkmark-circle" size={18} color={COLORS.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          {/* Action Buttons */}
+          <View style={{ marginTop: 24, gap: 12 }}>
+            <TouchableOpacity
+              style={styles.editProfileMainSubmitBtn}
+              onPress={() => onSave(name, university, major, semester)}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                  <Text style={styles.editProfileMainSubmitBtnText}>Simpan Perubahan</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.editProfileCancelBtn}
+              onPress={onClose}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.editProfileCancelBtnText}>Batalkan</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
 
 // Form Modal Tambah / Edit Materi
 function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
@@ -3498,6 +4854,10 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // FIX: Track kamera siap – shutter hanya aktif setelah onCameraReady terpanggil
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+
   // Form Fields
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id || '');
@@ -3514,6 +4874,8 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
       setTorch(false);
       setIsTakingPicture(false);
       setIsSaving(false);
+      setIsCameraReady(false);
+      setCameraError(null);
       setTitle('');
       setCourseId(courses[0]?.id || '');
       setMeetingNumber('1');
@@ -3524,6 +4886,10 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
 
   // Shutter action
   const handleCapturePhoto = async () => {
+    if (!isCameraReady) {
+      Alert.alert('Kamera Belum Siap', 'Tunggu sebentar hingga kamera live viewfinder aktif.');
+      return;
+    }
     if (cameraRef.current && !isTakingPicture) {
       try {
         setIsTakingPicture(true);
@@ -3627,12 +4993,86 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
         ) : step === 'CAMERA' ? (
           /* 2. Step CAMERA: Live Viewfinder */
           <View style={{ flex: 1 }}>
+            {/* CameraView – flash/torch dikendalikan via enableTorch (boolean), bukan prop flash */}
             <CameraView
               ref={cameraRef}
               style={StyleSheet.absoluteFillObject}
               facing={facing}
-              flash={torch ? 'torch' : 'off'}
+              enableTorch={torch}
+              onCameraReady={() => {
+                setIsCameraReady(true);
+                setCameraError(null);
+              }}
+              onMountError={(error) => {
+                setCameraError(error?.message || 'Kamera gagal dimuat');
+                setIsCameraReady(false);
+              }}
             />
+
+            {/* Loading overlay saat kamera belum siap */}
+            {!isCameraReady && !cameraError && (
+              <View
+                style={{
+                  ...StyleSheet.absoluteFillObject,
+                  backgroundColor: 'rgba(0,0,0,0.75)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600', fontSize: 14 }}>
+                  Menyiapkan kamera...
+                </Text>
+              </View>
+            )}
+
+            {/* Error overlay jika kamera gagal mount */}
+            {cameraError && (
+              <View
+                style={{
+                  ...StyleSheet.absoluteFillObject,
+                  backgroundColor: '#0D0D0D',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  paddingHorizontal: 32,
+                }}
+              >
+                <Ionicons name="camera-off-outline" size={56} color={COLORS.rose} />
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginTop: 16, textAlign: 'center' }}>
+                  Kamera Tidak Dapat Diaktifkan
+                </Text>
+                <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                  {cameraError}
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: COLORS.primary,
+                    borderRadius: 12,
+                    paddingVertical: 12,
+                    paddingHorizontal: 24,
+                    marginTop: 24,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onPress={() => {
+                    setCameraError(null);
+                    setIsCameraReady(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Coba Lagi</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ marginTop: 16 }}
+                  onPress={onClose}
+                  activeOpacity={0.75}
+                >
+                  <Text style={{ color: '#94A3B8', fontSize: 13 }}>Kembali ke Katalog Materi</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Top Toolbar */}
             <SafeAreaView edges={['top']} style={styles.cameraLiveTopBar}>
@@ -3656,7 +5096,11 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
 
                 <TouchableOpacity
                   style={styles.cameraCircleBtn}
-                  onPress={() => setFacing(facing === 'back' ? 'front' : 'back')}
+                  onPress={() => {
+                    setIsCameraReady(false);
+                    setCameraError(null);
+                    setFacing(facing === 'back' ? 'front' : 'back');
+                  }}
                   activeOpacity={0.75}
                 >
                   <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
@@ -3684,9 +5128,12 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
             <SafeAreaView edges={['bottom']} style={styles.cameraLiveBottomBar}>
               <View style={{ alignItems: 'center' }}>
                 <TouchableOpacity
-                  style={styles.cameraShutterOuter}
+                  style={[
+                    styles.cameraShutterOuter,
+                    (!isCameraReady || isTakingPicture) && { opacity: 0.45 },
+                  ]}
                   onPress={handleCapturePhoto}
-                  disabled={isTakingPicture}
+                  disabled={isTakingPicture || !isCameraReady}
                   activeOpacity={0.7}
                 >
                   {isTakingPicture ? (
@@ -3695,7 +5142,9 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
                     <View style={styles.cameraShutterInner} />
                   )}
                 </TouchableOpacity>
-                <Text style={styles.cameraShutterHintText}>Ketuk untuk Memotret</Text>
+                <Text style={styles.cameraShutterHintText}>
+                  {isCameraReady ? 'Ketuk untuk Memotret' : 'Menyiapkan kamera...'}
+                </Text>
               </View>
             </SafeAreaView>
           </View>
@@ -3707,6 +5156,8 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
                 style={styles.cameraCircleBtn}
                 onPress={() => {
                   setCapturedPhotoUri(null);
+                  setIsCameraReady(false);
+                  setCameraError(null);
                   setStep('CAMERA');
                 }}
                 activeOpacity={0.75}
@@ -3955,7 +5406,7 @@ function PhotoViewerModal({ material, insets, onClose, onDelete }) {
         message: `Materi Kuliah StudyMate: ${material.title} (${material.courseName} - Pertemuan ${material.meetingNumber})`,
         url: material.imageUri,
       });
-    } catch {}
+    } catch { }
   };
 
   return (
@@ -5485,14 +6936,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '800',
   },
-  bottomNavActiveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.primary,
-    position: 'absolute',
-    bottom: 2,
-  },
 
   // =================================================================
   // WEEK 6 STYLES: Offline Banner, Error Card, Loading Indicator
@@ -6194,6 +7637,185 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
+  },
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 3: Edit Profile Modal & Profile Card Styles
+  // =================================================================
+  editProfilePillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  editProfilePillBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  editProfileContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  editProfileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  editProfileHeaderBtn: {
+    padding: 6,
+  },
+  editProfileHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  editProfileSaveBtn: {
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    minWidth: 64,
+    alignItems: 'center',
+  },
+  editProfileSaveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  editProfileAvatarSection: {
+    alignItems: 'center',
+    marginVertical: 18,
+  },
+  editProfileAvatarWrapper: {
+    position: 'relative',
+  },
+  editProfileAvatarImage: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 3,
+    borderColor: '#4F46E5',
+  },
+  editProfileAvatarPlaceholder: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#4F46E5',
+  },
+  editProfileAvatarPlaceholderText: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  editProfileAvatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#4F46E5',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  editProfileChangePhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 20,
+  },
+  editProfileChangePhotoBtnText: {
+    color: '#4F46E5',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  editProfilePreviewBadge: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  editProfileFormGroup: {
+    marginBottom: 16,
+  },
+  editProfileSectionHeader: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+    marginTop: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.primaryLight,
+  },
+  editProfileLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  editProfileInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  editProfileHelperText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 4,
+    lineHeight: 15,
+  },
+  editProfileMainSubmitBtn: {
+    backgroundColor: '#4F46E5',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  editProfileMainSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  editProfileCancelBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileCancelBtnText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
   },
 
 });
