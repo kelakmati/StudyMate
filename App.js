@@ -32,6 +32,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
+import * as Location from 'expo-location';
+import MapView, { Marker, Circle } from 'react-native-maps';
 
 // =================================================================
 // 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
@@ -75,15 +77,31 @@ const STORAGE_KEYS = {
 };
 
 // =================================================================
+// WEEK 8 – ANGGOTA 1: User-Namespaced Storage Keys
+// Setiap pengguna memiliki namespace AsyncStorage tersendiri
+// berdasarkan user_id untuk memastikan data tidak tercampur
+// =================================================================
+const getUserStorageKeys = (userId) => ({
+  COURSES: `@studymate_u${userId}_courses_v3`,
+  MATERIALS: `@studymate_u${userId}_materials_v3`,
+  TASKS: `@studymate_u${userId}_tasks_v3`,
+  NOTIFICATIONS: `@studymate_u${userId}_notifications_v3`,
+  SETTINGS: `@studymate_u${userId}_settings_v3`,
+  USER_PROFILE: `@studymate_u${userId}_profile_v3`,
+  GEOFENCES: `@studymate_u${userId}_geofences_v1`, // WEEK 10 – Geofence per-user
+});
+
+// =================================================================
 // SPRINT 04 – ANGGOTA 1 (Backend Config)
-// API_URL: Ganti dengan IP lokal laptop Anda agar Expo Go di HP
+// API_URL: Ganti denga
+// n IP lokal laptop Anda agar Expo Go di HP
 //          dapat mengakses backend XAMPP di jaringan Wi-Fi yang sama.
 //          JANGAN gunakan 'localhost' atau '127.0.0.1' dari HP.
 //
 // Cara cek IP lokal: buka CMD → ketik: ipconfig
 // Contoh: 'http://192.168.1.10/studymate-api'
 // =================================================================
-const API_URL = 'http://192.168.1.5/studymate-api'; // ← GANTI IP INI
+const API_URL = 'http://192.168.1.6/studymate-api'; // ← GANTI IP INI
 
 // Secure key untuk menyimpan token di SecureStore
 const SECURE_KEYS = {
@@ -739,6 +757,157 @@ const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth 
   </View>
 );
 
+// Material Card Component (Anggota 2 & Week 7 Upgrade)
+const MaterialCard = ({
+  material,
+  onPress,
+  onToggleStudied,
+  onOpenAi,
+  onOpenNotes,
+  onDelete,
+  onPreviewImage,
+}) => {
+  const getFileBadge = (type) => {
+    switch (type) {
+      case 'SCAN':
+        return { color: '#7C3AED', bg: '#EDE9FE', icon: 'camera' };
+      case 'PDF':
+        return { color: COLORS.rose, bg: COLORS.roseLight, icon: 'document-text' };
+      case 'PPT':
+        return { color: COLORS.amber, bg: COLORS.amberLight, icon: 'easel' };
+      case 'DOC':
+      default:
+        return { color: COLORS.secondary, bg: COLORS.secondaryLight, icon: 'newspaper' };
+    }
+  };
+
+  const badgeInfo = getFileBadge(material.fileType);
+
+  return (
+    <View style={styles.materialCard}>
+      {/* Top Meta Header */}
+      <View style={styles.materialCardTop}>
+        <View style={styles.materialMetaRow}>
+          <Badge
+            label={material.fileType === 'SCAN' ? 'SCAN HP' : material.fileType}
+            color={badgeInfo.color}
+            bg={badgeInfo.bg}
+            icon={badgeInfo.icon}
+          />
+          <Badge
+            label={`Pertemuan ${material.meetingNumber}`}
+            color={COLORS.textSecondary}
+            bg={COLORS.inputBackground}
+          />
+          <Text style={styles.materialCourseTag} numberOfLines={1}>
+            {material.courseName}
+          </Text>
+        </View>
+
+        {/* Studied Toggle Button */}
+        <TouchableOpacity
+          onPress={() => onToggleStudied(material.id)}
+          style={styles.checkCircleButton}
+          accessibilityLabel="Tandai Sudah Dipelajari"
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={material.isStudied ? 'checkmark-circle' : 'ellipse-outline'}
+            size={24}
+            color={material.isStudied ? COLORS.emerald : COLORS.textMuted}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Main Material Title & Topic */}
+      <TouchableOpacity activeOpacity={0.75} onPress={() => onPress(material)}>
+        <Text style={styles.materialTitle} numberOfLines={2}>
+          {material.title}
+        </Text>
+        <Text style={styles.materialTopicText} numberOfLines={1}>
+          📌 {material.meetingTopic}
+        </Text>
+        <Text style={styles.materialFileMeta} numberOfLines={1}>
+          {material.fileName} • {material.fileSize || 'Ukuran normal'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* WEEK 7 – Smart Material Scanner: Thumbnail Preview for Scanned Photos */}
+      {material.imageUri && (
+        <TouchableOpacity
+          style={styles.materialPhotoThumbBox}
+          onPress={() => (onPreviewImage ? onPreviewImage(material) : onPress(material))}
+          activeOpacity={0.85}
+        >
+          <Image
+            source={{ uri: material.imageUri }}
+            style={styles.materialPhotoThumbImage}
+            resizeMode="cover"
+          />
+          <View style={styles.materialPhotoThumbOverlay}>
+            <View style={styles.materialPhotoThumbBadge}>
+              <Ionicons name="camera" size={12} color="#FFFFFF" />
+              <Text style={styles.materialPhotoThumbBadgeText}>Hasil Scan Kamera</Text>
+            </View>
+            <View style={styles.materialPhotoExpandBtn}>
+              <Ionicons name="expand-outline" size={14} color="#FFFFFF" />
+              <Text style={styles.materialPhotoExpandText}>Buka Foto</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Action Footer */}
+      <View style={styles.materialCardFooter}>
+        {/* WEEK 7: Buka Foto Button jika ada foto scan */}
+        {material.imageUri && (
+          <TouchableOpacity
+            style={styles.actionPillScan}
+            onPress={() => onPreviewImage && onPreviewImage(material)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="image-outline" size={13} color="#7C3AED" />
+            <Text style={styles.actionPillScanText}>Lihat Foto</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={styles.actionPillAi}
+          onPress={() => onOpenAi(material)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="sparkles" size={13} color="#7C3AED" />
+          <Text style={styles.actionPillAiText}>StudyMate AI</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionPillNotes}
+          onPress={() => onOpenNotes(material)}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={material.userNotes ? 'document-text' : 'create-outline'}
+            size={13}
+            color={COLORS.primary}
+          />
+          <Text style={styles.actionPillNotesText}>
+            {material.userNotes ? 'Lihat Catatan' : '+ Catatan'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionDeleteButton}
+          onPress={() => onDelete(material.id)}
+          activeOpacity={0.7}
+          accessibilityLabel="Hapus Materi"
+        >
+          <Ionicons name="trash-outline" size={17} color={COLORS.textMuted} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 // Course Card Component (Anggota 2)
 const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
   const progressPercent =
@@ -967,6 +1136,508 @@ const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
 );
 
 // =================================================================
+// WEEK 10 – LocationScreen: Komponen React proper (bukan render func)
+// Menerima semua state & handler dari StudyMateApp sebagai props.
+// useRef dan useEffect dipanggil di dalam komponen ini (Rules of Hooks OK).
+// =================================================================
+function LocationScreen({
+  scrollContentPaddingBottom,
+  unreadNotifCount,
+  onOpenNotif,
+  locationPermStatus,
+  currentLocation,
+  isLocationLoading,
+  locationError,
+  reverseAddress,
+  isGeocodingLoading,
+  geofences,
+  geofenceStatuses,
+  isAddGeofenceVisible,
+  newGeofenceName,
+  newGeofenceRadius,
+  onSetNewGeofenceName,
+  onSetNewGeofenceRadius,
+  onSetIsAddGeofenceVisible,
+  onRequestPermission,
+  onGetCurrentLocation,
+  onAddGeofence,
+  onDeleteGeofence,
+  calculateDistance,
+  apiUserId,
+  onLoadGeofences,
+  onStartLocationWatch,
+  onStopLocationWatch,
+}) {
+  // ── useRef untuk MapView (sah di dalam komponen React) ────────
+  const mapRef = useRef(null);
+
+  // ── useEffect: inisialisasi saat komponen mount ───────────────
+  // Dijalankan ketika tab Lokasi dibuka (mount) dan dibersihkan saat unmount.
+  // BATTERY OPTIMIZATION: watch position hanya aktif di tab ini.
+  useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      if (!mounted) return;
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (!mounted) return;
+        // Update permission status di parent via handler
+        if (status === 'granted' && !currentLocation) {
+          await onGetCurrentLocation();
+        } else if (status !== 'granted') {
+          // Trigger cek permission agar UI permission screen terupdate
+          await onRequestPermission().catch(() => { });
+        }
+      } catch (_) { }
+      if (apiUserId && mounted) {
+        await onLoadGeofences(apiUserId);
+      }
+      if (mounted) await onStartLocationWatch();
+    };
+    init();
+    return () => {
+      mounted = false;
+      onStopLocationWatch();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const hasLocation = currentLocation !== null;
+
+  // ── Permission belum diberikan ────────────────────────────────
+  if (locationPermStatus !== 'granted') {
+    return (
+      <ScrollView
+        style={styles.screenContainer}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <AppHeader
+          title="Lokasi Belajar"
+          subtitle="GPS, Peta & Area Studi"
+          unreadCount={unreadNotifCount}
+          onOpenNotif={onOpenNotif}
+        />
+
+        <View style={styles.locPermCard}>
+          <View style={styles.locPermIconCircle}>
+            <Ionicons name="location" size={36} color={COLORS.primary} />
+          </View>
+          <Text style={styles.locPermTitle}>Izin Lokasi Diperlukan</Text>
+          <Text style={styles.locPermDesc}>
+            StudyMate membutuhkan akses lokasi untuk menampilkan posisi kamu pada peta,
+            mengetahui alamat sekitar, dan mendeteksi area kampus atau lokasi belajar yang ditentukan.
+          </Text>
+          <Text style={styles.locPermInfo}>
+            Izin ini hanya digunakan selama aplikasi aktif (foreground). Lokasi tidak dipantau di latar belakang.
+          </Text>
+
+          {locationPermStatus === 'denied' && (
+            <View style={styles.locPermDeniedBox}>
+              <Ionicons name="warning-outline" size={16} color={COLORS.amber} />
+              <Text style={styles.locPermDeniedText}>
+                Izin ditolak. Buka Pengaturan HP → Aplikasi → StudyMate → Izin → Lokasi.
+              </Text>
+            </View>
+          )}
+
+          {locationError ? (
+            <View style={[styles.locPermDeniedBox, { borderColor: COLORS.rose, backgroundColor: COLORS.roseLight }]}>
+              <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} />
+              <Text style={[styles.locPermDeniedText, { color: COLORS.rose }]}>{locationError}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.locPermGrantBtn}
+            onPress={onRequestPermission}
+            activeOpacity={0.8}
+            disabled={isLocationLoading}
+          >
+            {isLocationLoading
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+            }
+            <Text style={styles.locPermGrantBtnText}>
+              {isLocationLoading ? 'Memproses...' : 'Izinkan Akses Lokasi'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ── Permission diberikan – tampilkan fitur penuh ──────────────
+  return (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }]}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+    >
+      <AppHeader
+        title="Lokasi Belajar"
+        subtitle="GPS, Peta & Area Studi"
+        unreadCount={unreadNotifCount}
+        onOpenNotif={onOpenNotif}
+      />
+
+      {/* ── TASK 01: GPS LOCATION ─────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.primaryLight }]}>
+            <Ionicons name="navigate" size={18} color={COLORS.primary} />
+          </View>
+          <Text style={styles.locSectionTitle}>Lokasi Saat Ini</Text>
+          <View style={[styles.locStatusPill, { backgroundColor: COLORS.emeraldLight }]}>
+            <Ionicons name="checkmark-circle" size={12} color={COLORS.emerald} />
+            <Text style={[styles.locStatusPillText, { color: COLORS.emerald }]}>GPS Aktif</Text>
+          </View>
+        </View>
+
+        {isLocationLoading ? (
+          <View style={styles.locLoadingRow}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.locLoadingText}>Mengambil lokasi GPS...</Text>
+          </View>
+        ) : null}
+
+        {locationError && !isLocationLoading ? (
+          <View style={styles.locErrorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} />
+            <Text style={styles.locErrorText}>{locationError}</Text>
+          </View>
+        ) : null}
+
+        {!hasLocation && !isLocationLoading && !locationError ? (
+          <View style={styles.locEmptyState}>
+            <Ionicons name="location-outline" size={32} color={COLORS.textMuted} />
+            <Text style={styles.locEmptyText}>Lokasi belum diambil. Tekan "Perbarui Lokasi" untuk mulai.</Text>
+          </View>
+        ) : null}
+
+        {hasLocation ? (
+          <View style={styles.locCoordGrid}>
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Latitude</Text>
+              <Text style={styles.locCoordValue}>{currentLocation.latitude.toFixed(6)}°</Text>
+            </View>
+            <View style={styles.locCoordDivider} />
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Longitude</Text>
+              <Text style={styles.locCoordValue}>{currentLocation.longitude.toFixed(6)}°</Text>
+            </View>
+            <View style={styles.locCoordDivider} />
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Accuracy</Text>
+              <Text style={styles.locCoordValue}>
+                {currentLocation.accuracy ? `±${Math.round(currentLocation.accuracy)} m` : 'N/A'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.locRefreshBtn}
+          onPress={onGetCurrentLocation}
+          activeOpacity={0.8}
+          disabled={isLocationLoading}
+        >
+          <Ionicons name="refresh" size={16} color="#FFFFFF" />
+          <Text style={styles.locRefreshBtnText}>Perbarui Lokasi</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── TASK 02: MAP ──────────────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.secondaryLight }]}>
+            <Ionicons name="map" size={18} color={COLORS.secondary} />
+          </View>
+          <Text style={styles.locSectionTitle}>Peta Lokasi</Text>
+        </View>
+
+        {!hasLocation ? (
+          <View style={styles.locMapPlaceholder}>
+            <Ionicons name="map-outline" size={40} color={COLORS.textMuted} />
+            <Text style={styles.locMapPlaceholderText}>Ambil lokasi GPS terlebih dahulu untuk menampilkan peta.</Text>
+          </View>
+        ) : (
+          <View>
+            <View style={styles.locMapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.locMap}
+                initialRegion={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                region={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                showsUserLocation={false}
+                showsMyLocationButton={false}
+                showsCompass
+                loadingEnabled
+              >
+                <Marker
+                  coordinate={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                  title="Posisi Kamu"
+                  description={`${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`}
+                  pinColor={COLORS.primary}
+                />
+
+                {currentLocation.accuracy ? (
+                  <Circle
+                    center={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                    radius={currentLocation.accuracy}
+                    strokeColor="rgba(79,70,229,0.4)"
+                    fillColor="rgba(79,70,229,0.08)"
+                  />
+                ) : null}
+
+                {geofences.map((fence) => (
+                  <React.Fragment key={fence.id}>
+                    <Marker
+                      coordinate={{ latitude: fence.latitude, longitude: fence.longitude }}
+                      title={fence.name}
+                      description={`Radius: ${fence.radius} m`}
+                      pinColor={geofenceStatuses[fence.id] === 'inside' ? '#10B981' : '#F59E0B'}
+                    />
+                    <Circle
+                      center={{ latitude: fence.latitude, longitude: fence.longitude }}
+                      radius={fence.radius}
+                      strokeColor={geofenceStatuses[fence.id] === 'inside' ? 'rgba(16,185,129,0.6)' : 'rgba(245,158,11,0.6)'}
+                      fillColor={geofenceStatuses[fence.id] === 'inside' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.08)'}
+                    />
+                  </React.Fragment>
+                ))}
+              </MapView>
+            </View>
+
+            <TouchableOpacity
+              style={styles.locCenterMapBtn}
+              onPress={() => {
+                if (mapRef.current && currentLocation) {
+                  mapRef.current.animateToRegion({
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  }, 500);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="locate" size={16} color={COLORS.primary} />
+              <Text style={styles.locCenterMapBtnText}>Pusatkan ke Lokasi Saya</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* ── TASK 03A: REVERSE GEOCODING ───────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.accentLight }]}>
+            <Ionicons name="pin" size={18} color={COLORS.accent} />
+          </View>
+          <Text style={styles.locSectionTitle}>Alamat Saat Ini</Text>
+          {isGeocodingLoading ? (
+            <ActivityIndicator size="small" color={COLORS.accent} style={{ marginLeft: 8 }} />
+          ) : null}
+        </View>
+
+        {!hasLocation && !isGeocodingLoading ? (
+          <Text style={styles.locEmptyInlineText}>Ambil lokasi GPS untuk melihat alamat.</Text>
+        ) : null}
+
+        {hasLocation && !reverseAddress && !isGeocodingLoading ? (
+          <View style={styles.locErrorBox}>
+            <Ionicons name="wifi-outline" size={15} color={COLORS.textMuted} />
+            <Text style={[styles.locErrorText, { color: COLORS.textSecondary }]}>
+              Alamat tidak dapat ditemukan. Pastikan koneksi internet aktif.
+            </Text>
+          </View>
+        ) : null}
+
+        {reverseAddress ? (
+          <View style={styles.locAddressBox}>
+            {reverseAddress.name && reverseAddress.name !== reverseAddress.street ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="business-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.name}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.street ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="trail-sign-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.street}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.district ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="grid-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.district}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.city ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="storefront-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.city}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.region ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="map-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.region}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.postalCode ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="mail-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>Kode Pos: {reverseAddress.postalCode}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* ── TASK 03B: GEOFENCING ──────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.amberLight }]}>
+            <Ionicons name="radio-button-on" size={18} color={COLORS.amber} />
+          </View>
+          <Text style={styles.locSectionTitle}>Area Studi (Geofencing)</Text>
+        </View>
+
+        <Text style={styles.locGeofenceDesc}>
+          Tambahkan area kampus atau lokasi belajar. Aplikasi akan mendeteksi ketika kamu memasuki atau meninggalkan area tersebut.
+        </Text>
+
+        {geofences.length === 0 ? (
+          <View style={styles.locEmptyState}>
+            <Ionicons name="radio-button-off-outline" size={28} color={COLORS.textMuted} />
+            <Text style={styles.locEmptyText}>Belum ada area yang ditambahkan.</Text>
+          </View>
+        ) : (
+          geofences.map((fence) => {
+            const status = geofenceStatuses[fence.id];
+            const isInside = status === 'inside';
+            const distText = currentLocation
+              ? `${Math.round(calculateDistance(currentLocation.latitude, currentLocation.longitude, fence.latitude, fence.longitude))} m dari titik pusat`
+              : 'Ambil lokasi untuk melihat jarak';
+            return (
+              <View key={fence.id} style={[styles.locGeofenceItem, isInside && styles.locGeofenceItemActive]}>
+                <View style={styles.locGeofenceItemLeft}>
+                  <View style={[styles.locGeofenceStatusDot, { backgroundColor: isInside ? COLORS.emerald : COLORS.textMuted }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locGeofenceName}>{fence.name}</Text>
+                    <Text style={styles.locGeofenceInfo}>Radius: {fence.radius} m · {distText}</Text>
+                    <View style={[styles.locGeofenceStatusPill, { backgroundColor: isInside ? COLORS.emeraldLight : COLORS.inputBackground }]}>
+                      <Text style={[styles.locGeofenceStatusText, { color: isInside ? COLORS.emerald : COLORS.textMuted }]}>
+                        {status === 'inside' ? '✓ Di Dalam Area' : status === 'outside' ? '✗ Di Luar Area' : '— Belum Diperiksa'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() =>
+                    Alert.alert('Hapus Area', `Hapus area "${fence.name}"?`, [
+                      { text: 'Batal', style: 'cancel' },
+                      { text: 'Hapus', style: 'destructive', onPress: () => onDeleteGeofence(fence.id) },
+                    ])
+                  }
+                  style={styles.locGeofenceDeleteBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+
+        {isAddGeofenceVisible ? (
+          <View style={styles.locAddGeofenceForm}>
+            <Text style={styles.locAddGeofenceFormTitle}>Area Baru</Text>
+            <TextInput
+              style={styles.locGeofenceInput}
+              placeholder="Nama area (cth: Kampus, Perpustakaan)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newGeofenceName}
+              onChangeText={onSetNewGeofenceName}
+              maxLength={50}
+            />
+            <TextInput
+              style={styles.locGeofenceInput}
+              placeholder="Radius (meter, cth: 200)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newGeofenceRadius}
+              onChangeText={onSetNewGeofenceRadius}
+              keyboardType="numeric"
+              maxLength={6}
+            />
+            {!hasLocation ? (
+              <View style={styles.locErrorBox}>
+                <Ionicons name="warning-outline" size={14} color={COLORS.amber} />
+                <Text style={[styles.locErrorText, { color: COLORS.amber }]}>
+                  Ambil lokasi GPS terlebih dahulu. Titik pusat area ditentukan dari posisi kamu saat ini.
+                </Text>
+              </View>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <TouchableOpacity style={[styles.locGeofenceSaveBtn, { flex: 1 }]} onPress={onAddGeofence} activeOpacity={0.8}>
+                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                <Text style={styles.locGeofenceSaveBtnText}>Simpan Area</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.locGeofenceCancelBtn, { flex: 1 }]}
+                onPress={() => { onSetIsAddGeofenceVisible(false); onSetNewGeofenceName(''); onSetNewGeofenceRadius('200'); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.locGeofenceCancelBtnText}>Batal</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.locAddGeofenceBtn}
+            onPress={() => onSetIsAddGeofenceVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={COLORS.primary} />
+            <Text style={styles.locAddGeofenceBtnText}>Tambah Area Baru (Gunakan Lokasi Saat Ini)</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── BATTERY OPTIMIZATION INFO ─────────────────── */}
+      <View style={[styles.locSectionCard, { backgroundColor: COLORS.primaryLight, borderColor: '#C7D2FE' }]}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: '#E0E7FF' }]}>
+            <Ionicons name="battery-charging" size={18} color={COLORS.primary} />
+          </View>
+          <Text style={[styles.locSectionTitle, { color: COLORS.primaryDark }]}>Optimasi Baterai</Text>
+        </View>
+        <Text style={styles.locBatteryInfo}>
+          {'• '}<Text style={{ fontWeight: '700' }}>Akurasi Balanced</Text>{' — tidak menguras GPS secara berlebihan.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Update minimal 15 detik atau 20 meter</Text>{' perpindahan.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Foreground only</Text>{' — tracking berhenti ketika tab berpindah.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Subscription dibersihkan otomatis</Text>{' saat meninggalkan halaman ini.'}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// =================================================================
 // 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
 // =================================================================
 function StudyMateApp() {
@@ -1002,6 +1673,17 @@ function StudyMateApp() {
   const [authScreen, setAuthScreen] = useState('login');
   const [apiUser, setApiUser] = useState(null);
 
+  // =================================================================
+  // WEEK 8 – ANGGOTA 3: Profile Management States
+  // Edit profil, foto avatar, dan penyimpanan per-pengguna
+  // =================================================================
+  const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [editProfilePhotoUri, setEditProfilePhotoUri] = useState(null);
+  const [editProfilePhotoPreview, setEditProfilePhotoPreview] = useState(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileAvatarUri, setProfileAvatarUri] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+
   // Auth form fields
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
@@ -1033,6 +1715,7 @@ function StudyMateApp() {
 
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState(null);
+  const [isSavingTask, setIsSavingTask] = useState(false);
 
   // Core Data States
   const [courses, setCourses] = useState([]);
@@ -1042,8 +1725,10 @@ function StudyMateApp() {
   const [userProfile, setUserProfile] = useState({
     name: 'Ahmad Faiz Pratama',
     nim: '2201010199',
-    major: 'Teknik Informatika - Semester 5',
-    campus: 'Universitas Indonesia',
+    major: '',
+    campus: '',
+    university: '',
+    semester: null,
     studyStreakDays: 14,
   });
 
@@ -1083,6 +1768,63 @@ function StudyMateApp() {
   // =================================================================
   const [isScannerVisible, setIsScannerVisible] = useState(false);
   const [viewingPhotoMaterial, setViewingPhotoMaterial] = useState(null);
+
+  // =================================================================
+  // WEEK 7 – ANGGOTA 3: Accelerometer & Shake to Refresh States & Refs
+  // =================================================================
+  const [isShakeRefreshing, setIsShakeRefreshing] = useState(false);
+  const [shakeBanner, setShakeBanner] = useState(null); // { visible, message, status }
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 1: GPS Location States
+  // expo-location: permission, koordinat, accuracy
+  // =================================================================
+  const [locationPermStatus, setLocationPermStatus] = useState(null); // null | 'undetermined' | 'granted' | 'denied'
+  const [currentLocation, setCurrentLocation] = useState(null); // { latitude, longitude, accuracy }
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 3: Reverse Geocoding & Geofence States
+  // =================================================================
+  const [reverseAddress, setReverseAddress] = useState(null); // { street, district, subregion, city, region }
+  const [isGeocodingLoading, setIsGeocodingLoading] = useState(false);
+  const [geofences, setGeofences] = useState([]); // array of { id, name, latitude, longitude, radius }
+  const [geofenceStatuses, setGeofenceStatuses] = useState({}); // { [id]: 'inside' | 'outside' }
+  const [geofenceAlerted, setGeofenceAlerted] = useState({}); // { [id]: 'inside' | 'outside' } – last alerted state
+  const [isAddGeofenceVisible, setIsAddGeofenceVisible] = useState(false);
+  const [newGeofenceName, setNewGeofenceName] = useState('');
+  const [newGeofenceRadius, setNewGeofenceRadius] = useState('200');
+  const locationSubRef = useRef(null); // ref for location subscription cleanup
+
+  // Settings State (with Week 7 shakeToRefresh default true)
+  const [settings, setSettings] = useState({
+    notifyBeforeClass: true,
+    notifyDeadlines: true,
+    autoSummarizeAi: true,
+    shakeToRefresh: true,
+  });
+
+  // Mutable refs untuk mencegah stale closure pada accelerometer subscription
+  const lastShakeTimeRef = useRef(0);
+  const lastAccRef = useRef({ x: 0, y: 0, z: 0 });
+  const isShakeRefreshingRef = useRef(false);
+  const activeTabRef = useRef(currentTab);
+  const isModalActiveRef = useRef(false);
+
+  // Sinkronisasi refs setiap kali render
+  activeTabRef.current = currentTab;
+  isModalActiveRef.current =
+    materialModalVisible ||
+    courseModalVisible ||
+    taskModalVisible ||
+    notesModalVisible ||
+    aiModalVisible ||
+    scheduleModalVisible ||
+    notifModalVisible ||
+    isScannerVisible ||
+    viewingPhotoMaterial !== null ||
+    isEditProfileVisible;
 
   // =================================================================
   // 5. DATA PERSISTENCE & INITIALIZATION
@@ -1173,11 +1915,15 @@ function StudyMateApp() {
 
         if (result.ok && result.data && result.data.success) {
           // Token valid & online
+          const freshUser = result.data.user;
           setIsAuthenticated(true);
-          setApiUser(result.data.user);
+          setApiUser(freshUser);
           setIsOffline(false);
           setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
-          await loadAllData();
+          // Muat avatar dari cache per-user
+          const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${freshUser.id}`);
+          if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+          await loadAllData(freshUser.id);
           return;
         } else if (result.status === 401) {
           // Token terbukti tidak valid (401 Unauthorized) – bersihkan sesi
@@ -1190,7 +1936,10 @@ function StudyMateApp() {
           setIsOffline(true);
           setIsAuthenticated(true);
           setApiUser(storedUser);
-          await loadAllData();
+          // Muat avatar dari cache per-user
+          const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${storedUser.id}`);
+          if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+          await loadAllData(storedUser.id);
           return;
         }
       }
@@ -1201,46 +1950,30 @@ function StudyMateApp() {
     }
   };
 
-  const loadAllData = async () => {
+  const loadAllData = async (userId = null) => {
+    // =================================================================
+    // WEEK 8 – ANGGOTA 2: Async API Integration + Promise.allSettled
+    // Data diambil dari REST API server (per-user), dengan fallback ke
+    // user-namespaced AsyncStorage cache saat offline.
+    // =================================================================
+    const uid = userId || apiUser?.id;
+    if (!uid) {
+      setIsLoading(false);
+      return;
+    }
+    const userKeys = getUserStorageKeys(uid);
+
     try {
       setIsLoading(true);
-      const [storedCourses, storedMaterials, storedTasks, storedNotifs, storedSettings, storedProfile] =
-        await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.COURSES),
-          AsyncStorage.getItem(STORAGE_KEYS.MATERIALS),
-          AsyncStorage.getItem(STORAGE_KEYS.TASKS),
-          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
-          AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
-          AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
-        ]);
+      setCoursesLoading(true);
+      setMaterialsLoading(true);
+      setTasksLoading(true);
 
-      if (storedCourses) {
-        setCourses(JSON.parse(storedCourses));
-      } else {
-        setCourses(INITIAL_COURSES);
-        await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(INITIAL_COURSES));
-      }
-
-      if (storedMaterials) {
-        setMaterials(JSON.parse(storedMaterials));
-      } else {
-        setMaterials(INITIAL_MATERIALS);
-        await AsyncStorage.setItem(STORAGE_KEYS.MATERIALS, JSON.stringify(INITIAL_MATERIALS));
-      }
-
-      if (storedTasks) {
-        setTasks(JSON.parse(storedTasks));
-      } else {
-        setTasks(INITIAL_TASKS);
-        await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
-      }
-
-      if (storedNotifs) {
-        setNotifications(JSON.parse(storedNotifs));
-      } else {
-        setNotifications(INITIAL_NOTIFICATIONS);
-        await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
-      }
+      // 1. Muat pengaturan & notifikasi dari cache (tidak ada endpoint server untuk ini)
+      const [storedSettings, storedNotifs] = await Promise.all([
+        AsyncStorage.getItem(userKeys.SETTINGS),
+        AsyncStorage.getItem(userKeys.NOTIFICATIONS),
+      ]);
 
       if (storedSettings) {
         const parsedSettings = JSON.parse(storedSettings);
@@ -1252,12 +1985,80 @@ function StudyMateApp() {
           ...parsedSettings,
         });
       }
-      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
-      setCoursesError(null);
-      setMaterialsError(null);
-      setTasksError(null);
+      if (storedNotifs) {
+        setNotifications(JSON.parse(storedNotifs));
+      } else {
+        setNotifications(INITIAL_NOTIFICATIONS);
+      }
+
+      // 2. Muat avatar dari cache per-user
+      const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${uid}`);
+      if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+
+      // 3. Ambil data utama dari API secara paralel menggunakan Promise.allSettled
+      // Promise.allSettled: jika satu gagal, yang lain tetap berhasil dimuat
+      const [coursesRes, tasksRes, materialsRes] = await Promise.allSettled([
+        requestApi('/courses/index.php', { method: 'GET', requiresAuth: true }),
+        requestApi('/tasks/index.php', { method: 'GET', requiresAuth: true }),
+        requestApi('/materials/index.php', { method: 'GET', requiresAuth: true }),
+      ]);
+
+      // 4. Proses hasil courses
+      if (coursesRes.status === 'fulfilled' && coursesRes.value.ok && coursesRes.value.data?.courses) {
+        const apiCourses = coursesRes.value.data.courses;
+        setCourses(apiCourses);
+        setCoursesError(null);
+        await AsyncStorage.setItem(userKeys.COURSES, JSON.stringify(apiCourses));
+      } else {
+        // Fallback ke cache user-namespaced
+        const cached = await AsyncStorage.getItem(userKeys.COURSES);
+        if (cached) {
+          setCourses(JSON.parse(cached));
+        } else {
+          setCourses([]); // Akun baru: kosong, bukan data dummy
+        }
+        if (coursesRes.status === 'fulfilled' && !coursesRes.value.ok) {
+          setCoursesError(coursesRes.value.error);
+        }
+      }
+
+      // 5. Proses hasil tasks
+      if (tasksRes.status === 'fulfilled' && tasksRes.value.ok && tasksRes.value.data?.tasks) {
+        const apiTasks = tasksRes.value.data.tasks;
+        setTasks(apiTasks);
+        setTasksError(null);
+        await AsyncStorage.setItem(userKeys.TASKS, JSON.stringify(apiTasks));
+      } else {
+        const cached = await AsyncStorage.getItem(userKeys.TASKS);
+        if (cached) {
+          setTasks(JSON.parse(cached));
+        } else {
+          setTasks([]); // Akun baru: kosong
+        }
+        if (tasksRes.status === 'fulfilled' && !tasksRes.value.ok) {
+          setTasksError(tasksRes.value.error);
+        }
+      }
+
+      // 6. Proses hasil materials
+      if (materialsRes.status === 'fulfilled' && materialsRes.value.ok && materialsRes.value.data?.materials) {
+        const apiMaterials = materialsRes.value.data.materials;
+        setMaterials(apiMaterials);
+        setMaterialsError(null);
+        await AsyncStorage.setItem(userKeys.MATERIALS, JSON.stringify(apiMaterials));
+      } else {
+        const cached = await AsyncStorage.getItem(userKeys.MATERIALS);
+        if (cached) {
+          setMaterials(JSON.parse(cached));
+        } else {
+          setMaterials([]); // Akun baru: kosong
+        }
+        if (materialsRes.status === 'fulfilled' && !materialsRes.value.ok) {
+          setMaterialsError(materialsRes.value.error);
+        }
+      }
     } catch (error) {
-      console.error('Error loading StudyMate storage:', error);
+      console.error('[Week 8] Error loading data:', error.message);
     } finally {
       setIsLoading(false);
       setCoursesLoading(false);
@@ -1272,26 +2073,29 @@ function StudyMateApp() {
 
   /**
    * handleRefreshCourses:
-   * Mengambil ulang mata kuliah dengan UI State (Loading -> Success/Error)
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request with Tri-State & Per-User Cache
    */
   const handleRefreshCourses = async () => {
     setCoursesLoading(true);
     setCoursesError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      // Cek konektivitas server
-      const isOnline = await checkServerConnectivity();
-      if (!isOnline) {
-        // Tetap gunakan data tersimpan di AsyncStorage
-        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-        if (stored) setCourses(JSON.parse(stored));
-        setCoursesError('Koneksi terputus. Data ditampilkan dari penyimpanan lokal perangkat.');
-      } else {
-        // Berhasil terhubung
-        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-        if (stored) setCourses(JSON.parse(stored));
+      const result = await requestApi('/courses/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.courses) {
+        setCourses(result.data.courses);
         setCoursesError(null);
+        await AsyncStorage.setItem(userKeys.COURSES, JSON.stringify(result.data.courses));
+      } else {
+        // Fallback ke cache lokal jika server tidak merespons
+        const stored = await AsyncStorage.getItem(userKeys.COURSES);
+        if (stored) setCourses(JSON.parse(stored));
+        setCoursesError(result.error || 'Gagal memuat mata kuliah dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.COURSES);
+      if (stored) setCourses(JSON.parse(stored));
       setCoursesError('Gagal memuat mata kuliah: ' + e.message);
     } finally {
       setCoursesLoading(false);
@@ -1300,19 +2104,28 @@ function StudyMateApp() {
 
   /**
    * handleRefreshMaterials:
-   * Mengambil ulang materi perkuliahan dengan UI State
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request with Tri-State & Per-User Cache
    */
   const handleRefreshMaterials = async () => {
     setMaterialsLoading(true);
     setMaterialsError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      const isOnline = await checkServerConnectivity();
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.MATERIALS);
-      if (stored) setMaterials(JSON.parse(stored));
-      if (!isOnline) {
-        setMaterialsError('Koneksi terputus. Data materi menggunakan cache offline.');
+      const result = await requestApi('/materials/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.materials) {
+        setMaterials(result.data.materials);
+        setMaterialsError(null);
+        await AsyncStorage.setItem(userKeys.MATERIALS, JSON.stringify(result.data.materials));
+      } else {
+        const stored = await AsyncStorage.getItem(userKeys.MATERIALS);
+        if (stored) setMaterials(JSON.parse(stored));
+        setMaterialsError(result.error || 'Gagal memuat materi dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.MATERIALS);
+      if (stored) setMaterials(JSON.parse(stored));
       setMaterialsError('Gagal memuat katalog materi: ' + e.message);
     } finally {
       setMaterialsLoading(false);
@@ -1321,19 +2134,28 @@ function StudyMateApp() {
 
   /**
    * handleRefreshTasks:
-   * Mengambil ulang tugas perkuliahan dengan UI State
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request for Tasks (Todo List)
    */
   const handleRefreshTasks = async () => {
     setTasksLoading(true);
     setTasksError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      const isOnline = await checkServerConnectivity();
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      if (stored) setTasks(JSON.parse(stored));
-      if (!isOnline) {
-        setTasksError('Koneksi terputus. Menampilkan tugas dari penyimpanan lokal.');
+      const result = await requestApi('/tasks/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.tasks) {
+        setTasks(result.data.tasks);
+        setTasksError(null);
+        await AsyncStorage.setItem(userKeys.TASKS, JSON.stringify(result.data.tasks));
+      } else {
+        const stored = await AsyncStorage.getItem(userKeys.TASKS);
+        if (stored) setTasks(JSON.parse(stored));
+        setTasksError(result.error || 'Gagal memuat tugas dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.TASKS);
+      if (stored) setTasks(JSON.parse(stored));
       setTasksError('Gagal memuat daftar tugas: ' + e.message);
     } finally {
       setTasksLoading(false);
@@ -1342,11 +2164,182 @@ function StudyMateApp() {
 
   const persistData = async (key, data) => {
     try {
-      await AsyncStorage.setItem(key, JSON.stringify(data));
+      // Jika key adalah salah satu storage keys global, map ke user-namespaced key jika user login
+      let resolvedKey = key;
+      if (apiUser?.id) {
+        const userKeys = getUserStorageKeys(apiUser.id);
+        if (key === STORAGE_KEYS.COURSES) resolvedKey = userKeys.COURSES;
+        else if (key === STORAGE_KEYS.MATERIALS) resolvedKey = userKeys.MATERIALS;
+        else if (key === STORAGE_KEYS.TASKS) resolvedKey = userKeys.TASKS;
+        else if (key === STORAGE_KEYS.NOTIFICATIONS) resolvedKey = userKeys.NOTIFICATIONS;
+        else if (key === STORAGE_KEYS.SETTINGS) resolvedKey = userKeys.SETTINGS;
+        else if (key === STORAGE_KEYS.USER_PROFILE) resolvedKey = userKeys.USER_PROFILE;
+      }
+      await AsyncStorage.setItem(resolvedKey, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to persist to AsyncStorage:', key, e);
     }
   };
+
+  // =================================================================
+  // WEEK 7 – ANGGOTA 3: ACCELEROMETER & SHAKE TO REFRESH IMPLEMENTATION
+  // =================================================================
+
+  /**
+   * handleRefreshHome:
+   * Memperbarui seluruh ringkasan data pembelajaran (Courses, Materials, Tasks)
+   */
+  const handleRefreshHome = async () => {
+    await Promise.all([
+      handleRefreshCourses(),
+      handleRefreshMaterials(),
+      handleRefreshTasks(),
+    ]);
+  };
+
+  /**
+   * handleTriggerShakeRefresh:
+   * Mengatur alur pembaruan data saat goyangan perangkat terdeteksi:
+   * 1. Getaran haptic feedback singkat (expo-haptics / Vibration)
+   * 2. Notifikasi visual "Goyangan terdeteksi! Memperbarui data..."
+   * 3. Menjalankan refresh sesuai tab aktif
+   * 4. Memberikan feedback keberhasilan / status offline
+   */
+  const handleTriggerShakeRefresh = async () => {
+    if (isShakeRefreshingRef.current) return;
+    isShakeRefreshingRef.current = true;
+    setIsShakeRefreshing(true);
+
+    // 1. Berikan feedback getaran singkat
+    await triggerShakeFeedback();
+
+    // 2. Tampilkan banner floating "Goyangan terdeteksi! Memperbarui data..."
+    setShakeBanner({
+      visible: true,
+      message: '📳 Goyangan terdeteksi! Memperbarui data...',
+      status: 'loading',
+    });
+
+    const activeTab = activeTabRef.current;
+    let targetName = 'Data Belajar';
+
+    try {
+      const isOnline = await checkServerConnectivity();
+
+      if (activeTab === 'Courses') {
+        targetName = 'Mata Kuliah';
+        await handleRefreshCourses();
+      } else if (activeTab === 'Materials') {
+        targetName = 'Katalog Materi';
+        await handleRefreshMaterials();
+      } else if (activeTab === 'Tasks') {
+        targetName = 'Daftar Tugas';
+        await handleRefreshTasks();
+      } else {
+        // Tab Home atau Schedule
+        targetName = 'Dashboard Belajar';
+        await handleRefreshHome();
+      }
+
+      if (isOnline) {
+        setShakeBanner({
+          visible: true,
+          message: `✅ Data ${targetName} berhasil diperbarui via Shake to Refresh!`,
+          status: 'success',
+        });
+      } else {
+        setShakeBanner({
+          visible: true,
+          message: `⚠️ Mode Offline: Data ${targetName} dimuat dari penyimpanan lokal.`,
+          status: 'warning',
+        });
+      }
+    } catch (err) {
+      setShakeBanner({
+        visible: true,
+        message: `❌ Gagal memperbarui: ${err.message}`,
+        status: 'error',
+      });
+    } finally {
+      isShakeRefreshingRef.current = false;
+      setIsShakeRefreshing(false);
+      // Auto-hide floating toast setelah 2.8 detik
+      setTimeout(() => {
+        setShakeBanner((prev) => (prev ? { ...prev, visible: false } : null));
+      }, 2800);
+    }
+  };
+
+  /**
+   * Accelerometer Shake Detection Listener:
+   * Membaca nilai sensor X, Y, Z secara internal tanpa menampilkan angka pada UI.
+   * Menggunakan perhitungan magnitude dan delta dengan threshold dan cooldown.
+   * Subscription otomatis dimatikan jika toggle preferensi dimatikan oleh pengguna.
+   */
+  useEffect(() => {
+    if (settings.shakeToRefresh === false) {
+      return;
+    }
+
+    // Set interval 100ms (10Hz) - efisien baterai dan responsif
+    Accelerometer.setUpdateInterval(100);
+
+    const subscription = Accelerometer.addListener(({ x, y, z }) => {
+      // Jangan jalankan refresh jika modal sedang aktif atau sedang proses refresh
+      if (isModalActiveRef.current || isShakeRefreshingRef.current) {
+        lastAccRef.current = { x, y, z };
+        return;
+      }
+
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      const last = lastAccRef.current;
+      const delta = Math.abs(x - last.x) + Math.abs(y - last.y) + Math.abs(z - last.z);
+      lastAccRef.current = { x, y, z };
+
+      const now = Date.now();
+      // Threshold: magnitude > 1.85g atau delta goyangan cepat > 1.7g, dengan cooldown 2.5s
+      if ((magnitude > 1.85 || delta > 1.7) && (now - lastShakeTimeRef.current > 2500)) {
+        lastShakeTimeRef.current = now;
+        handleTriggerShakeRefresh();
+      }
+    });
+
+    return () => {
+      subscription && subscription.remove();
+    };
+  }, [settings.shakeToRefresh]);
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 2: Asynchronous useEffect dengan Tab Synchronization & Cleanup
+  // Mengambil data spesifik saat pengguna berpindah tab dengan proteksi isMounted
+  // untuk mencegah state updates pada unmounted component atau setelah logout.
+  // =================================================================
+  useEffect(() => {
+    if (!isAuthenticated || !apiUser) return;
+    let isCurrent = true;
+
+    const syncTabData = async () => {
+      try {
+        if (currentTab === 'Courses') {
+          await handleRefreshCourses();
+        } else if (currentTab === 'Materials') {
+          await handleRefreshMaterials();
+        } else if (currentTab === 'Tasks') {
+          await handleRefreshTasks();
+        } else if (currentTab === 'Schedule') {
+          await handleLoadProfile();
+        }
+      } catch (err) {
+        if (isCurrent) console.warn('[Tab Sync Error]', err.message);
+      }
+    };
+
+    syncTabData();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentTab, isAuthenticated, apiUser?.id]);
 
   // =================================================================
   // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
@@ -1469,7 +2462,7 @@ function StudyMateApp() {
 
         // Step 3: Update state autentikasi – ini yang membuka Dashboard
         setApiUser(user);
-        setUserProfile((prev) => ({ ...prev, name: user.name }));
+        setUserProfile((prev) => ({ ...prev, name: user.name, email: user.email }));
         setIsAuthenticated(true);
         // isAuthLoading akan di-false oleh finally sebelum loadAllData
       } else {
@@ -1486,12 +2479,18 @@ function StudyMateApp() {
       setIsAuthLoading(false);
     }
 
-    // Step 4: Muat data lokal – dipanggil tanpa await agar tidak blocking
-    // (loadAllData menggunakan isLoading state tersendiri, bukan isAuthLoading)
-    // Catatan: isAuthenticated masih false di sini karena setState bersifat async,
-    // loadAllData() dipanggil langsung tanpa kondisi – sudah aman karena tidak
-    // bergantung pada auth state, hanya membaca AsyncStorage.
-    loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
+    // Step 4: Muat data per-user dari API (Week 8: gunakan userId untuk namespace)
+    // Muat avatar dari cache per-user terlebih dahulu
+    if (result?.ok && result?.data?.success) {
+      const userId = result.data.user?.id;
+      if (userId) {
+        const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${userId}`);
+        if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+      }
+      loadAllData(result?.data?.user?.id).catch((e) => console.warn('[Login] loadAllData error:', e.message));
+    } else {
+      loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
+    }
   };
 
   /**
@@ -1521,6 +2520,39 @@ function StudyMateApp() {
             // Hapus token dari SecureStore (PENTING: dilakukan terlepas dari respons server)
             await deleteAccessToken();
             await deleteUserData();
+
+            // =================================================================
+            // WEEK 8 – ANGGOTA 1: User Data Isolation on Logout
+            // Bersihkan seluruh state data pengguna dari memori aplikasi agar
+            // akun berikutnya memulai dari kondisi bersih tanpa kebocoran data.
+            // =================================================================
+            setCourses([]);
+            setMaterials([]);
+            setTasks([]);
+            setNotifications([]);
+            setProfileAvatarUri(null);
+            setUserProfile({
+              name: '',
+              email: '',
+              nim: '',
+              major: '',
+              campus: '',
+              university: '',
+              semester: null,
+              studyStreakDays: 0,
+            });
+            // WEEK 10: Reset location state on logout
+            setCurrentLocation(null);
+            setReverseAddress(null);
+            setLocationError(null);
+            setGeofences([]);
+            setGeofenceStatuses({});
+            setGeofenceAlerted({});
+            // Stop any active location subscription
+            if (locationSubRef.current) {
+              locationSubRef.current.remove();
+              locationSubRef.current = null;
+            }
 
             // Bersihkan seluruh state sesi
             setApiUser(null);
@@ -1577,6 +2609,158 @@ function StudyMateApp() {
   };
 
   // =================================================================
+  // WEEK 8 – ANGGOTA 3: PROFILE MANAGEMENT & EDIT PROFILE HANDLERS
+  // =================================================================
+  const handleLoadProfile = async () => {
+    setProfileLoading(true);
+    try {
+      const result = await requestApi('/users/me.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.user) {
+        const u = result.data.user;
+        setApiUser(u);
+        setUserProfile((prev) => ({
+          ...prev,
+          name: u.name,
+          email: u.email,
+          university: u.university || '',
+          major: u.major || '',
+          semester: u.semester || null,
+        }));
+        if (u.avatar_path) {
+          const avatarUrl = API_URL.startsWith('http')
+            ? `${API_URL.replace('/studymate-api', '')}/studymate-api/${u.avatar_path}`
+            : `http://192.168.1.5/studymate-api/${u.avatar_path}`;
+          setProfileAvatarUri(avatarUrl);
+          await AsyncStorage.setItem(`@studymate_avatar_${u.id}`, avatarUrl);
+        }
+      }
+    } catch (e) {
+      console.warn('[Profile Load Warning]', e.message);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handlePickProfilePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Izin Galeri Diperlukan',
+          'StudyMate membutuhkan izin akses galeri foto untuk memilih foto profil baru.'
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const pickedUri = result.assets[0].uri;
+        setEditProfilePhotoUri(pickedUri);
+        setEditProfilePhotoPreview(pickedUri);
+      }
+    } catch (err) {
+      Alert.alert('Gagal Membuka Galeri', 'Terjadi kesalahan saat memilih foto: ' + err.message);
+    }
+  };
+
+  const handleSaveProfile = async (newName, newUniversity, newMajor, newSemester) => {
+    if (!newName.trim()) {
+      Alert.alert('Perhatian', 'Nama lengkap pengguna wajib diisi.');
+      return;
+    }
+    setIsSavingProfile(true);
+    try {
+      // 1. Simpan nama, universitas, jurusan, semester ke server via PATCH /users/update-profile.php
+      const result = await requestApi('/users/update-profile.php', {
+        method: 'PATCH',
+        body: {
+          name: newName.trim(),
+          university: (newUniversity || '').trim(),
+          major: (newMajor || '').trim(),
+          semester: newSemester || null,
+        },
+        requiresAuth: true,
+      });
+
+      if (!result.ok) {
+        Alert.alert('Gagal Menyimpan Profil', result.error || 'Server menolak pembaruan profil.');
+        return;
+      }
+
+      const updatedUser = result.data?.user;
+      if (updatedUser) {
+        setApiUser((prev) => ({ ...prev, ...updatedUser }));
+        setUserProfile((prev) => ({
+          ...prev,
+          name: updatedUser.name,
+          university: updatedUser.university || '',
+          major: updatedUser.major || '',
+          semester: updatedUser.semester || null,
+        }));
+        await saveUserData({ ...apiUser, ...updatedUser });
+      }
+
+      // 2. Unggah foto avatar ke backend jika pengguna memilih foto baru dari galeri
+      if (editProfilePhotoUri) {
+        const persistentAvatarUri = await persistImageAsync(editProfilePhotoUri);
+
+        const token = await getAccessToken();
+        const formData = new FormData();
+        formData.append('avatar', {
+          uri: persistentAvatarUri,
+          name: `avatar_${apiUser?.id || 'usr'}_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        });
+
+        const uploadUrl = API_URL.startsWith('http')
+          ? `${API_URL}/users/upload-avatar.php`
+          : `http://192.168.1.5/studymate-api/users/upload-avatar.php`;
+
+        try {
+          const uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
+          const uploadData = await uploadRes.json();
+          if (uploadData.success && uploadData.avatar_url) {
+            setProfileAvatarUri(uploadData.avatar_url);
+            if (apiUser?.id) {
+              await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, uploadData.avatar_url);
+            }
+          } else {
+            setProfileAvatarUri(persistentAvatarUri);
+            if (apiUser?.id) {
+              await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, persistentAvatarUri);
+            }
+          }
+        } catch (uploadErr) {
+          console.warn('[Avatar Upload Network]', uploadErr.message);
+          setProfileAvatarUri(persistentAvatarUri);
+          if (apiUser?.id) {
+            await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, persistentAvatarUri);
+          }
+        }
+      }
+
+      setIsEditProfileVisible(false);
+      setEditProfilePhotoUri(null);
+      Alert.alert('Profil Diperbarui 🎉', 'Profil mahasiswa Anda berhasil disimpan.');
+    } catch (e) {
+      Alert.alert('Gagal', 'Terjadi masalah saat menyimpan profil: ' + e.message);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // =================================================================
   // 6. ACTION HANDLERS (MATERIAL, NOTES, AI, TASKS, SCHEDULE)
   // =================================================================
   const handleToggleMaterialStudied = async (materialId) => {
@@ -1588,17 +2772,30 @@ function StudyMateApp() {
   };
 
   const handleDeleteMaterial = (materialId) => {
-    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini?', [
+    Alert.alert('Hapus Materi', 'Apakah kamu yakin ingin menghapus materi perkuliahan ini dari server?', [
       { text: 'Batal', style: 'cancel' },
       {
         text: 'Hapus',
         style: 'destructive',
         onPress: async () => {
+          const previousMaterials = [...materials];
           const updated = materials.filter((m) => m.id !== materialId);
           setMaterials(updated);
           await persistData(STORAGE_KEYS.MATERIALS, updated);
           if (viewingPhotoMaterial && viewingPhotoMaterial.id === materialId) {
             setViewingPhotoMaterial(null);
+          }
+
+          try {
+            const result = await requestApi(`/materials/index.php?id=${materialId}`, {
+              method: 'DELETE',
+              requiresAuth: true,
+            });
+            if (!result.ok) {
+              console.warn('[Material Delete] Server delete warning:', result.error);
+            }
+          } catch (e) {
+            console.warn('[Material Delete] Network warning:', e.message);
           }
         },
       },
@@ -1628,38 +2825,396 @@ function StudyMateApp() {
       },
     ];
 
-    if (editingMaterial) {
-      updated = materials.map((m) =>
-        m.id === editingMaterial.id
-          ? {
-            ...m,
-            ...formData,
-            courseName: courseObj.name,
-            summary: generatedSummary,
-            keyPoints: generatedKeyPoints,
-            quiz: generatedQuiz,
-          }
-          : m
-      );
-    } else {
-      const newMaterial = {
-        id: `mat_${Date.now()}`,
-        ...formData,
-        courseName: courseObj.name,
+    try {
+      if (editingMaterial) {
+        // PUT ke backend
+        const result = await requestApi(`/materials/index.php?id=${editingMaterial.id}`, {
+          method: 'PUT',
+          body: {
+            title: formData.title,
+            meeting_topic: formData.meetingTopic,
+            meeting_number: parseInt(formData.meetingNumber, 10) || 1,
+            user_notes: formData.userNotes || '',
+          },
+          requiresAuth: true,
+        });
+
+        updated = materials.map((m) =>
+          m.id === editingMaterial.id
+            ? {
+              ...m,
+              ...formData,
+              courseName: courseObj.name,
+              summary: generatedSummary,
+              keyPoints: generatedKeyPoints,
+              quiz: generatedQuiz,
+            }
+            : m
+        );
+      } else {
+        // POST ke backend
+        const result = await requestApi('/materials/index.php', {
+          method: 'POST',
+          body: {
+            title: formData.title,
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj?.name || 'Mata Kuliah',
+            meeting_number: parseInt(formData.meetingNumber, 10) || 1,
+            meeting_topic: formData.meetingTopic || '',
+            file_type: formData.fileType || 'PDF',
+            file_name: formData.fileName || '',
+            file_size: formData.fileSize || '',
+            user_notes: formData.userNotes || '',
+            is_scanned: 0,
+          },
+          requiresAuth: true,
+        });
+
+        const newId = result.ok && result.data?.material?.id ? result.data.material.id : `mat_${Date.now()}`;
+        const newMaterial = {
+          id: newId,
+          ...formData,
+          courseName: courseObj.name,
+          dateAdded: new Date().toISOString().split('T')[0],
+          isStudied: false,
+          userNotes: '',
+          summary: generatedSummary,
+          keyPoints: generatedKeyPoints,
+          quiz: generatedQuiz,
+        };
+        updated = [newMaterial, ...materials];
+      }
+
+      setMaterials(updated);
+      await persistData(STORAGE_KEYS.MATERIALS, updated);
+      setMaterialModalVisible(false);
+      setEditingMaterial(null);
+    } catch (e) {
+      Alert.alert('Peringatan', 'Materi disimpan ke cache lokal: ' + e.message);
+      setMaterialModalVisible(false);
+      setEditingMaterial(null);
+    }
+  };
+
+  /**
+   * handleSaveScannedMaterial:
+   * WEEK 7 & 8: Menyimpan hasil pemindaian Smart Material Scanner
+   * - Menyimpan foto ke direktori dokumen lokal perangkat (FileSystem.documentDirectory)
+   * - Mengirim metadata ke backend REST API (/materials/index.php)
+   * - Menyatukan materi ke dalam katalog mata kuliah & AsyncStorage
+   */
+  const handleSaveScannedMaterial = async (scannedData) => {
+    try {
+      const courseObj = courses.find((c) => c.id === scannedData.courseId) || courses[0];
+
+      // 1. Salin foto dari cache kamera ke direktori dokumen persisten
+      const persistentUri = await persistImageAsync(scannedData.imageUri);
+
+      // 2. Kirim ke backend jika online
+      let serverId = null;
+      try {
+        const result = await requestApi('/materials/index.php', {
+          method: 'POST',
+          body: {
+            title: scannedData.title.trim(),
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj ? courseObj.name : 'Mata Kuliah',
+            meeting_number: parseInt(scannedData.meetingNumber, 10) || 1,
+            meeting_topic: scannedData.meetingTopic.trim() || `Dokumentasi Pertemuan ${scannedData.meetingNumber}`,
+            file_type: 'SCAN',
+            file_name: `Scan_${courseObj?.code || 'MAT'}_P${scannedData.meetingNumber}.jpg`,
+            file_size: '1.4 MB (Foto Kamera)',
+            photo_uri: persistentUri,
+            is_scanned: 1,
+            user_notes: scannedData.userNotes ? scannedData.userNotes.trim() : '',
+          },
+          requiresAuth: true,
+        });
+        if (result.ok && result.data?.material?.id) {
+          serverId = result.data.material.id;
+        }
+      } catch (apiErr) {
+        console.warn('[Scan Save] Backend API sync note:', apiErr.message);
+      }
+
+      // 3. Buat objek materi hasil scan lengkap
+      const newScanned = {
+        id: serverId || `scan_${Date.now()}`,
+        title: scannedData.title.trim(),
+        courseId: courseObj ? courseObj.id : (courses[0]?.id || 'crs_1'),
+        courseName: courseObj ? courseObj.name : 'Mata Kuliah',
+        meetingNumber: parseInt(scannedData.meetingNumber, 10) || 1,
+        meetingTopic: scannedData.meetingTopic.trim() || `Dokumentasi Pertemuan ${scannedData.meetingNumber}`,
+        fileType: 'SCAN',
+        fileName: `Scan_${courseObj?.code || 'MAT'}_P${scannedData.meetingNumber}.jpg`,
+        fileSize: '1.4 MB (Foto Kamera)',
+        imageUri: persistentUri,
+        isScanned: true,
         dateAdded: new Date().toISOString().split('T')[0],
         isStudied: false,
-        userNotes: '',
-        summary: generatedSummary,
-        keyPoints: generatedKeyPoints,
-        quiz: generatedQuiz,
+        userNotes: scannedData.userNotes ? scannedData.userNotes.trim() : '',
+        summary: `Materi hasil pemindaian langsung (Smart Material Scanner) untuk mata kuliah ${courseObj?.name || ''} pada pertemuan ke-${scannedData.meetingNumber}. Dokumentasi visual papan tulis/slide dosen untuk referensi belajar mandiri.`,
+        keyPoints: [
+          `Dokumentasi visual langsung pertemuan ke-${scannedData.meetingNumber}.`,
+          `Tersimpan secara lokal pada memori perangkat mahasiswa.`,
+          scannedData.userNotes?.trim() ? `Catatan: ${scannedData.userNotes.trim()}` : 'Belum ada catatan khusus.',
+        ],
+        quiz: [
+          {
+            question: `Apa materi inti yang didokumentasikan pada foto ${scannedData.title.trim()}?`,
+            options: [
+              scannedData.meetingTopic.trim() || courseObj?.name || 'Materi Inti',
+              'Catatan umum tanpa topik',
+              'Jadwal perkuliahan',
+              'Tugas kelompok',
+            ],
+            correctIndex: 0,
+            explanation: `Materi foto ini mendokumentasikan pembahasan ${scannedData.meetingTopic.trim() || courseObj?.name}.`,
+          },
+        ],
       };
-      updated = [newMaterial, ...materials];
-    }
 
+      const updated = [newScanned, ...materials];
+      setMaterials(updated);
+      await persistData(STORAGE_KEYS.MATERIALS, updated);
+      setIsScannerVisible(false);
+
+      Alert.alert(
+        'Materi Scan Berhasil Disimpan! 🎉',
+        `Foto materi "${newScanned.title}" telah tersimpan di katalog mata kuliah ${newScanned.courseName}. Anda dapat membukanya kembali kapan saja.`
+      );
+    } catch (err) {
+      Alert.alert('Gagal Menyimpan', 'Terjadi kesalahan saat menyimpan foto materi: ' + err.message);
+    }
+  };
+
+  const handleOpenNotes = (material) => {
+    setActiveNotesMaterial(material);
+    setCurrentNoteText(material.userNotes || '');
+    setNotesModalVisible(true);
+  };
+
+  const handleSaveNotes = async () => {
+    if (!activeNotesMaterial) return;
+    const updated = materials.map((m) =>
+      m.id === activeNotesMaterial.id ? { ...m, userNotes: currentNoteText } : m
+    );
     setMaterials(updated);
     await persistData(STORAGE_KEYS.MATERIALS, updated);
-    setMaterialModalVisible(false);
-    setEditingMaterial(null);
+    setNotesModalVisible(false);
+    setActiveNotesMaterial(null);
+  };
+
+  const handleOpenAiAssistant = (material) => {
+    setActiveAiMaterial(material);
+    setAiSubTab('summary');
+    setQuizRevealedMap({});
+    setAiModalVisible(true);
+  };
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 2: ASYNCHRONOUS TODO LIST API HANDLERS (TASKS)
+  // 1. GET: Dilakukan di handleRefreshTasks() & loadAllData()
+  // 2. Loading Indicator: tasksLoading & isSavingTask
+  // 3. POST: handleSaveTask() menambah tugas ke REST API
+  // 4. PATCH: handleToggleTaskCompleted() mengubah status via PATCH API
+  // 5. DELETE: handleDeleteTask() menghapus tugas via DELETE API
+  // 6. Error Handling: Try/Catch + Alert + Revert State (Optimistic Rollback)
+  // =================================================================
+
+  const handleToggleTaskCompleted = async (taskId) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const previousStatus = task.completed;
+    const newStatus = !previousStatus;
+
+    // Optimistic UI Update untuk UX responsif
+    const previousTasks = [...tasks];
+    const updated = tasks.map((t) =>
+      t.id === taskId ? { ...t, completed: newStatus } : t
+    );
+    setTasks(updated);
+
+    try {
+      // 4. Mengubah Status Todo (PATCH ke server)
+      const result = await requestApi(`/tasks/index.php?id=${taskId}`, {
+        method: 'PATCH',
+        body: { completed: newStatus },
+        requiresAuth: true,
+      });
+
+      if (result.ok && result.data?.task) {
+        // Sinkronisasi data resmi dari respons server
+        const synced = tasks.map((t) =>
+          t.id === taskId ? { ...t, completed: result.data.task.completed } : t
+        );
+        setTasks(synced);
+        await persistData(STORAGE_KEYS.TASKS, synced);
+      } else {
+        // Rollback jika server menolak
+        setTasks(previousTasks);
+        Alert.alert('Gagal Memperbarui Status', result.error || 'Server tidak dapat memperbarui status tugas.');
+      }
+    } catch (e) {
+      setTasks(previousTasks);
+      Alert.alert('Kesalahan Jaringan', 'Gagal menghubungi server untuk memperbarui status tugas: ' + e.message);
+    }
+  };
+
+  const handleDeleteTask = (taskId) => {
+    Alert.alert('Hapus Tugas', 'Apakah kamu yakin ingin menghapus tugas perkuliahan ini dari server?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          const previousTasks = [...tasks];
+          const updated = tasks.filter((t) => t.id !== taskId);
+          setTasks(updated);
+
+          try {
+            const result = await requestApi(`/tasks/index.php?id=${taskId}`, {
+              method: 'DELETE',
+              requiresAuth: true,
+            });
+
+            if (result.ok) {
+              await persistData(STORAGE_KEYS.TASKS, updated);
+            } else {
+              setTasks(previousTasks);
+              Alert.alert('Gagal Menghapus', result.error || 'Server menolak penghapusan tugas.');
+            }
+          } catch (e) {
+            setTasks(previousTasks);
+            Alert.alert('Kesalahan Jaringan', 'Gagal menghapus tugas dari server: ' + e.message);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleSaveTask = async (formData) => {
+    if (isSavingTask) return;
+    setIsSavingTask(true);
+    const courseObj = courses.find((c) => c.id === formData.courseId) || courses[0];
+
+    try {
+      if (editingTask) {
+        // 4. Update Todo (PATCH /tasks/index.php?id={id})
+        const result = await requestApi(`/tasks/index.php?id=${editingTask.id}`, {
+          method: 'PATCH',
+          body: {
+            title: formData.title,
+            description: formData.description,
+            deadline: formData.deadline,
+            priority: formData.priority,
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj?.name || 'Mata Kuliah',
+          },
+          requiresAuth: true,
+        });
+
+        if (result.ok && result.data?.task) {
+          const updated = tasks.map((t) =>
+            t.id === editingTask.id
+              ? { ...t, ...result.data.task, courseName: courseObj?.name || t.courseName }
+              : t
+          );
+          setTasks(updated);
+          await persistData(STORAGE_KEYS.TASKS, updated);
+          setTaskModalVisible(false);
+          setEditingTask(null);
+        } else {
+          Alert.alert('Gagal Menyimpan', result.error || 'Terjadi kesalahan saat memperbarui tugas.');
+        }
+      } else {
+        // 3. Menambahkan Todo (POST /tasks/index.php)
+        const result = await requestApi('/tasks/index.php', {
+          method: 'POST',
+          body: {
+            title: formData.title,
+            description: formData.description,
+            deadline: formData.deadline,
+            priority: formData.priority,
+            course_id: courseObj?.id ? parseInt(courseObj.id, 10) || null : null,
+            course_name: courseObj?.name || 'Mata Kuliah',
+          },
+          requiresAuth: true,
+        });
+
+        if (result.ok && result.data?.task) {
+          const newTask = {
+            ...result.data.task,
+            courseName: courseObj?.name || 'Mata Kuliah',
+          };
+          const updated = [newTask, ...tasks];
+          setTasks(updated);
+          await persistData(STORAGE_KEYS.TASKS, updated);
+          setTaskModalVisible(false);
+          setEditingTask(null);
+        } else {
+          Alert.alert('Gagal Menambah Tugas', result.error || 'Server gagal menambahkan tugas.');
+        }
+      }
+    } catch (e) {
+      Alert.alert('Kesalahan', 'Gagal memproses penyimpanan tugas: ' + e.message);
+    } finally {
+      setIsSavingTask(false);
+    }
+  };
+
+  const handlePickScheduleImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile('Screenshot_Jadwal_KRS.png');
+      }
+    } catch (err) {
+      processScheduleFile('Screenshot_Jadwal_Kuliah_Semester.png');
+    }
+  };
+
+  const handlePickScheduleDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        processScheduleFile(result.assets[0].name || 'Jadwal_KRS_Akademik.pdf');
+      }
+    } catch (err) {
+      processScheduleFile('Jadwal_Kuliah_Semester_Ganjil.pdf');
+    }
+  };
+
+  const processScheduleFile = (fileName) => {
+    setIsParsingSchedule(true);
+    setTimeout(async () => {
+      setIsParsingSchedule(false);
+      Alert.alert(
+        'Jadwal Berhasil Dianalisis! 🚀',
+        `StudyMate telah mendeteksi 4 Mata Kuliah dari dokumen "${fileName}" dan menyelaraskannya dengan jadwal belajar harian Anda.`
+      );
+      const newNotif = {
+        id: `notif_${Date.now()}`,
+        title: 'Jadwal Berhasil Disinkronkan',
+        message: `Mata kuliah telah disesuaikan dengan berkas ${fileName}. Materi kini terhubung dengan hari kuliah.`,
+        time: 'Baru saja',
+        read: false,
+        type: 'schedule',
+      };
+      const updatedNotifs = [newNotif, ...notifications];
+      setNotifications(updatedNotifs);
+      await persistData(STORAGE_KEYS.NOTIFICATIONS, updatedNotifs);
+      setScheduleModalVisible(false);
+    }, 1400);
   };
 
   // =================================================================
@@ -1706,18 +3261,20 @@ function StudyMateApp() {
   ]);
 
   const todayCourse = useMemo(() => {
+    if (!courses || courses.length === 0) return null;
     const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     const currentDay = daysMap[new Date().getDay()];
-    const found = courses.find((c) => c.day.toLowerCase() === currentDay.toLowerCase());
-    return found || courses[0];
+    const found = courses.find((c) => c.day && c.day.toLowerCase() === currentDay.toLowerCase());
+    return found || courses[0] || null;
   }, [courses]);
 
   const recommendedMaterial = useMemo(() => {
-    if (!todayCourse) return materials[0];
+    if (!materials || materials.length === 0) return null;
+    if (!todayCourse) return materials[0] || null;
     const unread = materials.find(
       (m) => m.courseId === todayCourse.id && !m.isStudied
     );
-    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0];
+    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0] || null;
   }, [todayCourse, materials]);
 
   // =================================================================
@@ -2060,10 +3617,9 @@ function StudyMateApp() {
     >
       <AppHeader
         title="Dashboard Belajar"
-        subtitle={`Semangat, ${userProfile.name.split(' ')[0]}! 🔥`}
+        subtitle={`Semangat, ${(apiUser?.name || userProfile.name || 'Mahasiswa').trim().split(' ')[0]}! 🔥`}
         unreadCount={unreadNotifCount}
         onOpenNotif={() => setNotifModalVisible(true)}
-        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
       />
 
       {/* Week 6: Offline Banner */}
@@ -2208,7 +3764,7 @@ function StudyMateApp() {
             Rekomendasi Belajar Hari Ini 🎯
           </Text>
           <Text style={styles.sectionSubtitle} numberOfLines={1}>
-            Sesuai jadwal: {todayCourse?.name} ({todayCourse?.day})
+            {todayCourse ? `Sesuai jadwal: ${todayCourse.name} (${todayCourse.day})` : 'Belum ada jadwal mata kuliah hari ini'}
           </Text>
         </View>
         <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
@@ -2228,7 +3784,12 @@ function StudyMateApp() {
       ) : (
         <EmptyState
           title="Belum ada materi untuk hari ini"
-          subtitle="Tambahkan materi kuliah agar StudyMate dapat menghubungkan jadwalmu."
+          subtitle="Tambahkan mata kuliah dan materi agar StudyMate dapat menyelaraskan jadwal belajarmu."
+          actionText="+ Tambah Materi"
+          onAction={() => {
+            setEditingMaterial(null);
+            setMaterialModalVisible(true);
+          }}
         />
       )}
 
@@ -2259,13 +3820,23 @@ function StudyMateApp() {
           />
         ))}
 
-      {activeTasksCount === 0 && (
+      {tasks.length === 0 ? (
+        <EmptyState
+          title="Belum Ada Tugas Kuliah"
+          subtitle="Tambahkan tugas perkuliahan untuk memantau deadline belajarmu."
+          actionText="+ Tambah Tugas"
+          onAction={() => {
+            setEditingTask(null);
+            setTaskModalVisible(true);
+          }}
+        />
+      ) : activeTasksCount === 0 ? (
         <View style={styles.allClearCard}>
           <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
           <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
           <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 
@@ -2284,7 +3855,6 @@ function StudyMateApp() {
         subtitle="Semester Ganjil 2026/2027"
         unreadCount={unreadNotifCount}
         onOpenNotif={() => setNotifModalVisible(true)}
-        onOpenScheduleUpload={() => setScheduleModalVisible(true)}
       />
 
       {/* Week 6: Offline Banner */}
@@ -2366,7 +3936,6 @@ function StudyMateApp() {
             subtitle="Organisasi per Matkul & Pertemuan"
             unreadCount={unreadNotifCount}
             onOpenNotif={() => setNotifModalVisible(true)}
-            onOpenScheduleUpload={() => setScheduleModalVisible(true)}
           />
 
           {/* Week 6: Offline Banner */}
@@ -2658,7 +4227,6 @@ function StudyMateApp() {
           subtitle="Pantau Target Akademik"
           unreadCount={unreadNotifCount}
           onOpenNotif={() => setNotifModalVisible(true)}
-          onOpenScheduleUpload={() => setScheduleModalVisible(true)}
         />
 
         {/* Week 6: Offline Banner */}
@@ -2712,13 +4280,23 @@ function StudyMateApp() {
           />
         ))}
 
-        {activeTasks.length === 0 && (
+        {tasks.length === 0 ? (
+          <EmptyState
+            title="Belum Ada Tugas Perkuliahan"
+            subtitle="Buat tugas pertamamu untuk memantau deadline akademik secara teratur."
+            actionText="+ Tambah Tugas Baru"
+            onAction={() => {
+              setEditingTask(null);
+              setTaskModalVisible(true);
+            }}
+          />
+        ) : activeTasks.length === 0 ? (
           <View style={styles.allClearCard}>
             <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
             <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
             <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
           </View>
-        )}
+        ) : null}
 
         {/* Section Selesai */}
         {completedTasks.length > 0 && (
@@ -2760,25 +4338,56 @@ function StudyMateApp() {
       {/* Profil Mahasiswa Card */}
       <View style={styles.profileHeroCard}>
         <View style={styles.profileAvatarBox}>
-          <Text style={styles.profileAvatarInitials}>
-            {userProfile.name
-              .split(' ')
-              .map((n) => n[0])
-              .slice(0, 2)
-              .join('')}
-          </Text>
+          {profileAvatarUri ? (
+            <Image
+              source={{ uri: profileAvatarUri }}
+              style={{ width: 60, height: 60, borderRadius: 30 }}
+            />
+          ) : (
+            <Text style={styles.profileAvatarInitials}>
+              {(apiUser?.name || userProfile.name || 'SM')
+                .split(' ')
+                .map((n) => n[0])
+                .slice(0, 2)
+                .join('')}
+            </Text>
+          )}
         </View>
         <View style={styles.profileInfoCol}>
-          <Text style={styles.profileNameText} numberOfLines={1}>
-            {userProfile.name}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.profileNameText, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+              {apiUser?.name || userProfile.name}
+            </Text>
+            {/* WEEK 8 – ANGGOTA 3: Tombol Edit Profil */}
+            <TouchableOpacity
+              style={styles.editProfilePillBtn}
+              onPress={() => {
+                setEditProfilePhotoUri(null);
+                setEditProfilePhotoPreview(profileAvatarUri);
+                setIsEditProfileVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="create-outline" size={13} color={COLORS.primary} />
+              <Text style={styles.editProfilePillBtnText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.profileNimText} numberOfLines={1}>
+            Email: {apiUser?.email || userProfile.email || 'mahasiswa@studymate.id'}
           </Text>
-          <Text style={styles.profileNimText}>NIM: {userProfile.nim}</Text>
-          <Text style={styles.profileMajorText} numberOfLines={1}>
-            {userProfile.major}
-          </Text>
-          <Text style={styles.profileCampusText} numberOfLines={1}>
-            {userProfile.campus}
-          </Text>
+          {(apiUser?.major || userProfile.major) ? (
+            <Text style={styles.profileMajorText} numberOfLines={1}>
+              {apiUser?.major || userProfile.major}
+              {(apiUser?.semester || userProfile.semester)
+                ? ` · Semester ${apiUser?.semester || userProfile.semester}`
+                : ''}
+            </Text>
+          ) : null}
+          {(apiUser?.university || userProfile.university || userProfile.campus) ? (
+            <Text style={styles.profileCampusText} numberOfLines={1}>
+              {apiUser?.university || userProfile.university || userProfile.campus}
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -2827,6 +4436,18 @@ function StudyMateApp() {
           <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
         </View>
       ))}
+
+      {courses.length === 0 && (
+        <EmptyState
+          title="Belum Ada Jadwal Kuliah"
+          subtitle="Tambahkan mata kuliah atau unggah berkas jadwal KRS untuk membuat jadwal mingguan."
+          actionText="+ Tambah Mata Kuliah"
+          onAction={() => {
+            setEditingCourse(null);
+            setCourseModalVisible(true);
+          }}
+        />
+      )}
 
       {/* Pengaturan Notifikasi */}
       <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
@@ -2888,99 +4509,28 @@ function StudyMateApp() {
 
         <View style={styles.settingDivider} />
 
+        {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Setting Toggle */}
+        <View style={styles.settingRow}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="phone-portrait-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.settingLabel}>Goyangkan HP untuk Refresh</Text>
+            </View>
+            <Text style={styles.settingDesc}>Goyangkan perangkat untuk memperbarui data StudyMate.</Text>
+          </View>
+          <Switch
+            value={settings.shakeToRefresh !== false}
+            onValueChange={(val) => {
+              const updated = { ...settings, shakeToRefresh: val };
+              setSettings(updated);
+              persistData(STORAGE_KEYS.SETTINGS, updated);
+            }}
+            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+          />
+        </View>
       </View>
 
-      {/* ================================================================= */}
-      {/* SPRINT 04 – ANGGOTA 3: Authenticated User Info & Protected API Test */}
-      {/* ================================================================= */}
-      {isAuthenticated && apiUser && (
-        <View
-          style={{
-            marginHorizontal: 0,
-            marginTop: 20,
-            backgroundColor: COLORS.primaryLight,
-            borderRadius: 16,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: '#C7D2FE',
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <Ionicons name="shield-checkmark" size={20} color={COLORS.primary} />
-            <Text style={{ fontSize: 15, fontWeight: '800', color: COLORS.primary, marginLeft: 8 }}>
-              Sesi Terautentikasi
-            </Text>
-          </View>
-          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
-            Nama: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.name}</Text>
-          </Text>
-          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 2 }}>
-            Email: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{apiUser.email}</Text>
-          </Text>
-          <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
-            Token tersimpan di Expo SecureStore (terenkripsi)
-          </Text>
-
-          {/* Sprint 04 – Tombol Test Protected API */}
-          <TouchableOpacity
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: COLORS.primary,
-              borderRadius: 10,
-              paddingVertical: 10,
-              marginTop: 12,
-            }}
-            onPress={handleTestProtectedApi}
-            disabled={isApiTesting}
-            activeOpacity={0.8}
-          >
-            {isApiTesting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" />
-            )}
-            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginLeft: 8 }}>
-              {isApiTesting ? 'Menguji...' : 'Test Protected API (GET /users/me.php)'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Test Result */}
-          {apiTestResult && (
-            <View
-              style={{
-                marginTop: 10,
-                backgroundColor: apiTestResult.success ? COLORS.emeraldLight : COLORS.roseLight,
-                borderRadius: 10,
-                padding: 10,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                <Ionicons
-                  name={apiTestResult.success ? 'checkmark-circle' : 'close-circle'}
-                  size={16}
-                  color={apiTestResult.success ? COLORS.emerald : COLORS.rose}
-                />
-                <Text
-                  style={{
-                    marginLeft: 6,
-                    fontSize: 12,
-                    fontWeight: '800',
-                    color: apiTestResult.success ? COLORS.emerald : COLORS.rose,
-                  }}
-                >
-                  HTTP {apiTestResult.status} {apiTestResult.success ? '– 200 OK' : '– Error'}
-                  {'  '}\u2022 {apiTestResult.timestamp}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 11, color: COLORS.textSecondary, fontFamily: 'monospace' }}>
-                {JSON.stringify(apiTestResult.data, null, 2).substring(0, 200)}
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
+      {/* Auth session card removed – debug panel tidak ditampilkan ke pengguna */}
 
       {/* Logout Button */}
       {isAuthenticated && (
@@ -3456,6 +5006,336 @@ function StudyMateApp() {
   );
 
   // =================================================================
+  // WEEK 10 – ANGGOTA 1: GPS Permission & Location Fetch
+  // =================================================================
+
+  /**
+   * handleRequestLocationPermission:
+   * Meminta izin akses foreground location menggunakan expo-location.
+   * Menangani berbagai status: undetermined, granted, denied, blocked.
+   */
+  const handleRequestLocationPermission = async () => {
+    setIsLocationLoading(true);
+    setLocationError(null);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermStatus(status);
+      if (status === 'granted') {
+        await handleGetCurrentLocation();
+      } else if (status === 'denied') {
+        setLocationError('Izin lokasi ditolak. Buka Pengaturan HP untuk mengaktifkan izin lokasi.');
+      }
+    } catch (e) {
+      setLocationError('Gagal meminta izin lokasi: ' + (e.message || 'Error tidak diketahui'));
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
+  /**
+   * handleGetCurrentLocation:
+   * ANGGOTA 1 – Mengambil koordinat GPS aktual (latitude, longitude, accuracy).
+   * Menggunakan akurasi balanced agar efisien baterai.
+   * Juga menjalankan reverse geocoding dan pemeriksaan geofence.
+   */
+  const handleGetCurrentLocation = async () => {
+    setIsLocationLoading(true);
+    setLocationError(null);
+    try {
+      // Periksa apakah GPS/Location service aktif
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        setLocationError('GPS tidak aktif. Aktifkan Layanan Lokasi di pengaturan HP.');
+        setIsLocationLoading(false);
+        return;
+      }
+
+      // BATTERY OPTIMIZATION: Gunakan Balanced accuracy, bukan High
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,       // min 5 detik antar update
+        distanceInterval: 10,     // min 10 meter perpindahan
+      });
+
+      const coords = {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        accuracy: loc.coords.accuracy,
+      };
+      setCurrentLocation(coords);
+
+      // Jalankan reverse geocoding dan geofence check
+      await handleReverseGeocode(coords);
+      checkGeofenceStatuses(coords, geofences);
+    } catch (e) {
+      if (e.code === 'E_LOCATION_SERVICES_DISABLED') {
+        setLocationError('GPS tidak aktif. Aktifkan Layanan Lokasi di pengaturan HP.');
+      } else {
+        setLocationError('Gagal mendapatkan lokasi: ' + (e.message || 'Error tidak diketahui'));
+      }
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
+  /**
+   * handleCheckLocationPermission:
+   * Memeriksa status izin saat ini tanpa meminta ulang.
+   */
+  const handleCheckLocationPermission = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      setLocationPermStatus(status);
+      if (status === 'granted') {
+        await handleGetCurrentLocation();
+      }
+    } catch (e) {
+      setLocationError('Gagal memeriksa izin lokasi.');
+    }
+  };
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 2: Location Subscription (Watch Position)
+  // Battery Optimization: distanceInterval & timeInterval filter
+  // =================================================================
+
+  /**
+   * handleStartLocationWatch:
+   * Memulai pemantauan lokasi secara periodik (foreground only).
+   * Subscription dibersihkan ketika tab berpindah atau komponen dilepas.
+   * BATTERY: hanya update setiap 15 detik atau 20 meter perpindahan.
+   */
+  const handleStartLocationWatch = async () => {
+    if (locationSubRef.current) return; // Jangan duplikasi subscription
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const sub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 15000,     // Update min 15 detik sekali
+          distanceInterval: 20,    // Update min 20 meter perpindahan
+        },
+        (loc) => {
+          const coords = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy,
+          };
+          setCurrentLocation(coords);
+          // Periksa status geofence setiap ada update lokasi
+          setGeofences((prevFences) => {
+            checkGeofenceStatuses(coords, prevFences);
+            return prevFences;
+          });
+        }
+      );
+      locationSubRef.current = sub;
+    } catch (e) {
+      // Subscription gagal — tidak perlu crash aplikasi
+    }
+  };
+
+  /**
+   * handleStopLocationWatch:
+   * Menghentikan subscription lokasi dan membersihkan resource.
+   */
+  const handleStopLocationWatch = () => {
+    if (locationSubRef.current) {
+      locationSubRef.current.remove();
+      locationSubRef.current = null;
+    }
+  };
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 3A: Reverse Geocoding
+  // Mengonversi koordinat GPS menjadi informasi alamat
+  // =================================================================
+
+  /**
+   * handleReverseGeocode:
+   * Mengambil alamat dari koordinat menggunakan expo-location.
+   * Menangani koneksi internet terputus dan alamat tidak ditemukan.
+   */
+  const handleReverseGeocode = async (coords) => {
+    if (!coords) return;
+    setIsGeocodingLoading(true);
+    try {
+      const results = await Location.reverseGeocodeAsync({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      });
+      if (results && results.length > 0) {
+        const r = results[0];
+        setReverseAddress({
+          street: [r.streetNumber, r.street].filter(Boolean).join(' ') || null,
+          district: r.district || r.subregion || null,
+          subregion: r.subregion || null,
+          city: r.city || r.region || null,
+          region: r.region || null,
+          country: r.country || null,
+          postalCode: r.postalCode || null,
+          name: r.name || null,
+        });
+      } else {
+        setReverseAddress(null);
+      }
+    } catch (e) {
+      // Koneksi internet terputus atau service tidak tersedia
+      setReverseAddress(null);
+    } finally {
+      setIsGeocodingLoading(false);
+    }
+  };
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 3B: Geofencing
+  // Menyimpan area, menghitung jarak, mendeteksi masuk/keluar area
+  // =================================================================
+
+  /**
+   * calculateDistance:
+   * Menghitung jarak antara dua koordinat menggunakan Haversine formula (meter).
+   */
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000; // Radius bumi dalam meter
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  /**
+   * checkGeofenceStatuses:
+   * Memeriksa apakah pengguna berada di dalam atau luar setiap geofence.
+   * Hanya memunculkan alert sekali per peristiwa masuk/keluar.
+   */
+  const checkGeofenceStatuses = (coords, fenceList) => {
+    if (!coords || !fenceList || fenceList.length === 0) return;
+    const newStatuses = {};
+    fenceList.forEach((fence) => {
+      const dist = calculateDistance(
+        coords.latitude, coords.longitude,
+        fence.latitude, fence.longitude
+      );
+      newStatuses[fence.id] = dist <= fence.radius ? 'inside' : 'outside';
+    });
+    setGeofenceStatuses(newStatuses);
+
+    // Alert hanya sekali per perubahan status (masuk atau keluar)
+    setGeofenceAlerted((prevAlerted) => {
+      const updatedAlerted = { ...prevAlerted };
+      fenceList.forEach((fence) => {
+        const newStatus = newStatuses[fence.id];
+        const lastAlerted = prevAlerted[fence.id];
+        if (newStatus !== lastAlerted) {
+          if (newStatus === 'inside') {
+            Alert.alert(
+              '📍 Memasuki Area',
+              `Selamat datang! Kamu telah memasuki area "${fence.name}".`,
+              [{ text: 'OK' }]
+            );
+          } else if (newStatus === 'outside' && lastAlerted === 'inside') {
+            Alert.alert(
+              '📍 Meninggalkan Area',
+              `Lokasi kamu sudah berada di luar area "${fence.name}".`,
+              [{ text: 'OK' }]
+            );
+          }
+          updatedAlerted[fence.id] = newStatus;
+        }
+      });
+      return updatedAlerted;
+    });
+  };
+
+  /**
+   * handleAddGeofence:
+   * Menambah area geofence baru menggunakan koordinat GPS saat ini.
+   * Menyimpan ke AsyncStorage dengan namespace per pengguna.
+   */
+  const handleAddGeofence = async () => {
+    if (!currentLocation) {
+      Alert.alert('Lokasi Belum Tersedia', 'Ambil lokasi GPS terlebih dahulu sebelum membuat area.');
+      return;
+    }
+    if (!newGeofenceName.trim()) {
+      Alert.alert('Nama Area Kosong', 'Masukkan nama untuk area geofence ini.');
+      return;
+    }
+    const radiusNum = parseInt(newGeofenceRadius, 10);
+    if (isNaN(radiusNum) || radiusNum < 10 || radiusNum > 50000) {
+      Alert.alert('Radius Tidak Valid', 'Masukkan radius antara 10 hingga 50.000 meter.');
+      return;
+    }
+    const newFence = {
+      id: `gf_${Date.now()}`,
+      name: newGeofenceName.trim(),
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      radius: radiusNum,
+    };
+    const updated = [...geofences, newFence];
+    setGeofences(updated);
+    setIsAddGeofenceVisible(false);
+    setNewGeofenceName('');
+    setNewGeofenceRadius('200');
+
+    // Simpan ke AsyncStorage per pengguna
+    const userId = apiUser?.id;
+    if (userId) {
+      try {
+        const key = getUserStorageKeys(userId).GEOFENCES;
+        await AsyncStorage.setItem(key, JSON.stringify(updated));
+      } catch (_) { }
+    }
+
+    // Langsung periksa status untuk fence baru
+    checkGeofenceStatuses(currentLocation, updated);
+    Alert.alert('Area Disimpan', `Area "${newFence.name}" berhasil ditambahkan dengan radius ${radiusNum} meter.`);
+  };
+
+  /**
+   * handleDeleteGeofence:
+   * Menghapus geofence dari daftar dan AsyncStorage.
+   */
+  const handleDeleteGeofence = async (fenceId) => {
+    const updated = geofences.filter((f) => f.id !== fenceId);
+    setGeofences(updated);
+    const updatedStatuses = { ...geofenceStatuses };
+    delete updatedStatuses[fenceId];
+    setGeofenceStatuses(updatedStatuses);
+    const userId = apiUser?.id;
+    if (userId) {
+      try {
+        const key = getUserStorageKeys(userId).GEOFENCES;
+        await AsyncStorage.setItem(key, JSON.stringify(updated));
+      } catch (_) { }
+    }
+  };
+
+  /**
+   * handleLoadGeofences:
+   * Memuat konfigurasi geofence dari AsyncStorage untuk pengguna yang login.
+   */
+  const handleLoadGeofences = async (userId) => {
+    if (!userId) return;
+    try {
+      const key = getUserStorageKeys(userId).GEOFENCES;
+      const raw = await AsyncStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setGeofences(parsed);
+      }
+    } catch (_) { }
+  };
+
+  // =================================================================
   // 10. BOTTOM NAVIGATION BAR (Anggota 3)
   // =================================================================
   const renderBottomNav = () => {
@@ -3465,6 +5345,7 @@ function StudyMateApp() {
       { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
       { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
       { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+      { id: 'Location', label: 'Lokasi', iconActive: 'location', iconInactive: 'location-outline' },
     ];
 
     return (
@@ -3501,7 +5382,7 @@ function StudyMateApp() {
               >
                 {tab.label}
               </Text>
-              {isActive && <View style={styles.bottomNavActiveDot} />}
+
             </TouchableOpacity>
           );
         })}
@@ -3535,6 +5416,36 @@ function StudyMateApp() {
         {currentTab === 'Materials' && renderMaterialsScreen()}
         {currentTab === 'Tasks' && renderTasksScreen()}
         {currentTab === 'Schedule' && renderScheduleProfileScreen()}
+        {currentTab === 'Location' && (
+          <LocationScreen
+            scrollContentPaddingBottom={scrollContentPaddingBottom}
+            unreadNotifCount={unreadNotifCount}
+            onOpenNotif={() => setNotifModalVisible(true)}
+            locationPermStatus={locationPermStatus}
+            currentLocation={currentLocation}
+            isLocationLoading={isLocationLoading}
+            locationError={locationError}
+            reverseAddress={reverseAddress}
+            isGeocodingLoading={isGeocodingLoading}
+            geofences={geofences}
+            geofenceStatuses={geofenceStatuses}
+            isAddGeofenceVisible={isAddGeofenceVisible}
+            newGeofenceName={newGeofenceName}
+            newGeofenceRadius={newGeofenceRadius}
+            onSetNewGeofenceName={setNewGeofenceName}
+            onSetNewGeofenceRadius={setNewGeofenceRadius}
+            onSetIsAddGeofenceVisible={setIsAddGeofenceVisible}
+            onRequestPermission={handleRequestLocationPermission}
+            onGetCurrentLocation={handleGetCurrentLocation}
+            onAddGeofence={handleAddGeofence}
+            onDeleteGeofence={handleDeleteGeofence}
+            calculateDistance={calculateDistance}
+            apiUserId={apiUser?.id}
+            onLoadGeofences={handleLoadGeofences}
+            onStartLocationWatch={handleStartLocationWatch}
+            onStopLocationWatch={handleStopLocationWatch}
+          />
+        )}
       </View>
 
       {/* Persistent Bottom Navigation with Safe Area Padding */}
@@ -3557,20 +5468,59 @@ function StudyMateApp() {
         onClose={() => setCourseModalVisible(false)}
         onSave={async (formData) => {
           let updated;
-          if (editingCourse) {
-            updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
-          } else {
-            const newCourse = {
-              id: `crs_${Date.now()}`,
-              ...formData,
-              color: formData.color || COLORS.primary,
-            };
-            updated = [...courses, newCourse];
+          try {
+            if (editingCourse) {
+              // PUT /courses/index.php?id={id}
+              const result = await requestApi(`/courses/index.php?id=${editingCourse.id}`, {
+                method: 'PUT',
+                body: {
+                  code: formData.code,
+                  name: formData.name,
+                  lecturer: formData.lecturer,
+                  day: formData.day,
+                  time: formData.time,
+                  room: formData.room,
+                  sks: parseInt(formData.sks, 10) || 3,
+                  color: formData.color || COLORS.primary,
+                },
+                requiresAuth: true,
+              });
+
+              updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
+            } else {
+              // POST /courses/index.php
+              const result = await requestApi('/courses/index.php', {
+                method: 'POST',
+                body: {
+                  code: formData.code,
+                  name: formData.name,
+                  lecturer: formData.lecturer,
+                  day: formData.day,
+                  time: formData.time,
+                  room: formData.room,
+                  sks: parseInt(formData.sks, 10) || 3,
+                  color: formData.color || COLORS.primary,
+                },
+                requiresAuth: true,
+              });
+
+              const serverCourse = result.ok && result.data?.course ? result.data.course : null;
+              const newCourse = serverCourse || {
+                id: `crs_${Date.now()}`,
+                ...formData,
+                color: formData.color || COLORS.primary,
+              };
+              updated = [...courses, newCourse];
+            }
+            setCourses(updated);
+            await persistData(STORAGE_KEYS.COURSES, updated);
+            setCourseModalVisible(false);
+            setEditingCourse(null);
+          } catch (err) {
+            Alert.alert('Peringatan', 'Data mata kuliah disimpan ke memori lokal: ' + err.message);
+            setCourseModalVisible(false);
+            setEditingCourse(null);
           }
-          setCourses(updated);
-          await persistData(STORAGE_KEYS.COURSES, updated);
-          setCourseModalVisible(false);
-          setEditingCourse(null);
         }}
       />
 
@@ -3597,6 +5547,67 @@ function StudyMateApp() {
         onSaveMaterial={handleSaveScannedMaterial}
       />
 
+      {/* WEEK 7 – ANGGOTA 2: Full-Screen Scanned Photo Viewer Modal */}
+      <PhotoViewerModal
+        material={viewingPhotoMaterial}
+        insets={insets}
+        onClose={() => setViewingPhotoMaterial(null)}
+        onDelete={(id) => {
+          setViewingPhotoMaterial(null);
+          handleDeleteMaterial(id);
+        }}
+      />
+
+      {/* WEEK 8 – ANGGOTA 3: Modal Edit Profil Mahasiswa */}
+      <EditProfileModal
+        visible={isEditProfileVisible}
+        currentName={apiUser?.name || userProfile.name || ''}
+        currentEmail={apiUser?.email || userProfile.email || ''}
+        currentAvatarUri={profileAvatarUri}
+        currentUniversity={apiUser?.university || userProfile.university || ''}
+        currentMajor={apiUser?.major || userProfile.major || ''}
+        currentSemester={apiUser?.semester || userProfile.semester || null}
+        photoPreview={editProfilePhotoPreview}
+        insets={insets}
+        onClose={() => {
+          setIsEditProfileVisible(false);
+          setEditProfilePhotoUri(null);
+          setEditProfilePhotoPreview(null);
+        }}
+        onPickPhoto={handlePickProfilePhoto}
+        onSave={handleSaveProfile}
+        isSaving={isSavingProfile}
+      />
+
+      {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Floating Toast Feedback */}
+      {shakeBanner && shakeBanner.visible && (
+        <View style={[styles.shakeFloatingToast, { top: insets.top + 10 }]}>
+          <Ionicons
+            name={
+              shakeBanner.status === 'loading'
+                ? 'sync'
+                : shakeBanner.status === 'success'
+                  ? 'checkmark-circle'
+                  : shakeBanner.status === 'warning'
+                    ? 'cloud-offline'
+                    : 'alert-circle'
+            }
+            size={20}
+            color={
+              shakeBanner.status === 'loading'
+                ? '#38BDF8'
+                : shakeBanner.status === 'success'
+                  ? '#34D399'
+                  : shakeBanner.status === 'warning'
+                    ? '#FBBF24'
+                    : '#F87171'
+            }
+          />
+          <Text style={styles.shakeFloatingToastText} numberOfLines={2}>
+            {shakeBanner.message}
+          </Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -3604,6 +5615,276 @@ function StudyMateApp() {
 // =================================================================
 // 11. MODAL FORMS SUB-COMPONENTS
 // =================================================================
+
+// =================================================================
+// WEEK 8 – ANGGOTA 3: Modal Edit Profil Mahasiswa
+// Fitur: Ubah nama, pilih foto dari galeri, preview foto, simpan/batal
+// =================================================================
+function EditProfileModal({
+  visible,
+  currentName,
+  currentEmail,
+  currentAvatarUri,
+  currentUniversity,
+  currentMajor,
+  currentSemester,
+  photoPreview,
+  insets,
+  onClose,
+  onPickPhoto,
+  onSave,
+  isSaving,
+}) {
+  const [name, setName] = useState('');
+  const [university, setUniversity] = useState('');
+  const [major, setMajor] = useState('');
+  const [semester, setSemester] = useState(null);
+  const [showSemesterPicker, setShowSemesterPicker] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setName(currentName || '');
+      setUniversity(currentUniversity || '');
+      setMajor(currentMajor || '');
+      setSemester(currentSemester || null);
+      setShowSemesterPicker(false);
+    }
+  }, [visible, currentName, currentUniversity, currentMajor, currentSemester]);
+
+  const activeAvatar = photoPreview || currentAvatarUri;
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.editProfileContainer}>
+        {/* Top Header */}
+        <View style={styles.editProfileHeader}>
+          <TouchableOpacity onPress={onClose} style={styles.editProfileHeaderBtn} disabled={isSaving}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.editProfileHeaderTitle}>Edit Profil Mahasiswa</Text>
+          <TouchableOpacity
+            onPress={() => onSave(name, university, major, semester)}
+            style={styles.editProfileSaveBtn}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.editProfileSaveBtnText}>Simpan</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 20 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Avatar Section */}
+          <View style={styles.editProfileAvatarSection}>
+            <View style={styles.editProfileAvatarWrapper}>
+              {activeAvatar ? (
+                <Image source={{ uri: activeAvatar }} style={styles.editProfileAvatarImage} />
+              ) : (
+                <View style={styles.editProfileAvatarPlaceholder}>
+                  <Text style={styles.editProfileAvatarPlaceholderText}>
+                    {(name || 'SM')
+                      .split(' ')
+                      .map((n) => n[0])
+                      .slice(0, 2)
+                      .join('')}
+                  </Text>
+                </View>
+              )}
+              {/* Badge Camera Overlay */}
+              <TouchableOpacity
+                style={styles.editProfileAvatarBadge}
+                onPress={onPickPhoto}
+                disabled={isSaving}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.editProfileChangePhotoBtn}
+              onPress={onPickPhoto}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="image-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.editProfileChangePhotoBtnText}>Ganti Foto dari Galeri</Text>
+            </TouchableOpacity>
+            {photoPreview && (
+              <Text style={styles.editProfilePreviewBadge}>Preview Foto Baru Terpilih ✨</Text>
+            )}
+          </View>
+
+          {/* ── Informasi Pribadi ── */}
+          <Text style={styles.editProfileSectionHeader}>Informasi Pribadi</Text>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Nama Lengkap Mahasiswa *</Text>
+            <TextInput
+              style={styles.editProfileInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Masukkan nama lengkap Anda"
+              placeholderTextColor={COLORS.textMuted}
+              editable={!isSaving}
+              maxLength={100}
+            />
+          </View>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Email Akun StudyMate</Text>
+            <View style={[styles.editProfileInput, { backgroundColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center' }]}>
+              <Ionicons name="lock-closed" size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
+              <Text style={{ color: COLORS.textSecondary, fontSize: 14 }}>{currentEmail || 'Akun Terdaftar'}</Text>
+            </View>
+            <Text style={styles.editProfileHelperText}>
+              Email adalah identitas akun utama dan tidak dapat diubah tanpa verifikasi ulang.
+            </Text>
+          </View>
+
+          {/* ── Informasi Akademik ── */}
+          <Text style={styles.editProfileSectionHeader}>Informasi Akademik</Text>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Nama Universitas</Text>
+            <TextInput
+              style={styles.editProfileInput}
+              value={university}
+              onChangeText={setUniversity}
+              placeholder="Contoh: Universitas Indonesia"
+              placeholderTextColor={COLORS.textMuted}
+              editable={!isSaving}
+              maxLength={150}
+            />
+          </View>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Jurusan / Program Studi</Text>
+            <TextInput
+              style={styles.editProfileInput}
+              value={major}
+              onChangeText={setMajor}
+              placeholder="Contoh: Teknik Informatika"
+              placeholderTextColor={COLORS.textMuted}
+              editable={!isSaving}
+              maxLength={150}
+            />
+          </View>
+
+          <View style={styles.editProfileFormGroup}>
+            <Text style={styles.editProfileLabel}>Semester</Text>
+            <TouchableOpacity
+              style={[
+                styles.editProfileInput,
+                { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+              ]}
+              onPress={() => !isSaving && setShowSemesterPicker(!showSemesterPicker)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: semester ? COLORS.textPrimary : COLORS.textMuted,
+                }}
+              >
+                {semester ? `Semester ${semester}` : 'Pilih semester Anda'}
+              </Text>
+              <Ionicons
+                name={showSemesterPicker ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={COLORS.textMuted}
+              />
+            </TouchableOpacity>
+            {showSemesterPicker && (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: COLORS.cardBorder,
+                  borderRadius: 10,
+                  marginTop: 6,
+                  backgroundColor: COLORS.card,
+                  overflow: 'hidden',
+                }}
+              >
+                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((s) => (
+                    <TouchableOpacity
+                      key={s}
+                      style={{
+                        paddingVertical: 11,
+                        paddingHorizontal: 16,
+                        backgroundColor: semester === s ? COLORS.primaryLight : 'transparent',
+                        borderBottomWidth: s < 14 ? 1 : 0,
+                        borderBottomColor: '#F1F5F9',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                      onPress={() => {
+                        setSemester(s);
+                        setShowSemesterPicker(false);
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          color: semester === s ? COLORS.primary : COLORS.textPrimary,
+                          fontWeight: semester === s ? '700' : '400',
+                        }}
+                      >
+                        Semester {s}
+                      </Text>
+                      {semester === s && (
+                        <Ionicons name="checkmark-circle" size={18} color={COLORS.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          {/* Action Buttons */}
+          <View style={{ marginTop: 24, gap: 12 }}>
+            <TouchableOpacity
+              style={styles.editProfileMainSubmitBtn}
+              onPress={() => onSave(name, university, major, semester)}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                  <Text style={styles.editProfileMainSubmitBtnText}>Simpan Perubahan</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.editProfileCancelBtn}
+              onPress={onClose}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.editProfileCancelBtnText}>Batalkan</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
 
 // Form Modal Tambah / Edit Materi
 function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
@@ -4098,6 +6379,10 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // FIX: Track kamera siap – shutter hanya aktif setelah onCameraReady terpanggil
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+
   // Form Fields
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id || '');
@@ -4114,6 +6399,8 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
       setTorch(false);
       setIsTakingPicture(false);
       setIsSaving(false);
+      setIsCameraReady(false);
+      setCameraError(null);
       setTitle('');
       setCourseId(courses[0]?.id || '');
       setMeetingNumber('1');
@@ -4124,6 +6411,10 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
 
   // Shutter action
   const handleCapturePhoto = async () => {
+    if (!isCameraReady) {
+      Alert.alert('Kamera Belum Siap', 'Tunggu sebentar hingga kamera live viewfinder aktif.');
+      return;
+    }
     if (cameraRef.current && !isTakingPicture) {
       try {
         setIsTakingPicture(true);
@@ -4227,12 +6518,86 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
         ) : step === 'CAMERA' ? (
           /* 2. Step CAMERA: Live Viewfinder */
           <View style={{ flex: 1 }}>
+            {/* CameraView – flash/torch dikendalikan via enableTorch (boolean), bukan prop flash */}
             <CameraView
               ref={cameraRef}
               style={StyleSheet.absoluteFillObject}
               facing={facing}
-              flash={torch ? 'torch' : 'off'}
+              enableTorch={torch}
+              onCameraReady={() => {
+                setIsCameraReady(true);
+                setCameraError(null);
+              }}
+              onMountError={(error) => {
+                setCameraError(error?.message || 'Kamera gagal dimuat');
+                setIsCameraReady(false);
+              }}
             />
+
+            {/* Loading overlay saat kamera belum siap */}
+            {!isCameraReady && !cameraError && (
+              <View
+                style={{
+                  ...StyleSheet.absoluteFillObject,
+                  backgroundColor: 'rgba(0,0,0,0.75)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600', fontSize: 14 }}>
+                  Menyiapkan kamera...
+                </Text>
+              </View>
+            )}
+
+            {/* Error overlay jika kamera gagal mount */}
+            {cameraError && (
+              <View
+                style={{
+                  ...StyleSheet.absoluteFillObject,
+                  backgroundColor: '#0D0D0D',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  paddingHorizontal: 32,
+                }}
+              >
+                <Ionicons name="camera-off-outline" size={56} color={COLORS.rose} />
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginTop: 16, textAlign: 'center' }}>
+                  Kamera Tidak Dapat Diaktifkan
+                </Text>
+                <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                  {cameraError}
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: COLORS.primary,
+                    borderRadius: 12,
+                    paddingVertical: 12,
+                    paddingHorizontal: 24,
+                    marginTop: 24,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onPress={() => {
+                    setCameraError(null);
+                    setIsCameraReady(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Coba Lagi</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ marginTop: 16 }}
+                  onPress={onClose}
+                  activeOpacity={0.75}
+                >
+                  <Text style={{ color: '#94A3B8', fontSize: 13 }}>Kembali ke Katalog Materi</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Top Toolbar */}
             <SafeAreaView edges={['top']} style={styles.cameraLiveTopBar}>
@@ -4256,7 +6621,11 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
 
                 <TouchableOpacity
                   style={styles.cameraCircleBtn}
-                  onPress={() => setFacing(facing === 'back' ? 'front' : 'back')}
+                  onPress={() => {
+                    setIsCameraReady(false);
+                    setCameraError(null);
+                    setFacing(facing === 'back' ? 'front' : 'back');
+                  }}
                   activeOpacity={0.75}
                 >
                   <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
@@ -4284,9 +6653,12 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
             <SafeAreaView edges={['bottom']} style={styles.cameraLiveBottomBar}>
               <View style={{ alignItems: 'center' }}>
                 <TouchableOpacity
-                  style={styles.cameraShutterOuter}
+                  style={[
+                    styles.cameraShutterOuter,
+                    (!isCameraReady || isTakingPicture) && { opacity: 0.45 },
+                  ]}
                   onPress={handleCapturePhoto}
-                  disabled={isTakingPicture}
+                  disabled={isTakingPicture || !isCameraReady}
                   activeOpacity={0.7}
                 >
                   {isTakingPicture ? (
@@ -4295,7 +6667,9 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
                     <View style={styles.cameraShutterInner} />
                   )}
                 </TouchableOpacity>
-                <Text style={styles.cameraShutterHintText}>Ketuk untuk Memotret</Text>
+                <Text style={styles.cameraShutterHintText}>
+                  {isCameraReady ? 'Ketuk untuk Memotret' : 'Menyiapkan kamera...'}
+                </Text>
               </View>
             </SafeAreaView>
           </View>
@@ -4307,6 +6681,8 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
                 style={styles.cameraCircleBtn}
                 onPress={() => {
                   setCapturedPhotoUri(null);
+                  setIsCameraReady(false);
+                  setCameraError(null);
                   setStep('CAMERA');
                 }}
                 activeOpacity={0.75}
@@ -4537,6 +6913,91 @@ function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMa
             </ScrollView>
           </SafeAreaView>
         )}
+      </View>
+    </Modal>
+  );
+}
+
+// =================================================================
+// WEEK 7 – ANGGOTA 2: FULL-SCREEN SCANNED PHOTO VIEWER MODAL
+// =================================================================
+function PhotoViewerModal({ material, insets, onClose, onDelete }) {
+  if (!material || !material.imageUri) return null;
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        title: material.title,
+        message: `Materi Kuliah StudyMate: ${material.title} (${material.courseName} - Pertemuan ${material.meetingNumber})`,
+        url: material.imageUri,
+      });
+    } catch { }
+  };
+
+  return (
+    <Modal visible={true} animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#090D16' }}>
+        <StatusBar barStyle="light-content" backgroundColor="#090D16" />
+
+        {/* Top Header */}
+        <SafeAreaView edges={['top']} style={styles.photoViewerTopBar}>
+          <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
+            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, marginHorizontal: 12 }}>
+            <Text style={styles.photoViewerTitle} numberOfLines={1}>
+              {material.title}
+            </Text>
+            <Text style={styles.photoViewerSubtitle} numberOfLines={1}>
+              {material.courseName} • Pertemuan {material.meetingNumber}
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={styles.cameraCircleBtn} onPress={handleShare} activeOpacity={0.75}>
+              <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.cameraCircleBtn, { backgroundColor: COLORS.rose + '33' }]}
+              onPress={() => onDelete(material.id)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+
+        {/* Image Full Center */}
+        <View style={styles.photoViewerImageWrapper}>
+          <Image
+            source={{ uri: material.imageUri }}
+            style={styles.photoViewerImage}
+            resizeMode="contain"
+          />
+        </View>
+
+        {/* Bottom Info Bar */}
+        <SafeAreaView edges={['bottom']} style={styles.photoViewerBottomBar}>
+          <View style={styles.photoViewerBottomMetaRow}>
+            <Ionicons name="document-text-outline" size={16} color={COLORS.accent} />
+            <Text style={styles.photoViewerBottomTopic} numberOfLines={2}>
+              {material.meetingTopic || 'Hasil Scan Papan Tulis / Slide'}
+            </Text>
+          </View>
+          {material.userNotes ? (
+            <Text style={styles.photoViewerNotesText} numberOfLines={3}>
+              📝 Catatan: {material.userNotes}
+            </Text>
+          ) : null}
+          <View style={styles.photoViewerStorageBadge}>
+            <Ionicons name="save-outline" size={13} color="#94A3B8" />
+            <Text style={styles.photoViewerStorageText}>
+              Tersimpan Permanen di Memori HP (Offline Ready)
+            </Text>
+          </View>
+        </SafeAreaView>
       </View>
     </Modal>
   );
@@ -6000,14 +8461,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '800',
   },
-  bottomNavActiveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.primary,
-    position: 'absolute',
-    bottom: 2,
-  },
 
   // =================================================================
   // WEEK 6 STYLES: Offline Banner, Error Card, Loading Indicator
@@ -6709,6 +9162,607 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
+  },
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 3: Edit Profile Modal & Profile Card Styles
+  // =================================================================
+  editProfilePillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  editProfilePillBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  editProfileContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  editProfileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  editProfileHeaderBtn: {
+    padding: 6,
+  },
+  editProfileHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  editProfileSaveBtn: {
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    minWidth: 64,
+    alignItems: 'center',
+  },
+  editProfileSaveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  editProfileAvatarSection: {
+    alignItems: 'center',
+    marginVertical: 18,
+  },
+  editProfileAvatarWrapper: {
+    position: 'relative',
+  },
+  editProfileAvatarImage: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 3,
+    borderColor: '#4F46E5',
+  },
+  editProfileAvatarPlaceholder: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#4F46E5',
+  },
+  editProfileAvatarPlaceholderText: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  editProfileAvatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#4F46E5',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  editProfileChangePhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 20,
+  },
+  editProfileChangePhotoBtnText: {
+    color: '#4F46E5',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  editProfilePreviewBadge: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  editProfileFormGroup: {
+    marginBottom: 16,
+  },
+  editProfileSectionHeader: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+    marginTop: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.primaryLight,
+  },
+  editProfileLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  editProfileInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  editProfileHelperText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 4,
+    lineHeight: 15,
+  },
+  editProfileMainSubmitBtn: {
+    backgroundColor: '#4F46E5',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  editProfileMainSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  editProfileCancelBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileCancelBtnText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // =================================================================
+  // WEEK 10 STYLES: Lokasi Belajar – GPS, Maps, Geocoding, Geofencing
+  // =================================================================
+
+  // Permission Screen
+  locPermCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 16,
+    marginTop: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  locPermIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  locPermTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  locPermDesc: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  locPermInfo: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  locPermDeniedBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: COLORS.amberLight,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 16,
+    width: '100%',
+  },
+  locPermDeniedText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 18,
+  },
+  locPermGrantBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  locPermGrantBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  // Section Cards
+  locSectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  locSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  locSectionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locSectionTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+  },
+  locStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  locStatusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Loading & Error
+  locLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+  },
+  locLoadingText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  locErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: COLORS.roseLight,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginBottom: 10,
+  },
+  locErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.rose,
+    lineHeight: 18,
+  },
+  locEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  locEmptyText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  locEmptyInlineText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    paddingVertical: 8,
+  },
+
+  // Coordinate Grid
+  locCoordGrid: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  locCoordItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  locCoordDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: COLORS.cardBorder,
+  },
+  locCoordLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  locCoordValue: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  locRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+  },
+  locRefreshBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Map
+  locMapContainer: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locMap: {
+    width: '100%',
+    height: 240,
+  },
+  locMapPlaceholder: {
+    height: 180,
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  locMapPlaceholderText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    lineHeight: 18,
+  },
+  locCenterMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+  locCenterMapBtnText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+
+  // Address
+  locAddressBox: {
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  locAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  locAddressValue: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    lineHeight: 18,
+  },
+
+  // Geofencing
+  locGeofenceDesc: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  locGeofenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locGeofenceItemActive: {
+    borderColor: COLORS.emerald,
+    backgroundColor: COLORS.emeraldLight,
+  },
+  locGeofenceItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  locGeofenceStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  locGeofenceName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 2,
+  },
+  locGeofenceInfo: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 4,
+  },
+  locGeofenceStatusPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+    marginTop: 2,
+  },
+  locGeofenceStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  locGeofenceDeleteBtn: {
+    padding: 8,
+    marginLeft: 4,
+  },
+  locAddGeofenceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+    marginTop: 4,
+    justifyContent: 'center',
+  },
+  locAddGeofenceBtnText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+  locAddGeofenceForm: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  locAddGeofenceFormTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+    marginBottom: 2,
+  },
+  locGeofenceInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locGeofenceSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+  },
+  locGeofenceSaveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  locGeofenceCancelBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locGeofenceCancelBtnText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Battery Info
+  locBatteryInfo: {
+    fontSize: 13,
+    color: COLORS.primaryDark,
+    lineHeight: 22,
   },
 
 });
