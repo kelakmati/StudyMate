@@ -32,6 +32,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
+import * as Location from 'expo-location';
+import MapView, { Marker, Circle } from 'react-native-maps';
 
 // =================================================================
 // 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
@@ -86,6 +88,7 @@ const getUserStorageKeys = (userId) => ({
   NOTIFICATIONS: `@studymate_u${userId}_notifications_v3`,
   SETTINGS: `@studymate_u${userId}_settings_v3`,
   USER_PROFILE: `@studymate_u${userId}_profile_v3`,
+  GEOFENCES: `@studymate_u${userId}_geofences_v1`, // WEEK 10 – Geofence per-user
 });
 
 // =================================================================
@@ -98,7 +101,7 @@ const getUserStorageKeys = (userId) => ({
 // Cara cek IP lokal: buka CMD → ketik: ipconfig
 // Contoh: 'http://192.168.1.10/studymate-api'
 // =================================================================
-const API_URL = 'http://192.168.1.8/studymate-api'; // ← GANTI IP INI
+const API_URL = 'http://192.168.1.6/studymate-api'; // ← GANTI IP INI
 
 // Secure key untuk menyimpan token di SecureStore
 const SECURE_KEYS = {
@@ -1133,6 +1136,508 @@ const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
 );
 
 // =================================================================
+// WEEK 10 – LocationScreen: Komponen React proper (bukan render func)
+// Menerima semua state & handler dari StudyMateApp sebagai props.
+// useRef dan useEffect dipanggil di dalam komponen ini (Rules of Hooks OK).
+// =================================================================
+function LocationScreen({
+  scrollContentPaddingBottom,
+  unreadNotifCount,
+  onOpenNotif,
+  locationPermStatus,
+  currentLocation,
+  isLocationLoading,
+  locationError,
+  reverseAddress,
+  isGeocodingLoading,
+  geofences,
+  geofenceStatuses,
+  isAddGeofenceVisible,
+  newGeofenceName,
+  newGeofenceRadius,
+  onSetNewGeofenceName,
+  onSetNewGeofenceRadius,
+  onSetIsAddGeofenceVisible,
+  onRequestPermission,
+  onGetCurrentLocation,
+  onAddGeofence,
+  onDeleteGeofence,
+  calculateDistance,
+  apiUserId,
+  onLoadGeofences,
+  onStartLocationWatch,
+  onStopLocationWatch,
+}) {
+  // ── useRef untuk MapView (sah di dalam komponen React) ────────
+  const mapRef = useRef(null);
+
+  // ── useEffect: inisialisasi saat komponen mount ───────────────
+  // Dijalankan ketika tab Lokasi dibuka (mount) dan dibersihkan saat unmount.
+  // BATTERY OPTIMIZATION: watch position hanya aktif di tab ini.
+  useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      if (!mounted) return;
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (!mounted) return;
+        // Update permission status di parent via handler
+        if (status === 'granted' && !currentLocation) {
+          await onGetCurrentLocation();
+        } else if (status !== 'granted') {
+          // Trigger cek permission agar UI permission screen terupdate
+          await onRequestPermission().catch(() => { });
+        }
+      } catch (_) { }
+      if (apiUserId && mounted) {
+        await onLoadGeofences(apiUserId);
+      }
+      if (mounted) await onStartLocationWatch();
+    };
+    init();
+    return () => {
+      mounted = false;
+      onStopLocationWatch();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const hasLocation = currentLocation !== null;
+
+  // ── Permission belum diberikan ────────────────────────────────
+  if (locationPermStatus !== 'granted') {
+    return (
+      <ScrollView
+        style={styles.screenContainer}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <AppHeader
+          title="Lokasi Belajar"
+          subtitle="GPS, Peta & Area Studi"
+          unreadCount={unreadNotifCount}
+          onOpenNotif={onOpenNotif}
+        />
+
+        <View style={styles.locPermCard}>
+          <View style={styles.locPermIconCircle}>
+            <Ionicons name="location" size={36} color={COLORS.primary} />
+          </View>
+          <Text style={styles.locPermTitle}>Izin Lokasi Diperlukan</Text>
+          <Text style={styles.locPermDesc}>
+            StudyMate membutuhkan akses lokasi untuk menampilkan posisi kamu pada peta,
+            mengetahui alamat sekitar, dan mendeteksi area kampus atau lokasi belajar yang ditentukan.
+          </Text>
+          <Text style={styles.locPermInfo}>
+            Izin ini hanya digunakan selama aplikasi aktif (foreground). Lokasi tidak dipantau di latar belakang.
+          </Text>
+
+          {locationPermStatus === 'denied' && (
+            <View style={styles.locPermDeniedBox}>
+              <Ionicons name="warning-outline" size={16} color={COLORS.amber} />
+              <Text style={styles.locPermDeniedText}>
+                Izin ditolak. Buka Pengaturan HP → Aplikasi → StudyMate → Izin → Lokasi.
+              </Text>
+            </View>
+          )}
+
+          {locationError ? (
+            <View style={[styles.locPermDeniedBox, { borderColor: COLORS.rose, backgroundColor: COLORS.roseLight }]}>
+              <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} />
+              <Text style={[styles.locPermDeniedText, { color: COLORS.rose }]}>{locationError}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.locPermGrantBtn}
+            onPress={onRequestPermission}
+            activeOpacity={0.8}
+            disabled={isLocationLoading}
+          >
+            {isLocationLoading
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+            }
+            <Text style={styles.locPermGrantBtnText}>
+              {isLocationLoading ? 'Memproses...' : 'Izinkan Akses Lokasi'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ── Permission diberikan – tampilkan fitur penuh ──────────────
+  return (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }]}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+    >
+      <AppHeader
+        title="Lokasi Belajar"
+        subtitle="GPS, Peta & Area Studi"
+        unreadCount={unreadNotifCount}
+        onOpenNotif={onOpenNotif}
+      />
+
+      {/* ── TASK 01: GPS LOCATION ─────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.primaryLight }]}>
+            <Ionicons name="navigate" size={18} color={COLORS.primary} />
+          </View>
+          <Text style={styles.locSectionTitle}>Lokasi Saat Ini</Text>
+          <View style={[styles.locStatusPill, { backgroundColor: COLORS.emeraldLight }]}>
+            <Ionicons name="checkmark-circle" size={12} color={COLORS.emerald} />
+            <Text style={[styles.locStatusPillText, { color: COLORS.emerald }]}>GPS Aktif</Text>
+          </View>
+        </View>
+
+        {isLocationLoading ? (
+          <View style={styles.locLoadingRow}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.locLoadingText}>Mengambil lokasi GPS...</Text>
+          </View>
+        ) : null}
+
+        {locationError && !isLocationLoading ? (
+          <View style={styles.locErrorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} />
+            <Text style={styles.locErrorText}>{locationError}</Text>
+          </View>
+        ) : null}
+
+        {!hasLocation && !isLocationLoading && !locationError ? (
+          <View style={styles.locEmptyState}>
+            <Ionicons name="location-outline" size={32} color={COLORS.textMuted} />
+            <Text style={styles.locEmptyText}>Lokasi belum diambil. Tekan "Perbarui Lokasi" untuk mulai.</Text>
+          </View>
+        ) : null}
+
+        {hasLocation ? (
+          <View style={styles.locCoordGrid}>
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Latitude</Text>
+              <Text style={styles.locCoordValue}>{currentLocation.latitude.toFixed(6)}°</Text>
+            </View>
+            <View style={styles.locCoordDivider} />
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Longitude</Text>
+              <Text style={styles.locCoordValue}>{currentLocation.longitude.toFixed(6)}°</Text>
+            </View>
+            <View style={styles.locCoordDivider} />
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Accuracy</Text>
+              <Text style={styles.locCoordValue}>
+                {currentLocation.accuracy ? `±${Math.round(currentLocation.accuracy)} m` : 'N/A'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.locRefreshBtn}
+          onPress={onGetCurrentLocation}
+          activeOpacity={0.8}
+          disabled={isLocationLoading}
+        >
+          <Ionicons name="refresh" size={16} color="#FFFFFF" />
+          <Text style={styles.locRefreshBtnText}>Perbarui Lokasi</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── TASK 02: MAP ──────────────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.secondaryLight }]}>
+            <Ionicons name="map" size={18} color={COLORS.secondary} />
+          </View>
+          <Text style={styles.locSectionTitle}>Peta Lokasi</Text>
+        </View>
+
+        {!hasLocation ? (
+          <View style={styles.locMapPlaceholder}>
+            <Ionicons name="map-outline" size={40} color={COLORS.textMuted} />
+            <Text style={styles.locMapPlaceholderText}>Ambil lokasi GPS terlebih dahulu untuk menampilkan peta.</Text>
+          </View>
+        ) : (
+          <View>
+            <View style={styles.locMapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.locMap}
+                initialRegion={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                region={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                showsUserLocation={false}
+                showsMyLocationButton={false}
+                showsCompass
+                loadingEnabled
+              >
+                <Marker
+                  coordinate={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                  title="Posisi Kamu"
+                  description={`${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`}
+                  pinColor={COLORS.primary}
+                />
+
+                {currentLocation.accuracy ? (
+                  <Circle
+                    center={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                    radius={currentLocation.accuracy}
+                    strokeColor="rgba(79,70,229,0.4)"
+                    fillColor="rgba(79,70,229,0.08)"
+                  />
+                ) : null}
+
+                {geofences.map((fence) => (
+                  <React.Fragment key={fence.id}>
+                    <Marker
+                      coordinate={{ latitude: fence.latitude, longitude: fence.longitude }}
+                      title={fence.name}
+                      description={`Radius: ${fence.radius} m`}
+                      pinColor={geofenceStatuses[fence.id] === 'inside' ? '#10B981' : '#F59E0B'}
+                    />
+                    <Circle
+                      center={{ latitude: fence.latitude, longitude: fence.longitude }}
+                      radius={fence.radius}
+                      strokeColor={geofenceStatuses[fence.id] === 'inside' ? 'rgba(16,185,129,0.6)' : 'rgba(245,158,11,0.6)'}
+                      fillColor={geofenceStatuses[fence.id] === 'inside' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.08)'}
+                    />
+                  </React.Fragment>
+                ))}
+              </MapView>
+            </View>
+
+            <TouchableOpacity
+              style={styles.locCenterMapBtn}
+              onPress={() => {
+                if (mapRef.current && currentLocation) {
+                  mapRef.current.animateToRegion({
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  }, 500);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="locate" size={16} color={COLORS.primary} />
+              <Text style={styles.locCenterMapBtnText}>Pusatkan ke Lokasi Saya</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* ── TASK 03A: REVERSE GEOCODING ───────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.accentLight }]}>
+            <Ionicons name="pin" size={18} color={COLORS.accent} />
+          </View>
+          <Text style={styles.locSectionTitle}>Alamat Saat Ini</Text>
+          {isGeocodingLoading ? (
+            <ActivityIndicator size="small" color={COLORS.accent} style={{ marginLeft: 8 }} />
+          ) : null}
+        </View>
+
+        {!hasLocation && !isGeocodingLoading ? (
+          <Text style={styles.locEmptyInlineText}>Ambil lokasi GPS untuk melihat alamat.</Text>
+        ) : null}
+
+        {hasLocation && !reverseAddress && !isGeocodingLoading ? (
+          <View style={styles.locErrorBox}>
+            <Ionicons name="wifi-outline" size={15} color={COLORS.textMuted} />
+            <Text style={[styles.locErrorText, { color: COLORS.textSecondary }]}>
+              Alamat tidak dapat ditemukan. Pastikan koneksi internet aktif.
+            </Text>
+          </View>
+        ) : null}
+
+        {reverseAddress ? (
+          <View style={styles.locAddressBox}>
+            {reverseAddress.name && reverseAddress.name !== reverseAddress.street ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="business-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.name}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.street ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="trail-sign-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.street}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.district ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="grid-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.district}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.city ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="storefront-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.city}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.region ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="map-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.region}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.postalCode ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="mail-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>Kode Pos: {reverseAddress.postalCode}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* ── TASK 03B: GEOFENCING ──────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.amberLight }]}>
+            <Ionicons name="radio-button-on" size={18} color={COLORS.amber} />
+          </View>
+          <Text style={styles.locSectionTitle}>Area Studi (Geofencing)</Text>
+        </View>
+
+        <Text style={styles.locGeofenceDesc}>
+          Tambahkan area kampus atau lokasi belajar. Aplikasi akan mendeteksi ketika kamu memasuki atau meninggalkan area tersebut.
+        </Text>
+
+        {geofences.length === 0 ? (
+          <View style={styles.locEmptyState}>
+            <Ionicons name="radio-button-off-outline" size={28} color={COLORS.textMuted} />
+            <Text style={styles.locEmptyText}>Belum ada area yang ditambahkan.</Text>
+          </View>
+        ) : (
+          geofences.map((fence) => {
+            const status = geofenceStatuses[fence.id];
+            const isInside = status === 'inside';
+            const distText = currentLocation
+              ? `${Math.round(calculateDistance(currentLocation.latitude, currentLocation.longitude, fence.latitude, fence.longitude))} m dari titik pusat`
+              : 'Ambil lokasi untuk melihat jarak';
+            return (
+              <View key={fence.id} style={[styles.locGeofenceItem, isInside && styles.locGeofenceItemActive]}>
+                <View style={styles.locGeofenceItemLeft}>
+                  <View style={[styles.locGeofenceStatusDot, { backgroundColor: isInside ? COLORS.emerald : COLORS.textMuted }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locGeofenceName}>{fence.name}</Text>
+                    <Text style={styles.locGeofenceInfo}>Radius: {fence.radius} m · {distText}</Text>
+                    <View style={[styles.locGeofenceStatusPill, { backgroundColor: isInside ? COLORS.emeraldLight : COLORS.inputBackground }]}>
+                      <Text style={[styles.locGeofenceStatusText, { color: isInside ? COLORS.emerald : COLORS.textMuted }]}>
+                        {status === 'inside' ? '✓ Di Dalam Area' : status === 'outside' ? '✗ Di Luar Area' : '— Belum Diperiksa'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() =>
+                    Alert.alert('Hapus Area', `Hapus area "${fence.name}"?`, [
+                      { text: 'Batal', style: 'cancel' },
+                      { text: 'Hapus', style: 'destructive', onPress: () => onDeleteGeofence(fence.id) },
+                    ])
+                  }
+                  style={styles.locGeofenceDeleteBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+
+        {isAddGeofenceVisible ? (
+          <View style={styles.locAddGeofenceForm}>
+            <Text style={styles.locAddGeofenceFormTitle}>Area Baru</Text>
+            <TextInput
+              style={styles.locGeofenceInput}
+              placeholder="Nama area (cth: Kampus, Perpustakaan)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newGeofenceName}
+              onChangeText={onSetNewGeofenceName}
+              maxLength={50}
+            />
+            <TextInput
+              style={styles.locGeofenceInput}
+              placeholder="Radius (meter, cth: 200)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newGeofenceRadius}
+              onChangeText={onSetNewGeofenceRadius}
+              keyboardType="numeric"
+              maxLength={6}
+            />
+            {!hasLocation ? (
+              <View style={styles.locErrorBox}>
+                <Ionicons name="warning-outline" size={14} color={COLORS.amber} />
+                <Text style={[styles.locErrorText, { color: COLORS.amber }]}>
+                  Ambil lokasi GPS terlebih dahulu. Titik pusat area ditentukan dari posisi kamu saat ini.
+                </Text>
+              </View>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <TouchableOpacity style={[styles.locGeofenceSaveBtn, { flex: 1 }]} onPress={onAddGeofence} activeOpacity={0.8}>
+                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                <Text style={styles.locGeofenceSaveBtnText}>Simpan Area</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.locGeofenceCancelBtn, { flex: 1 }]}
+                onPress={() => { onSetIsAddGeofenceVisible(false); onSetNewGeofenceName(''); onSetNewGeofenceRadius('200'); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.locGeofenceCancelBtnText}>Batal</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.locAddGeofenceBtn}
+            onPress={() => onSetIsAddGeofenceVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={COLORS.primary} />
+            <Text style={styles.locAddGeofenceBtnText}>Tambah Area Baru (Gunakan Lokasi Saat Ini)</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── BATTERY OPTIMIZATION INFO ─────────────────── */}
+      <View style={[styles.locSectionCard, { backgroundColor: COLORS.primaryLight, borderColor: '#C7D2FE' }]}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: '#E0E7FF' }]}>
+            <Ionicons name="battery-charging" size={18} color={COLORS.primary} />
+          </View>
+          <Text style={[styles.locSectionTitle, { color: COLORS.primaryDark }]}>Optimasi Baterai</Text>
+        </View>
+        <Text style={styles.locBatteryInfo}>
+          {'• '}<Text style={{ fontWeight: '700' }}>Akurasi Balanced</Text>{' — tidak menguras GPS secara berlebihan.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Update minimal 15 detik atau 20 meter</Text>{' perpindahan.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Foreground only</Text>{' — tracking berhenti ketika tab berpindah.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Subscription dibersihkan otomatis</Text>{' saat meninggalkan halaman ini.'}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// =================================================================
 // 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
 // =================================================================
 function StudyMateApp() {
@@ -1210,6 +1715,7 @@ function StudyMateApp() {
 
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState(null);
+  const [isSavingTask, setIsSavingTask] = useState(false);
 
   // Core Data States
   const [courses, setCourses] = useState([]);
@@ -1268,6 +1774,28 @@ function StudyMateApp() {
   // =================================================================
   const [isShakeRefreshing, setIsShakeRefreshing] = useState(false);
   const [shakeBanner, setShakeBanner] = useState(null); // { visible, message, status }
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 1: GPS Location States
+  // expo-location: permission, koordinat, accuracy
+  // =================================================================
+  const [locationPermStatus, setLocationPermStatus] = useState(null); // null | 'undetermined' | 'granted' | 'denied'
+  const [currentLocation, setCurrentLocation] = useState(null); // { latitude, longitude, accuracy }
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 3: Reverse Geocoding & Geofence States
+  // =================================================================
+  const [reverseAddress, setReverseAddress] = useState(null); // { street, district, subregion, city, region }
+  const [isGeocodingLoading, setIsGeocodingLoading] = useState(false);
+  const [geofences, setGeofences] = useState([]); // array of { id, name, latitude, longitude, radius }
+  const [geofenceStatuses, setGeofenceStatuses] = useState({}); // { [id]: 'inside' | 'outside' }
+  const [geofenceAlerted, setGeofenceAlerted] = useState({}); // { [id]: 'inside' | 'outside' } – last alerted state
+  const [isAddGeofenceVisible, setIsAddGeofenceVisible] = useState(false);
+  const [newGeofenceName, setNewGeofenceName] = useState('');
+  const [newGeofenceRadius, setNewGeofenceRadius] = useState('200');
+  const locationSubRef = useRef(null); // ref for location subscription cleanup
 
   // Settings State (with Week 7 shakeToRefresh default true)
   const [settings, setSettings] = useState({
@@ -2013,6 +2541,18 @@ function StudyMateApp() {
               semester: null,
               studyStreakDays: 0,
             });
+            // WEEK 10: Reset location state on logout
+            setCurrentLocation(null);
+            setReverseAddress(null);
+            setLocationError(null);
+            setGeofences([]);
+            setGeofenceStatuses({});
+            setGeofenceAlerted({});
+            // Stop any active location subscription
+            if (locationSubRef.current) {
+              locationSubRef.current.remove();
+              locationSubRef.current = null;
+            }
 
             // Bersihkan seluruh state sesi
             setApiUser(null);
@@ -2481,7 +3021,6 @@ function StudyMateApp() {
   // 5. DELETE: handleDeleteTask() menghapus tugas via DELETE API
   // 6. Error Handling: Try/Catch + Alert + Revert State (Optimistic Rollback)
   // =================================================================
-  const [isSavingTask, setIsSavingTask] = useState(false);
 
   const handleToggleTaskCompleted = async (taskId) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -4467,6 +5006,336 @@ function StudyMateApp() {
   );
 
   // =================================================================
+  // WEEK 10 – ANGGOTA 1: GPS Permission & Location Fetch
+  // =================================================================
+
+  /**
+   * handleRequestLocationPermission:
+   * Meminta izin akses foreground location menggunakan expo-location.
+   * Menangani berbagai status: undetermined, granted, denied, blocked.
+   */
+  const handleRequestLocationPermission = async () => {
+    setIsLocationLoading(true);
+    setLocationError(null);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermStatus(status);
+      if (status === 'granted') {
+        await handleGetCurrentLocation();
+      } else if (status === 'denied') {
+        setLocationError('Izin lokasi ditolak. Buka Pengaturan HP untuk mengaktifkan izin lokasi.');
+      }
+    } catch (e) {
+      setLocationError('Gagal meminta izin lokasi: ' + (e.message || 'Error tidak diketahui'));
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
+  /**
+   * handleGetCurrentLocation:
+   * ANGGOTA 1 – Mengambil koordinat GPS aktual (latitude, longitude, accuracy).
+   * Menggunakan akurasi balanced agar efisien baterai.
+   * Juga menjalankan reverse geocoding dan pemeriksaan geofence.
+   */
+  const handleGetCurrentLocation = async () => {
+    setIsLocationLoading(true);
+    setLocationError(null);
+    try {
+      // Periksa apakah GPS/Location service aktif
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        setLocationError('GPS tidak aktif. Aktifkan Layanan Lokasi di pengaturan HP.');
+        setIsLocationLoading(false);
+        return;
+      }
+
+      // BATTERY OPTIMIZATION: Gunakan Balanced accuracy, bukan High
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,       // min 5 detik antar update
+        distanceInterval: 10,     // min 10 meter perpindahan
+      });
+
+      const coords = {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        accuracy: loc.coords.accuracy,
+      };
+      setCurrentLocation(coords);
+
+      // Jalankan reverse geocoding dan geofence check
+      await handleReverseGeocode(coords);
+      checkGeofenceStatuses(coords, geofences);
+    } catch (e) {
+      if (e.code === 'E_LOCATION_SERVICES_DISABLED') {
+        setLocationError('GPS tidak aktif. Aktifkan Layanan Lokasi di pengaturan HP.');
+      } else {
+        setLocationError('Gagal mendapatkan lokasi: ' + (e.message || 'Error tidak diketahui'));
+      }
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
+  /**
+   * handleCheckLocationPermission:
+   * Memeriksa status izin saat ini tanpa meminta ulang.
+   */
+  const handleCheckLocationPermission = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      setLocationPermStatus(status);
+      if (status === 'granted') {
+        await handleGetCurrentLocation();
+      }
+    } catch (e) {
+      setLocationError('Gagal memeriksa izin lokasi.');
+    }
+  };
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 2: Location Subscription (Watch Position)
+  // Battery Optimization: distanceInterval & timeInterval filter
+  // =================================================================
+
+  /**
+   * handleStartLocationWatch:
+   * Memulai pemantauan lokasi secara periodik (foreground only).
+   * Subscription dibersihkan ketika tab berpindah atau komponen dilepas.
+   * BATTERY: hanya update setiap 15 detik atau 20 meter perpindahan.
+   */
+  const handleStartLocationWatch = async () => {
+    if (locationSubRef.current) return; // Jangan duplikasi subscription
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const sub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 15000,     // Update min 15 detik sekali
+          distanceInterval: 20,    // Update min 20 meter perpindahan
+        },
+        (loc) => {
+          const coords = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy,
+          };
+          setCurrentLocation(coords);
+          // Periksa status geofence setiap ada update lokasi
+          setGeofences((prevFences) => {
+            checkGeofenceStatuses(coords, prevFences);
+            return prevFences;
+          });
+        }
+      );
+      locationSubRef.current = sub;
+    } catch (e) {
+      // Subscription gagal — tidak perlu crash aplikasi
+    }
+  };
+
+  /**
+   * handleStopLocationWatch:
+   * Menghentikan subscription lokasi dan membersihkan resource.
+   */
+  const handleStopLocationWatch = () => {
+    if (locationSubRef.current) {
+      locationSubRef.current.remove();
+      locationSubRef.current = null;
+    }
+  };
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 3A: Reverse Geocoding
+  // Mengonversi koordinat GPS menjadi informasi alamat
+  // =================================================================
+
+  /**
+   * handleReverseGeocode:
+   * Mengambil alamat dari koordinat menggunakan expo-location.
+   * Menangani koneksi internet terputus dan alamat tidak ditemukan.
+   */
+  const handleReverseGeocode = async (coords) => {
+    if (!coords) return;
+    setIsGeocodingLoading(true);
+    try {
+      const results = await Location.reverseGeocodeAsync({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      });
+      if (results && results.length > 0) {
+        const r = results[0];
+        setReverseAddress({
+          street: [r.streetNumber, r.street].filter(Boolean).join(' ') || null,
+          district: r.district || r.subregion || null,
+          subregion: r.subregion || null,
+          city: r.city || r.region || null,
+          region: r.region || null,
+          country: r.country || null,
+          postalCode: r.postalCode || null,
+          name: r.name || null,
+        });
+      } else {
+        setReverseAddress(null);
+      }
+    } catch (e) {
+      // Koneksi internet terputus atau service tidak tersedia
+      setReverseAddress(null);
+    } finally {
+      setIsGeocodingLoading(false);
+    }
+  };
+
+  // =================================================================
+  // WEEK 10 – ANGGOTA 3B: Geofencing
+  // Menyimpan area, menghitung jarak, mendeteksi masuk/keluar area
+  // =================================================================
+
+  /**
+   * calculateDistance:
+   * Menghitung jarak antara dua koordinat menggunakan Haversine formula (meter).
+   */
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000; // Radius bumi dalam meter
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  /**
+   * checkGeofenceStatuses:
+   * Memeriksa apakah pengguna berada di dalam atau luar setiap geofence.
+   * Hanya memunculkan alert sekali per peristiwa masuk/keluar.
+   */
+  const checkGeofenceStatuses = (coords, fenceList) => {
+    if (!coords || !fenceList || fenceList.length === 0) return;
+    const newStatuses = {};
+    fenceList.forEach((fence) => {
+      const dist = calculateDistance(
+        coords.latitude, coords.longitude,
+        fence.latitude, fence.longitude
+      );
+      newStatuses[fence.id] = dist <= fence.radius ? 'inside' : 'outside';
+    });
+    setGeofenceStatuses(newStatuses);
+
+    // Alert hanya sekali per perubahan status (masuk atau keluar)
+    setGeofenceAlerted((prevAlerted) => {
+      const updatedAlerted = { ...prevAlerted };
+      fenceList.forEach((fence) => {
+        const newStatus = newStatuses[fence.id];
+        const lastAlerted = prevAlerted[fence.id];
+        if (newStatus !== lastAlerted) {
+          if (newStatus === 'inside') {
+            Alert.alert(
+              '📍 Memasuki Area',
+              `Selamat datang! Kamu telah memasuki area "${fence.name}".`,
+              [{ text: 'OK' }]
+            );
+          } else if (newStatus === 'outside' && lastAlerted === 'inside') {
+            Alert.alert(
+              '📍 Meninggalkan Area',
+              `Lokasi kamu sudah berada di luar area "${fence.name}".`,
+              [{ text: 'OK' }]
+            );
+          }
+          updatedAlerted[fence.id] = newStatus;
+        }
+      });
+      return updatedAlerted;
+    });
+  };
+
+  /**
+   * handleAddGeofence:
+   * Menambah area geofence baru menggunakan koordinat GPS saat ini.
+   * Menyimpan ke AsyncStorage dengan namespace per pengguna.
+   */
+  const handleAddGeofence = async () => {
+    if (!currentLocation) {
+      Alert.alert('Lokasi Belum Tersedia', 'Ambil lokasi GPS terlebih dahulu sebelum membuat area.');
+      return;
+    }
+    if (!newGeofenceName.trim()) {
+      Alert.alert('Nama Area Kosong', 'Masukkan nama untuk area geofence ini.');
+      return;
+    }
+    const radiusNum = parseInt(newGeofenceRadius, 10);
+    if (isNaN(radiusNum) || radiusNum < 10 || radiusNum > 50000) {
+      Alert.alert('Radius Tidak Valid', 'Masukkan radius antara 10 hingga 50.000 meter.');
+      return;
+    }
+    const newFence = {
+      id: `gf_${Date.now()}`,
+      name: newGeofenceName.trim(),
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      radius: radiusNum,
+    };
+    const updated = [...geofences, newFence];
+    setGeofences(updated);
+    setIsAddGeofenceVisible(false);
+    setNewGeofenceName('');
+    setNewGeofenceRadius('200');
+
+    // Simpan ke AsyncStorage per pengguna
+    const userId = apiUser?.id;
+    if (userId) {
+      try {
+        const key = getUserStorageKeys(userId).GEOFENCES;
+        await AsyncStorage.setItem(key, JSON.stringify(updated));
+      } catch (_) { }
+    }
+
+    // Langsung periksa status untuk fence baru
+    checkGeofenceStatuses(currentLocation, updated);
+    Alert.alert('Area Disimpan', `Area "${newFence.name}" berhasil ditambahkan dengan radius ${radiusNum} meter.`);
+  };
+
+  /**
+   * handleDeleteGeofence:
+   * Menghapus geofence dari daftar dan AsyncStorage.
+   */
+  const handleDeleteGeofence = async (fenceId) => {
+    const updated = geofences.filter((f) => f.id !== fenceId);
+    setGeofences(updated);
+    const updatedStatuses = { ...geofenceStatuses };
+    delete updatedStatuses[fenceId];
+    setGeofenceStatuses(updatedStatuses);
+    const userId = apiUser?.id;
+    if (userId) {
+      try {
+        const key = getUserStorageKeys(userId).GEOFENCES;
+        await AsyncStorage.setItem(key, JSON.stringify(updated));
+      } catch (_) { }
+    }
+  };
+
+  /**
+   * handleLoadGeofences:
+   * Memuat konfigurasi geofence dari AsyncStorage untuk pengguna yang login.
+   */
+  const handleLoadGeofences = async (userId) => {
+    if (!userId) return;
+    try {
+      const key = getUserStorageKeys(userId).GEOFENCES;
+      const raw = await AsyncStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setGeofences(parsed);
+      }
+    } catch (_) { }
+  };
+
+  // =================================================================
   // 10. BOTTOM NAVIGATION BAR (Anggota 3)
   // =================================================================
   const renderBottomNav = () => {
@@ -4476,6 +5345,7 @@ function StudyMateApp() {
       { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
       { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
       { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+      { id: 'Location', label: 'Lokasi', iconActive: 'location', iconInactive: 'location-outline' },
     ];
 
     return (
@@ -4546,6 +5416,36 @@ function StudyMateApp() {
         {currentTab === 'Materials' && renderMaterialsScreen()}
         {currentTab === 'Tasks' && renderTasksScreen()}
         {currentTab === 'Schedule' && renderScheduleProfileScreen()}
+        {currentTab === 'Location' && (
+          <LocationScreen
+            scrollContentPaddingBottom={scrollContentPaddingBottom}
+            unreadNotifCount={unreadNotifCount}
+            onOpenNotif={() => setNotifModalVisible(true)}
+            locationPermStatus={locationPermStatus}
+            currentLocation={currentLocation}
+            isLocationLoading={isLocationLoading}
+            locationError={locationError}
+            reverseAddress={reverseAddress}
+            isGeocodingLoading={isGeocodingLoading}
+            geofences={geofences}
+            geofenceStatuses={geofenceStatuses}
+            isAddGeofenceVisible={isAddGeofenceVisible}
+            newGeofenceName={newGeofenceName}
+            newGeofenceRadius={newGeofenceRadius}
+            onSetNewGeofenceName={setNewGeofenceName}
+            onSetNewGeofenceRadius={setNewGeofenceRadius}
+            onSetIsAddGeofenceVisible={setIsAddGeofenceVisible}
+            onRequestPermission={handleRequestLocationPermission}
+            onGetCurrentLocation={handleGetCurrentLocation}
+            onAddGeofence={handleAddGeofence}
+            onDeleteGeofence={handleDeleteGeofence}
+            calculateDistance={calculateDistance}
+            apiUserId={apiUser?.id}
+            onLoadGeofences={handleLoadGeofences}
+            onStartLocationWatch={handleStartLocationWatch}
+            onStopLocationWatch={handleStopLocationWatch}
+          />
+        )}
       </View>
 
       {/* Persistent Bottom Navigation with Safe Area Padding */}
@@ -8441,6 +9341,428 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 14,
     fontWeight: '600',
+  },
+
+  // =================================================================
+  // WEEK 10 STYLES: Lokasi Belajar – GPS, Maps, Geocoding, Geofencing
+  // =================================================================
+
+  // Permission Screen
+  locPermCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 16,
+    marginTop: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  locPermIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  locPermTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  locPermDesc: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  locPermInfo: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  locPermDeniedBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: COLORS.amberLight,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 16,
+    width: '100%',
+  },
+  locPermDeniedText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 18,
+  },
+  locPermGrantBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  locPermGrantBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  // Section Cards
+  locSectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  locSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  locSectionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locSectionTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+  },
+  locStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  locStatusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Loading & Error
+  locLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+  },
+  locLoadingText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  locErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: COLORS.roseLight,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginBottom: 10,
+  },
+  locErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.rose,
+    lineHeight: 18,
+  },
+  locEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  locEmptyText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  locEmptyInlineText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    paddingVertical: 8,
+  },
+
+  // Coordinate Grid
+  locCoordGrid: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  locCoordItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  locCoordDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: COLORS.cardBorder,
+  },
+  locCoordLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  locCoordValue: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  locRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+  },
+  locRefreshBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Map
+  locMapContainer: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locMap: {
+    width: '100%',
+    height: 240,
+  },
+  locMapPlaceholder: {
+    height: 180,
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  locMapPlaceholderText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    lineHeight: 18,
+  },
+  locCenterMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+  locCenterMapBtnText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+
+  // Address
+  locAddressBox: {
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  locAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  locAddressValue: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    lineHeight: 18,
+  },
+
+  // Geofencing
+  locGeofenceDesc: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  locGeofenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locGeofenceItemActive: {
+    borderColor: COLORS.emerald,
+    backgroundColor: COLORS.emeraldLight,
+  },
+  locGeofenceItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  locGeofenceStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  locGeofenceName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 2,
+  },
+  locGeofenceInfo: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 4,
+  },
+  locGeofenceStatusPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+    marginTop: 2,
+  },
+  locGeofenceStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  locGeofenceDeleteBtn: {
+    padding: 8,
+    marginLeft: 4,
+  },
+  locAddGeofenceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+    marginTop: 4,
+    justifyContent: 'center',
+  },
+  locAddGeofenceBtnText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+  locAddGeofenceForm: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  locAddGeofenceFormTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+    marginBottom: 2,
+  },
+  locGeofenceInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locGeofenceSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+  },
+  locGeofenceSaveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  locGeofenceCancelBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  locGeofenceCancelBtnText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Battery Info
+  locBatteryInfo: {
+    fontSize: 13,
+    color: COLORS.primaryDark,
+    lineHeight: 22,
   },
 
 });
