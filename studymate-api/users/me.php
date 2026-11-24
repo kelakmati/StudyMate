@@ -2,13 +2,11 @@
 /**
  * StudyMate API - Protected Endpoint: GET /users/me.php
  * ANGGOTA 3 – Protected API, Integrasi, dan Pengujian
- * 
+ * Week 8 Fix: Tambah university, major, semester ke response
+ *
  * Method: GET
  * URL:    /studymate-api/users/me.php
  * Header: Authorization: Bearer <token>
- * 
- * Endpoint ini hanya dapat diakses oleh pengguna yang terautentikasi.
- * requireAuth() otomatis mengembalikan 401 jika token tidak ada / tidak valid / sudah logout.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -21,11 +19,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 // ── Validasi Token (WAJIB: tanpa token = 401) ─────────────────────────────
-$authPayload = requireAuth(); // Hentikan eksekusi jika tidak terautentikasi
+$authPayload = requireAuth();
 
 // ── Ambil Data User dari Database ─────────────────────────────────────────
 $db = getDb();
-$stmt = $db->prepare('SELECT id, name, email, created_at FROM users WHERE id = ? LIMIT 1');
+$stmt = $db->prepare(
+    'SELECT id, name, email, avatar_path, university, major, semester, created_at FROM users WHERE id = ? LIMIT 1'
+);
 $stmt->execute([$authPayload['sub']]);
 $user = $stmt->fetch();
 
@@ -36,14 +36,17 @@ if (!$user) {
 // ── Response Data User yang Login ─────────────────────────────────────────
 jsonResponse(true, 'Data pengguna berhasil diambil.', [
     'user' => [
-        'id'         => (int) $user['id'],
-        'name'       => $user['name'],
-        'email'      => $user['email'],
-        'created_at' => $user['created_at'],
+        'id'          => (int) $user['id'],
+        'name'        => $user['name'],
+        'email'       => $user['email'],
+        'avatar_path' => $user['avatar_path'],
+        'university'  => $user['university'],
+        'major'       => $user['major'],
+        'semester'    => $user['semester'] !== null ? (int) $user['semester'] : null,
+        'created_at'  => $user['created_at'],
     ],
     'token_info' => [
         'issued_at'  => date('Y-m-d H:i:s', $authPayload['iat']),
         'expires_at' => date('Y-m-d H:i:s', $authPayload['exp']),
     ],
 ]);
-
