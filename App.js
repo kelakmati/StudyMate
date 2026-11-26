@@ -15,6 +15,7 @@ import {
   Share,
   Image,
   Vibration,
+  Linking,
   useWindowDimensions,
 } from 'react-native';
 import {
@@ -33,6 +34,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import MapView, { Marker, Circle } from 'react-native-maps';
 
 // =================================================================
@@ -101,7 +103,7 @@ const getUserStorageKeys = (userId) => ({
 // Cara cek IP lokal: buka CMD → ketik: ipconfig
 // Contoh: 'http://192.168.1.10/studymate-api'
 // =================================================================
-const API_URL = 'http://192.168.1.6/studymate-api'; // ← GANTI IP INI
+const API_URL = 'http://10.25.43.7/studymate-api'; // ← GANTI IP INI
 
 // Secure key untuk menyimpan token di SecureStore
 const SECURE_KEYS = {
@@ -1797,6 +1799,19 @@ function StudyMateApp() {
   const [newGeofenceRadius, setNewGeofenceRadius] = useState('200');
   const locationSubRef = useRef(null); // ref for location subscription cleanup
 
+  // =================================================================
+  // WEEK 11 – ANGGOTA 1: Push Notification States & Refs
+  // =================================================================
+  const [expoPushToken, setExpoPushToken] = useState(null);
+  const [pushNotifPermStatus, setPushNotifPermStatus] = useState(null); // null | 'granted' | 'denied' | 'undetermined'
+  const [isPushTokenRegistered, setIsPushTokenRegistered] = useState(false);
+  const [pushRegistrationError, setPushRegistrationError] = useState(null);
+  const [lastPushNotification, setLastPushNotification] = useState(null); // last received notification
+
+  // Refs for notification listeners (must persist across renders)
+  const notificationListenerRef = useRef(null);
+  const notificationResponseRef = useRef(null);
+
   // Settings State (with Week 7 shakeToRefresh default true)
   const [settings, setSettings] = useState({
     notifyBeforeClass: true,
@@ -2342,6 +2357,161 @@ function StudyMateApp() {
   }, [currentTab, isAuthenticated, apiUser?.id]);
 
   // =================================================================
+  // WEEK 11 – ANGGOTA 1: Push Notification Registration & Listeners
+  // =================================================================
+
+  /**
+   * registerForPushNotificationsAsync:
+   * 1. Minta izin notifikasi dari pengguna
+   * 2. Dapatkan Expo Push Token dari perangkat
+   * 3. Atur notification channel untuk Android
+   */
+  const registerForPushNotificationsAsync = async () => {
+    try {
+      // Periksa izin notifikasi saat ini
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      setPushNotifPermStatus(existingStatus);
+
+      // Minta izin jika belum diberikan
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+        setPushNotifPermStatus(status);
+      }
+
+      if (finalStatus !== 'granted') {
+        console.warn('[Push] Izin notifikasi tidak diberikan:', finalStatus);
+        setPushRegistrationError('Izin notifikasi tidak diberikan oleh pengguna.');
+        return null;
+      }
+
+      // Atur notification channel untuk Android (SEBELUM ambil token)
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('studymate-notifications', {
+          name: 'StudyMate Notifications',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#4F46E5',
+          enableVibrate: true,
+          enableLights: true,
+          showBadge: true,
+          description: 'Notifikasi untuk pengingat tugas, materi, dan jadwal kuliah StudyMate.',
+        });
+      }
+
+      // Dapatkan Expo Push Token
+      // WEEK 11 FIX: Pada Expo SDK 53+, remote push notification tidak didukung di Expo Go.
+      // getExpoPushTokenAsync() akan melempar error di Expo Go Android.
+      // Gunakan Development Build (expo-dev-client) untuk menguji push notification.
+      let token = null;
+      try {
+        const tokenData = await Notifications.getExpoPushTokenAsync();
+        token = tokenData.data;
+        console.log('[Push] Expo Push Token:', token);
+      } catch (tokenError) {
+        const errMsg = tokenError?.message || '';
+        // Deteksi error spesifik Expo Go limitation
+        if (errMsg.includes('removed from Expo Go') || errMsg.includes('development build')) {
+          console.warn('[Push] Expo Go tidak mendukung remote push notification pada SDK 53+.');
+          setPushRegistrationError(
+            'Push Notification remote tidak didukung di Expo Go (SDK 53+). ' +
+            'Gunakan Development Build untuk menguji fitur ini. ' +
+            'Jalankan: npx expo run:android'
+          );
+        } else {
+          console.warn('[Push] Gagal mendapatkan Expo Push Token:', errMsg);
+          setPushRegistrationError(errMsg || 'Gagal mendapatkan Expo Push Token.');
+        }
+        return null;
+      }
+
+      if (token) {
+        setExpoPushToken(token);
+      }
+
+      return token;
+    } catch (error) {
+      console.error('[Push] Error pada proses registrasi push notification:', error);
+      setPushRegistrationError(error.message || 'Gagal mendapatkan push token.');
+      return null;
+    }
+  };
+
+  /**
+   * sendPushTokenToBackend:
+   * WEEK 11 – ANGGOTA 1: Kirim push token ke backend PHP untuk disimpan
+   * di tabel device_tokens agar server dapat mengirim notifikasi.
+   */
+  const sendPushTokenToBackend = async (token) => {
+    if (!token || !isAuthenticated) return;
+    try {
+      const result = await requestApi('/notifications/register-device.php', {
+        method: 'POST',
+        body: {
+          push_token: token,
+          platform: Platform.OS,
+        },
+        requiresAuth: true,
+      });
+
+      if (result.ok && result.data?.success) {
+        console.log('[Push] Token berhasil didaftarkan ke backend:', result.data);
+        setIsPushTokenRegistered(true);
+        setPushRegistrationError(null);
+      } else {
+        console.warn('[Push] Gagal mendaftarkan token:', result.error || result.data?.message);
+        setPushRegistrationError(result.data?.message || 'Gagal mendaftarkan token ke server.');
+      }
+    } catch (error) {
+      console.warn('[Push] Error saat kirim token ke backend:', error.message);
+      setPushRegistrationError('Gagal menghubungi server untuk mendaftarkan token.');
+    }
+  };
+
+  /**
+   * unregisterPushToken:
+   * WEEK 11 – ANGGOTA 1: Nonaktifkan push token di backend saat logout
+   * agar pengguna tidak menerima notifikasi setelah keluar.
+   */
+  const unregisterPushToken = async () => {
+    if (!expoPushToken) return;
+    try {
+      await requestApi('/notifications/unregister-device.php', {
+        method: 'POST',
+        body: { push_token: expoPushToken },
+        requiresAuth: true,
+      });
+      console.log('[Push] Token berhasil dinonaktifkan di backend.');
+    } catch (error) {
+      console.warn('[Push] Error saat unregister token:', error.message);
+    }
+    // Reset state apapun yang terjadi
+    setIsPushTokenRegistered(false);
+  };
+
+  // =================================================================
+  // WEEK 11 – ANGGOTA 1: Auto-register push token setelah login
+  // =================================================================
+  useEffect(() => {
+    if (!isAuthenticated || !apiUser?.id) return;
+    let isCurrent = true;
+
+    const setupPushNotifications = async () => {
+      const token = await registerForPushNotificationsAsync();
+      if (token && isCurrent) {
+        await sendPushTokenToBackend(token);
+      }
+    };
+
+    setupPushNotifications();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isAuthenticated, apiUser?.id]);
+
+  // =================================================================
   // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
   // =================================================================
 
@@ -2443,13 +2613,17 @@ function StudyMateApp() {
     console.log('[LOGIN] Memulai login untuk:', email);
     console.log('[LOGIN] API_URL:', API_URL);
     setIsAuthLoading(true);
+
+    // WEEK 11 FIX: Deklarasikan result di luar try agar dapat diakses di Step 4
+    let loginResult = null;
+
     try {
       // Step 1: Kirim kredensial ke backend PHP
-      const result = await apiPost('/auth/login.php', { email, password });
-      console.log('[LOGIN] Response:', JSON.stringify(result.data).substring(0, 150));
+      loginResult = await apiPost('/auth/login.php', { email, password });
+      console.log('[LOGIN] Response:', JSON.stringify(loginResult.data).substring(0, 150));
 
-      if (result.ok && result.data.success) {
-        const { access_token, user } = result.data;
+      if (loginResult.ok && loginResult.data.success) {
+        const { access_token, user } = loginResult.data;
 
         // Step 2: Simpan token & data ke SecureStore (wrap terpisah agar error tidak stuck)
         try {
@@ -2466,7 +2640,7 @@ function StudyMateApp() {
         setIsAuthenticated(true);
         // isAuthLoading akan di-false oleh finally sebelum loadAllData
       } else {
-        setAuthError(result.data.message || 'Email atau password salah.');
+        setAuthError(loginResult.data.message || 'Email atau password salah.');
       }
     } catch (e) {
       if (e.name === 'AbortError') {
@@ -2481,13 +2655,13 @@ function StudyMateApp() {
 
     // Step 4: Muat data per-user dari API (Week 8: gunakan userId untuk namespace)
     // Muat avatar dari cache per-user terlebih dahulu
-    if (result?.ok && result?.data?.success) {
-      const userId = result.data.user?.id;
+    if (loginResult?.ok && loginResult?.data?.success) {
+      const userId = loginResult.data.user?.id;
       if (userId) {
         const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${userId}`);
         if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
       }
-      loadAllData(result?.data?.user?.id).catch((e) => console.warn('[Login] loadAllData error:', e.message));
+      loadAllData(loginResult.data.user?.id).catch((e) => console.warn('[Login] loadAllData error:', e.message));
     } else {
       loadAllData().catch((e) => console.warn('[Login] loadAllData error:', e.message));
     }
@@ -2510,6 +2684,13 @@ function StudyMateApp() {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
+            // WEEK 11: Nonaktifkan push token di server sebelum token JWT dicabut
+            try {
+              await unregisterPushToken();
+            } catch (e) {
+              console.warn('[Logout] Gagal menonaktifkan push token:', e?.message);
+            }
+
             try {
               // Cabut token di server
               await apiPostAuth('/auth/logout.php');
@@ -2553,6 +2734,12 @@ function StudyMateApp() {
               locationSubRef.current.remove();
               locationSubRef.current = null;
             }
+
+            // WEEK 11: Reset push notification state on logout (User Isolation)
+            setExpoPushToken(null);
+            setIsPushTokenRegistered(false);
+            setPushRegistrationError(null);
+            setLastPushNotification(null);
 
             // Bersihkan seluruh state sesi
             setApiUser(null);
@@ -4527,6 +4714,134 @@ function StudyMateApp() {
             }}
             trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
           />
+        </View>
+      </View>
+
+      {/* WEEK 11: Status & Pengaturan Push Notification Perangkat */}
+      <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
+        Status Push Notification 🔔
+      </Text>
+
+      <View style={styles.settingsContainer}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+            <Ionicons
+              name={pushNotifPermStatus === 'granted' ? 'notifications' : 'notifications-off-outline'}
+              size={20}
+              color={pushNotifPermStatus === 'granted' ? COLORS.emerald : COLORS.amber}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingLabel}>Izin Notifikasi Perangkat</Text>
+              <Text style={styles.settingDesc}>
+                {pushNotifPermStatus === 'granted'
+                  ? 'Diizinkan — perangkat dapat menerima pengingat.'
+                  : pushNotifPermStatus === 'denied'
+                    ? 'Ditolak — aktifkan izin melalui Pengaturan Perangkat.'
+                    : 'Belum dikonfigurasi.'}
+              </Text>
+            </View>
+          </View>
+          <Badge
+            label={
+              pushNotifPermStatus === 'granted'
+                ? 'Aktif'
+                : pushNotifPermStatus === 'denied'
+                  ? 'Ditolak'
+                  : 'Menunggu'
+            }
+            color={
+              pushNotifPermStatus === 'granted'
+                ? COLORS.emerald
+                : pushNotifPermStatus === 'denied'
+                  ? COLORS.rose
+                  : COLORS.amber
+            }
+            bg={
+              pushNotifPermStatus === 'granted'
+                ? COLORS.emeraldLight
+                : pushNotifPermStatus === 'denied'
+                  ? COLORS.roseLight
+                  : COLORS.amberLight
+            }
+          />
+        </View>
+
+        <View style={styles.settingDivider} />
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 12 }}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={styles.settingLabel}>Registrasi Perangkat ke Server</Text>
+            <Text style={styles.settingDesc}>
+              {isPushTokenRegistered
+                ? 'Perangkat terdaftar dan siap menerima push notification.'
+                : 'Perangkat belum terdaftar ke server StudyMate.'}
+            </Text>
+          </View>
+          <Badge
+            label={isPushTokenRegistered ? 'Terdaftar' : 'Belum'}
+            color={isPushTokenRegistered ? COLORS.primary : COLORS.textMuted}
+            bg={isPushTokenRegistered ? COLORS.primaryLight : COLORS.inputBackground}
+          />
+        </View>
+
+        {pushRegistrationError ? (
+          <View
+            style={{
+              backgroundColor: COLORS.amberLight,
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 12,
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 8,
+            }}
+          >
+            <Ionicons name="information-circle-outline" size={18} color={COLORS.amber} style={{ marginTop: 1 }} />
+            <Text style={{ flex: 1, fontSize: 12, color: COLORS.textPrimary, lineHeight: 17 }}>
+              {pushRegistrationError}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {pushNotifPermStatus === 'denied' ? (
+            <TouchableOpacity
+              style={[styles.uploadScheduleButton, { flex: 1, backgroundColor: COLORS.amber }]}
+              onPress={() => Linking.openSettings()}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="settings-outline" size={17} color="#FFFFFF" />
+              <Text style={styles.uploadScheduleButtonText}>Buka Pengaturan HP</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.uploadScheduleButton, { flex: 1 }]}
+              onPress={async () => {
+                const token = await registerForPushNotificationsAsync();
+                if (token) {
+                  await sendPushTokenToBackend(token);
+                  Alert.alert('Berhasil', 'Perangkat berhasil didaftarkan untuk menerima notifikasi.');
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="notifications-outline" size={17} color="#FFFFFF" />
+              <Text style={styles.uploadScheduleButtonText}>
+                {isPushTokenRegistered ? 'Perbarui Registrasi' : 'Aktifkan Notifikasi'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {isPushTokenRegistered && (
+            <TouchableOpacity
+              style={[styles.uploadScheduleButton, { flex: 1, backgroundColor: COLORS.emerald }]}
+              onPress={handleSendTestNotification}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="paper-plane-outline" size={17} color="#FFFFFF" />
+              <Text style={styles.uploadScheduleButtonText}>Kirim Pengingat</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
