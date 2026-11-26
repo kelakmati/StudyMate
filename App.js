@@ -32,6 +32,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
+import * as Location from 'expo-location';
+import MapView, { Marker, Circle } from 'react-native-maps';
 
 // =================================================================
 // 1. DESIGN SYSTEM: COLOR PALETTE & TOKENS (STUDYMATE IDENTITY)
@@ -75,15 +77,31 @@ const STORAGE_KEYS = {
 };
 
 // =================================================================
+// WEEK 8 – ANGGOTA 1: User-Namespaced Storage Keys
+// Setiap pengguna memiliki namespace AsyncStorage tersendiri
+// berdasarkan user_id untuk memastikan data tidak tercampur
+// =================================================================
+const getUserStorageKeys = (userId) => ({
+  COURSES: `@studymate_u${userId}_courses_v3`,
+  MATERIALS: `@studymate_u${userId}_materials_v3`,
+  TASKS: `@studymate_u${userId}_tasks_v3`,
+  NOTIFICATIONS: `@studymate_u${userId}_notifications_v3`,
+  SETTINGS: `@studymate_u${userId}_settings_v3`,
+  USER_PROFILE: `@studymate_u${userId}_profile_v3`,
+  GEOFENCES: `@studymate_u${userId}_geofences_v1`, // WEEK 10 – Geofence per-user
+});
+
+// =================================================================
 // SPRINT 04 – ANGGOTA 1 (Backend Config)
-// API_URL: Ganti dengan IP lokal laptop Anda agar Expo Go di HP
+// API_URL: Ganti denga
+// n IP lokal laptop Anda agar Expo Go di HP
 //          dapat mengakses backend XAMPP di jaringan Wi-Fi yang sama.
 //          JANGAN gunakan 'localhost' atau '127.0.0.1' dari HP.
 //
 // Cara cek IP lokal: buka CMD → ketik: ipconfig
 // Contoh: 'http://192.168.1.10/studymate-api'
 // =================================================================
-const API_URL = 'http://192.168.1.5/studymate-api'; // ← GANTI IP INI
+const API_URL = 'http://192.168.1.6/studymate-api'; // ← GANTI IP INI
 
 // Secure key untuk menyimpan token di SecureStore
 const SECURE_KEYS = {
@@ -739,157 +757,6 @@ const StatCard = ({ title, value, subtitle, icon, iconColor, bgColor, cardWidth 
   </View>
 );
 
-// Material Card Component (Anggota 2 & Week 7 Upgrade)
-const MaterialCard = ({
-  material,
-  onPress,
-  onToggleStudied,
-  onOpenAi,
-  onOpenNotes,
-  onDelete,
-  onPreviewImage,
-}) => {
-  const getFileBadge = (type) => {
-    switch (type) {
-      case 'SCAN':
-        return { color: '#7C3AED', bg: '#EDE9FE', icon: 'camera' };
-      case 'PDF':
-        return { color: COLORS.rose, bg: COLORS.roseLight, icon: 'document-text' };
-      case 'PPT':
-        return { color: COLORS.amber, bg: COLORS.amberLight, icon: 'easel' };
-      case 'DOC':
-      default:
-        return { color: COLORS.secondary, bg: COLORS.secondaryLight, icon: 'newspaper' };
-    }
-  };
-
-  const badgeInfo = getFileBadge(material.fileType);
-
-  return (
-    <View style={styles.materialCard}>
-      {/* Top Meta Header */}
-      <View style={styles.materialCardTop}>
-        <View style={styles.materialMetaRow}>
-          <Badge
-            label={material.fileType === 'SCAN' ? 'SCAN HP' : material.fileType}
-            color={badgeInfo.color}
-            bg={badgeInfo.bg}
-            icon={badgeInfo.icon}
-          />
-          <Badge
-            label={`Pertemuan ${material.meetingNumber}`}
-            color={COLORS.textSecondary}
-            bg={COLORS.inputBackground}
-          />
-          <Text style={styles.materialCourseTag} numberOfLines={1}>
-            {material.courseName}
-          </Text>
-        </View>
-
-        {/* Studied Toggle Button */}
-        <TouchableOpacity
-          onPress={() => onToggleStudied(material.id)}
-          style={styles.checkCircleButton}
-          accessibilityLabel="Tandai Sudah Dipelajari"
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={material.isStudied ? 'checkmark-circle' : 'ellipse-outline'}
-            size={24}
-            color={material.isStudied ? COLORS.emerald : COLORS.textMuted}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Main Material Title & Topic */}
-      <TouchableOpacity activeOpacity={0.75} onPress={() => onPress(material)}>
-        <Text style={styles.materialTitle} numberOfLines={2}>
-          {material.title}
-        </Text>
-        <Text style={styles.materialTopicText} numberOfLines={1}>
-          📌 {material.meetingTopic}
-        </Text>
-        <Text style={styles.materialFileMeta} numberOfLines={1}>
-          {material.fileName} • {material.fileSize || 'Ukuran normal'}
-        </Text>
-      </TouchableOpacity>
-
-      {/* WEEK 7 – Smart Material Scanner: Thumbnail Preview for Scanned Photos */}
-      {material.imageUri && (
-        <TouchableOpacity
-          style={styles.materialPhotoThumbBox}
-          onPress={() => (onPreviewImage ? onPreviewImage(material) : onPress(material))}
-          activeOpacity={0.85}
-        >
-          <Image
-            source={{ uri: material.imageUri }}
-            style={styles.materialPhotoThumbImage}
-            resizeMode="cover"
-          />
-          <View style={styles.materialPhotoThumbOverlay}>
-            <View style={styles.materialPhotoThumbBadge}>
-              <Ionicons name="camera" size={12} color="#FFFFFF" />
-              <Text style={styles.materialPhotoThumbBadgeText}>Hasil Scan Kamera</Text>
-            </View>
-            <View style={styles.materialPhotoExpandBtn}>
-              <Ionicons name="expand-outline" size={14} color="#FFFFFF" />
-              <Text style={styles.materialPhotoExpandText}>Buka Foto</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {/* Action Footer */}
-      <View style={styles.materialCardFooter}>
-        {/* WEEK 7: Buka Foto Button jika ada foto scan */}
-        {material.imageUri && (
-          <TouchableOpacity
-            style={styles.actionPillScan}
-            onPress={() => onPreviewImage && onPreviewImage(material)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="image-outline" size={13} color="#7C3AED" />
-            <Text style={styles.actionPillScanText}>Lihat Foto</Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={styles.actionPillAi}
-          onPress={() => onOpenAi(material)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="sparkles" size={13} color="#7C3AED" />
-          <Text style={styles.actionPillAiText}>StudyMate AI</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionPillNotes}
-          onPress={() => onOpenNotes(material)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={material.userNotes ? 'document-text' : 'create-outline'}
-            size={13}
-            color={COLORS.primary}
-          />
-          <Text style={styles.actionPillNotesText}>
-            {material.userNotes ? 'Lihat Catatan' : '+ Catatan'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionDeleteButton}
-          onPress={() => onDelete(material.id)}
-          activeOpacity={0.7}
-          accessibilityLabel="Hapus Materi"
-        >
-          <Ionicons name="trash-outline" size={17} color={COLORS.textMuted} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
 // Course Card Component (Anggota 2)
 const CourseCard = ({ course, materialCount, studiedCount, onPress }) => {
   const progressPercent =
@@ -1118,6 +985,508 @@ const EmptyState = ({ title, subtitle, icon, actionText, onAction }) => (
 );
 
 // =================================================================
+// WEEK 10 – LocationScreen: Komponen React proper (bukan render func)
+// Menerima semua state & handler dari StudyMateApp sebagai props.
+// useRef dan useEffect dipanggil di dalam komponen ini (Rules of Hooks OK).
+// =================================================================
+function LocationScreen({
+  scrollContentPaddingBottom,
+  unreadNotifCount,
+  onOpenNotif,
+  locationPermStatus,
+  currentLocation,
+  isLocationLoading,
+  locationError,
+  reverseAddress,
+  isGeocodingLoading,
+  geofences,
+  geofenceStatuses,
+  isAddGeofenceVisible,
+  newGeofenceName,
+  newGeofenceRadius,
+  onSetNewGeofenceName,
+  onSetNewGeofenceRadius,
+  onSetIsAddGeofenceVisible,
+  onRequestPermission,
+  onGetCurrentLocation,
+  onAddGeofence,
+  onDeleteGeofence,
+  calculateDistance,
+  apiUserId,
+  onLoadGeofences,
+  onStartLocationWatch,
+  onStopLocationWatch,
+}) {
+  // ── useRef untuk MapView (sah di dalam komponen React) ────────
+  const mapRef = useRef(null);
+
+  // ── useEffect: inisialisasi saat komponen mount ───────────────
+  // Dijalankan ketika tab Lokasi dibuka (mount) dan dibersihkan saat unmount.
+  // BATTERY OPTIMIZATION: watch position hanya aktif di tab ini.
+  useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      if (!mounted) return;
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (!mounted) return;
+        // Update permission status di parent via handler
+        if (status === 'granted' && !currentLocation) {
+          await onGetCurrentLocation();
+        } else if (status !== 'granted') {
+          // Trigger cek permission agar UI permission screen terupdate
+          await onRequestPermission().catch(() => { });
+        }
+      } catch (_) { }
+      if (apiUserId && mounted) {
+        await onLoadGeofences(apiUserId);
+      }
+      if (mounted) await onStartLocationWatch();
+    };
+    init();
+    return () => {
+      mounted = false;
+      onStopLocationWatch();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const hasLocation = currentLocation !== null;
+
+  // ── Permission belum diberikan ────────────────────────────────
+  if (locationPermStatus !== 'granted') {
+    return (
+      <ScrollView
+        style={styles.screenContainer}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <AppHeader
+          title="Lokasi Belajar"
+          subtitle="GPS, Peta & Area Studi"
+          unreadCount={unreadNotifCount}
+          onOpenNotif={onOpenNotif}
+        />
+
+        <View style={styles.locPermCard}>
+          <View style={styles.locPermIconCircle}>
+            <Ionicons name="location" size={36} color={COLORS.primary} />
+          </View>
+          <Text style={styles.locPermTitle}>Izin Lokasi Diperlukan</Text>
+          <Text style={styles.locPermDesc}>
+            StudyMate membutuhkan akses lokasi untuk menampilkan posisi kamu pada peta,
+            mengetahui alamat sekitar, dan mendeteksi area kampus atau lokasi belajar yang ditentukan.
+          </Text>
+          <Text style={styles.locPermInfo}>
+            Izin ini hanya digunakan selama aplikasi aktif (foreground). Lokasi tidak dipantau di latar belakang.
+          </Text>
+
+          {locationPermStatus === 'denied' && (
+            <View style={styles.locPermDeniedBox}>
+              <Ionicons name="warning-outline" size={16} color={COLORS.amber} />
+              <Text style={styles.locPermDeniedText}>
+                Izin ditolak. Buka Pengaturan HP → Aplikasi → StudyMate → Izin → Lokasi.
+              </Text>
+            </View>
+          )}
+
+          {locationError ? (
+            <View style={[styles.locPermDeniedBox, { borderColor: COLORS.rose, backgroundColor: COLORS.roseLight }]}>
+              <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} />
+              <Text style={[styles.locPermDeniedText, { color: COLORS.rose }]}>{locationError}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.locPermGrantBtn}
+            onPress={onRequestPermission}
+            activeOpacity={0.8}
+            disabled={isLocationLoading}
+          >
+            {isLocationLoading
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+            }
+            <Text style={styles.locPermGrantBtnText}>
+              {isLocationLoading ? 'Memproses...' : 'Izinkan Akses Lokasi'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ── Permission diberikan – tampilkan fitur penuh ──────────────
+  return (
+    <ScrollView
+      style={styles.screenContainer}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }]}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+    >
+      <AppHeader
+        title="Lokasi Belajar"
+        subtitle="GPS, Peta & Area Studi"
+        unreadCount={unreadNotifCount}
+        onOpenNotif={onOpenNotif}
+      />
+
+      {/* ── TASK 01: GPS LOCATION ─────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.primaryLight }]}>
+            <Ionicons name="navigate" size={18} color={COLORS.primary} />
+          </View>
+          <Text style={styles.locSectionTitle}>Lokasi Saat Ini</Text>
+          <View style={[styles.locStatusPill, { backgroundColor: COLORS.emeraldLight }]}>
+            <Ionicons name="checkmark-circle" size={12} color={COLORS.emerald} />
+            <Text style={[styles.locStatusPillText, { color: COLORS.emerald }]}>GPS Aktif</Text>
+          </View>
+        </View>
+
+        {isLocationLoading ? (
+          <View style={styles.locLoadingRow}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.locLoadingText}>Mengambil lokasi GPS...</Text>
+          </View>
+        ) : null}
+
+        {locationError && !isLocationLoading ? (
+          <View style={styles.locErrorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} />
+            <Text style={styles.locErrorText}>{locationError}</Text>
+          </View>
+        ) : null}
+
+        {!hasLocation && !isLocationLoading && !locationError ? (
+          <View style={styles.locEmptyState}>
+            <Ionicons name="location-outline" size={32} color={COLORS.textMuted} />
+            <Text style={styles.locEmptyText}>Lokasi belum diambil. Tekan "Perbarui Lokasi" untuk mulai.</Text>
+          </View>
+        ) : null}
+
+        {hasLocation ? (
+          <View style={styles.locCoordGrid}>
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Latitude</Text>
+              <Text style={styles.locCoordValue}>{currentLocation.latitude.toFixed(6)}°</Text>
+            </View>
+            <View style={styles.locCoordDivider} />
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Longitude</Text>
+              <Text style={styles.locCoordValue}>{currentLocation.longitude.toFixed(6)}°</Text>
+            </View>
+            <View style={styles.locCoordDivider} />
+            <View style={styles.locCoordItem}>
+              <Text style={styles.locCoordLabel}>Accuracy</Text>
+              <Text style={styles.locCoordValue}>
+                {currentLocation.accuracy ? `±${Math.round(currentLocation.accuracy)} m` : 'N/A'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.locRefreshBtn}
+          onPress={onGetCurrentLocation}
+          activeOpacity={0.8}
+          disabled={isLocationLoading}
+        >
+          <Ionicons name="refresh" size={16} color="#FFFFFF" />
+          <Text style={styles.locRefreshBtnText}>Perbarui Lokasi</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── TASK 02: MAP ──────────────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.secondaryLight }]}>
+            <Ionicons name="map" size={18} color={COLORS.secondary} />
+          </View>
+          <Text style={styles.locSectionTitle}>Peta Lokasi</Text>
+        </View>
+
+        {!hasLocation ? (
+          <View style={styles.locMapPlaceholder}>
+            <Ionicons name="map-outline" size={40} color={COLORS.textMuted} />
+            <Text style={styles.locMapPlaceholderText}>Ambil lokasi GPS terlebih dahulu untuk menampilkan peta.</Text>
+          </View>
+        ) : (
+          <View>
+            <View style={styles.locMapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.locMap}
+                initialRegion={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                region={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                showsUserLocation={false}
+                showsMyLocationButton={false}
+                showsCompass
+                loadingEnabled
+              >
+                <Marker
+                  coordinate={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                  title="Posisi Kamu"
+                  description={`${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`}
+                  pinColor={COLORS.primary}
+                />
+
+                {currentLocation.accuracy ? (
+                  <Circle
+                    center={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                    radius={currentLocation.accuracy}
+                    strokeColor="rgba(79,70,229,0.4)"
+                    fillColor="rgba(79,70,229,0.08)"
+                  />
+                ) : null}
+
+                {geofences.map((fence) => (
+                  <React.Fragment key={fence.id}>
+                    <Marker
+                      coordinate={{ latitude: fence.latitude, longitude: fence.longitude }}
+                      title={fence.name}
+                      description={`Radius: ${fence.radius} m`}
+                      pinColor={geofenceStatuses[fence.id] === 'inside' ? '#10B981' : '#F59E0B'}
+                    />
+                    <Circle
+                      center={{ latitude: fence.latitude, longitude: fence.longitude }}
+                      radius={fence.radius}
+                      strokeColor={geofenceStatuses[fence.id] === 'inside' ? 'rgba(16,185,129,0.6)' : 'rgba(245,158,11,0.6)'}
+                      fillColor={geofenceStatuses[fence.id] === 'inside' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.08)'}
+                    />
+                  </React.Fragment>
+                ))}
+              </MapView>
+            </View>
+
+            <TouchableOpacity
+              style={styles.locCenterMapBtn}
+              onPress={() => {
+                if (mapRef.current && currentLocation) {
+                  mapRef.current.animateToRegion({
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  }, 500);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="locate" size={16} color={COLORS.primary} />
+              <Text style={styles.locCenterMapBtnText}>Pusatkan ke Lokasi Saya</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* ── TASK 03A: REVERSE GEOCODING ───────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.accentLight }]}>
+            <Ionicons name="pin" size={18} color={COLORS.accent} />
+          </View>
+          <Text style={styles.locSectionTitle}>Alamat Saat Ini</Text>
+          {isGeocodingLoading ? (
+            <ActivityIndicator size="small" color={COLORS.accent} style={{ marginLeft: 8 }} />
+          ) : null}
+        </View>
+
+        {!hasLocation && !isGeocodingLoading ? (
+          <Text style={styles.locEmptyInlineText}>Ambil lokasi GPS untuk melihat alamat.</Text>
+        ) : null}
+
+        {hasLocation && !reverseAddress && !isGeocodingLoading ? (
+          <View style={styles.locErrorBox}>
+            <Ionicons name="wifi-outline" size={15} color={COLORS.textMuted} />
+            <Text style={[styles.locErrorText, { color: COLORS.textSecondary }]}>
+              Alamat tidak dapat ditemukan. Pastikan koneksi internet aktif.
+            </Text>
+          </View>
+        ) : null}
+
+        {reverseAddress ? (
+          <View style={styles.locAddressBox}>
+            {reverseAddress.name && reverseAddress.name !== reverseAddress.street ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="business-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.name}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.street ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="trail-sign-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.street}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.district ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="grid-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.district}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.city ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="storefront-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.city}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.region ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="map-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>{reverseAddress.region}</Text>
+              </View>
+            ) : null}
+            {reverseAddress.postalCode ? (
+              <View style={styles.locAddressRow}>
+                <Ionicons name="mail-outline" size={14} color={COLORS.textMuted} />
+                <Text style={styles.locAddressValue}>Kode Pos: {reverseAddress.postalCode}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* ── TASK 03B: GEOFENCING ──────────────────────── */}
+      <View style={styles.locSectionCard}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: COLORS.amberLight }]}>
+            <Ionicons name="radio-button-on" size={18} color={COLORS.amber} />
+          </View>
+          <Text style={styles.locSectionTitle}>Area Studi (Geofencing)</Text>
+        </View>
+
+        <Text style={styles.locGeofenceDesc}>
+          Tambahkan area kampus atau lokasi belajar. Aplikasi akan mendeteksi ketika kamu memasuki atau meninggalkan area tersebut.
+        </Text>
+
+        {geofences.length === 0 ? (
+          <View style={styles.locEmptyState}>
+            <Ionicons name="radio-button-off-outline" size={28} color={COLORS.textMuted} />
+            <Text style={styles.locEmptyText}>Belum ada area yang ditambahkan.</Text>
+          </View>
+        ) : (
+          geofences.map((fence) => {
+            const status = geofenceStatuses[fence.id];
+            const isInside = status === 'inside';
+            const distText = currentLocation
+              ? `${Math.round(calculateDistance(currentLocation.latitude, currentLocation.longitude, fence.latitude, fence.longitude))} m dari titik pusat`
+              : 'Ambil lokasi untuk melihat jarak';
+            return (
+              <View key={fence.id} style={[styles.locGeofenceItem, isInside && styles.locGeofenceItemActive]}>
+                <View style={styles.locGeofenceItemLeft}>
+                  <View style={[styles.locGeofenceStatusDot, { backgroundColor: isInside ? COLORS.emerald : COLORS.textMuted }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locGeofenceName}>{fence.name}</Text>
+                    <Text style={styles.locGeofenceInfo}>Radius: {fence.radius} m · {distText}</Text>
+                    <View style={[styles.locGeofenceStatusPill, { backgroundColor: isInside ? COLORS.emeraldLight : COLORS.inputBackground }]}>
+                      <Text style={[styles.locGeofenceStatusText, { color: isInside ? COLORS.emerald : COLORS.textMuted }]}>
+                        {status === 'inside' ? '✓ Di Dalam Area' : status === 'outside' ? '✗ Di Luar Area' : '— Belum Diperiksa'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() =>
+                    Alert.alert('Hapus Area', `Hapus area "${fence.name}"?`, [
+                      { text: 'Batal', style: 'cancel' },
+                      { text: 'Hapus', style: 'destructive', onPress: () => onDeleteGeofence(fence.id) },
+                    ])
+                  }
+                  style={styles.locGeofenceDeleteBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+
+        {isAddGeofenceVisible ? (
+          <View style={styles.locAddGeofenceForm}>
+            <Text style={styles.locAddGeofenceFormTitle}>Area Baru</Text>
+            <TextInput
+              style={styles.locGeofenceInput}
+              placeholder="Nama area (cth: Kampus, Perpustakaan)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newGeofenceName}
+              onChangeText={onSetNewGeofenceName}
+              maxLength={50}
+            />
+            <TextInput
+              style={styles.locGeofenceInput}
+              placeholder="Radius (meter, cth: 200)"
+              placeholderTextColor={COLORS.textMuted}
+              value={newGeofenceRadius}
+              onChangeText={onSetNewGeofenceRadius}
+              keyboardType="numeric"
+              maxLength={6}
+            />
+            {!hasLocation ? (
+              <View style={styles.locErrorBox}>
+                <Ionicons name="warning-outline" size={14} color={COLORS.amber} />
+                <Text style={[styles.locErrorText, { color: COLORS.amber }]}>
+                  Ambil lokasi GPS terlebih dahulu. Titik pusat area ditentukan dari posisi kamu saat ini.
+                </Text>
+              </View>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <TouchableOpacity style={[styles.locGeofenceSaveBtn, { flex: 1 }]} onPress={onAddGeofence} activeOpacity={0.8}>
+                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                <Text style={styles.locGeofenceSaveBtnText}>Simpan Area</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.locGeofenceCancelBtn, { flex: 1 }]}
+                onPress={() => { onSetIsAddGeofenceVisible(false); onSetNewGeofenceName(''); onSetNewGeofenceRadius('200'); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.locGeofenceCancelBtnText}>Batal</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.locAddGeofenceBtn}
+            onPress={() => onSetIsAddGeofenceVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={COLORS.primary} />
+            <Text style={styles.locAddGeofenceBtnText}>Tambah Area Baru (Gunakan Lokasi Saat Ini)</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── BATTERY OPTIMIZATION INFO ─────────────────── */}
+      <View style={[styles.locSectionCard, { backgroundColor: COLORS.primaryLight, borderColor: '#C7D2FE' }]}>
+        <View style={styles.locSectionHeader}>
+          <View style={[styles.locSectionIconCircle, { backgroundColor: '#E0E7FF' }]}>
+            <Ionicons name="battery-charging" size={18} color={COLORS.primary} />
+          </View>
+          <Text style={[styles.locSectionTitle, { color: COLORS.primaryDark }]}>Optimasi Baterai</Text>
+        </View>
+        <Text style={styles.locBatteryInfo}>
+          {'• '}<Text style={{ fontWeight: '700' }}>Akurasi Balanced</Text>{' — tidak menguras GPS secara berlebihan.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Update minimal 15 detik atau 20 meter</Text>{' perpindahan.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Foreground only</Text>{' — tracking berhenti ketika tab berpindah.\n'}
+          {'• '}<Text style={{ fontWeight: '700' }}>Subscription dibersihkan otomatis</Text>{' saat meninggalkan halaman ini.'}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// =================================================================
 // 4. MAIN INNER APP COMPONENT (INTEGRASI 3 ANGGOTA)
 // =================================================================
 function StudyMateApp() {
@@ -1153,6 +1522,17 @@ function StudyMateApp() {
   const [authScreen, setAuthScreen] = useState('login');
   const [apiUser, setApiUser] = useState(null);
 
+  // =================================================================
+  // WEEK 8 – ANGGOTA 3: Profile Management States
+  // Edit profil, foto avatar, dan penyimpanan per-pengguna
+  // =================================================================
+  const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [editProfilePhotoUri, setEditProfilePhotoUri] = useState(null);
+  const [editProfilePhotoPreview, setEditProfilePhotoPreview] = useState(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileAvatarUri, setProfileAvatarUri] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+
   // Auth form fields
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
@@ -1184,6 +1564,7 @@ function StudyMateApp() {
 
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState(null);
+  const [isSavingTask, setIsSavingTask] = useState(false);
 
   // Core Data States
   const [courses, setCourses] = useState([]);
@@ -1236,41 +1617,6 @@ function StudyMateApp() {
   // =================================================================
   const [isScannerVisible, setIsScannerVisible] = useState(false);
   const [viewingPhotoMaterial, setViewingPhotoMaterial] = useState(null);
-
-  // =================================================================
-  // WEEK 7 – ANGGOTA 3: Accelerometer & Shake to Refresh States & Refs
-  // =================================================================
-  const [isShakeRefreshing, setIsShakeRefreshing] = useState(false);
-  const [shakeBanner, setShakeBanner] = useState(null); // { visible, message, status }
-
-  // Settings State (with Week 7 shakeToRefresh default true)
-  const [settings, setSettings] = useState({
-    notifyBeforeClass: true,
-    notifyDeadlines: true,
-    autoSummarizeAi: true,
-    shakeToRefresh: true,
-  });
-
-  // Mutable refs untuk mencegah stale closure pada accelerometer subscription
-  const lastShakeTimeRef = useRef(0);
-  const lastAccRef = useRef({ x: 0, y: 0, z: 0 });
-  const isShakeRefreshingRef = useRef(false);
-  const activeTabRef = useRef(currentTab);
-  const isModalActiveRef = useRef(false);
-
-  // Sinkronisasi refs setiap kali render
-  activeTabRef.current = currentTab;
-  isModalActiveRef.current =
-    materialModalVisible ||
-    courseModalVisible ||
-    taskModalVisible ||
-    notesModalVisible ||
-    aiModalVisible ||
-    scheduleModalVisible ||
-    notifModalVisible ||
-    isScannerVisible ||
-    viewingPhotoMaterial !== null ||
-    isEditProfileVisible;
 
   // =================================================================
   // 5. DATA PERSISTENCE & INITIALIZATION
@@ -1396,46 +1742,30 @@ function StudyMateApp() {
     }
   };
 
-  const loadAllData = async () => {
+  const loadAllData = async (userId = null) => {
+    // =================================================================
+    // WEEK 8 – ANGGOTA 2: Async API Integration + Promise.allSettled
+    // Data diambil dari REST API server (per-user), dengan fallback ke
+    // user-namespaced AsyncStorage cache saat offline.
+    // =================================================================
+    const uid = userId || apiUser?.id;
+    if (!uid) {
+      setIsLoading(false);
+      return;
+    }
+    const userKeys = getUserStorageKeys(uid);
+
     try {
       setIsLoading(true);
-      const [storedCourses, storedMaterials, storedTasks, storedNotifs, storedSettings, storedProfile] =
-        await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.COURSES),
-          AsyncStorage.getItem(STORAGE_KEYS.MATERIALS),
-          AsyncStorage.getItem(STORAGE_KEYS.TASKS),
-          AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
-          AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
-          AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
-        ]);
+      setCoursesLoading(true);
+      setMaterialsLoading(true);
+      setTasksLoading(true);
 
-      if (storedCourses) {
-        setCourses(JSON.parse(storedCourses));
-      } else {
-        setCourses(INITIAL_COURSES);
-        await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(INITIAL_COURSES));
-      }
-
-      if (storedMaterials) {
-        setMaterials(JSON.parse(storedMaterials));
-      } else {
-        setMaterials(INITIAL_MATERIALS);
-        await AsyncStorage.setItem(STORAGE_KEYS.MATERIALS, JSON.stringify(INITIAL_MATERIALS));
-      }
-
-      if (storedTasks) {
-        setTasks(JSON.parse(storedTasks));
-      } else {
-        setTasks(INITIAL_TASKS);
-        await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
-      }
-
-      if (storedNotifs) {
-        setNotifications(JSON.parse(storedNotifs));
-      } else {
-        setNotifications(INITIAL_NOTIFICATIONS);
-        await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
-      }
+      // 1. Muat pengaturan & notifikasi dari cache (tidak ada endpoint server untuk ini)
+      const [storedSettings, storedNotifs] = await Promise.all([
+        AsyncStorage.getItem(userKeys.SETTINGS),
+        AsyncStorage.getItem(userKeys.NOTIFICATIONS),
+      ]);
 
       if (storedSettings) {
         const parsedSettings = JSON.parse(storedSettings);
@@ -1447,12 +1777,80 @@ function StudyMateApp() {
           ...parsedSettings,
         });
       }
-      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
-      setCoursesError(null);
-      setMaterialsError(null);
-      setTasksError(null);
+      if (storedNotifs) {
+        setNotifications(JSON.parse(storedNotifs));
+      } else {
+        setNotifications(INITIAL_NOTIFICATIONS);
+      }
+
+      // 2. Muat avatar dari cache per-user
+      const cachedAvatar = await AsyncStorage.getItem(`@studymate_avatar_${uid}`);
+      if (cachedAvatar) setProfileAvatarUri(cachedAvatar);
+
+      // 3. Ambil data utama dari API secara paralel menggunakan Promise.allSettled
+      // Promise.allSettled: jika satu gagal, yang lain tetap berhasil dimuat
+      const [coursesRes, tasksRes, materialsRes] = await Promise.allSettled([
+        requestApi('/courses/index.php', { method: 'GET', requiresAuth: true }),
+        requestApi('/tasks/index.php', { method: 'GET', requiresAuth: true }),
+        requestApi('/materials/index.php', { method: 'GET', requiresAuth: true }),
+      ]);
+
+      // 4. Proses hasil courses
+      if (coursesRes.status === 'fulfilled' && coursesRes.value.ok && coursesRes.value.data?.courses) {
+        const apiCourses = coursesRes.value.data.courses;
+        setCourses(apiCourses);
+        setCoursesError(null);
+        await AsyncStorage.setItem(userKeys.COURSES, JSON.stringify(apiCourses));
+      } else {
+        // Fallback ke cache user-namespaced
+        const cached = await AsyncStorage.getItem(userKeys.COURSES);
+        if (cached) {
+          setCourses(JSON.parse(cached));
+        } else {
+          setCourses([]); // Akun baru: kosong, bukan data dummy
+        }
+        if (coursesRes.status === 'fulfilled' && !coursesRes.value.ok) {
+          setCoursesError(coursesRes.value.error);
+        }
+      }
+
+      // 5. Proses hasil tasks
+      if (tasksRes.status === 'fulfilled' && tasksRes.value.ok && tasksRes.value.data?.tasks) {
+        const apiTasks = tasksRes.value.data.tasks;
+        setTasks(apiTasks);
+        setTasksError(null);
+        await AsyncStorage.setItem(userKeys.TASKS, JSON.stringify(apiTasks));
+      } else {
+        const cached = await AsyncStorage.getItem(userKeys.TASKS);
+        if (cached) {
+          setTasks(JSON.parse(cached));
+        } else {
+          setTasks([]); // Akun baru: kosong
+        }
+        if (tasksRes.status === 'fulfilled' && !tasksRes.value.ok) {
+          setTasksError(tasksRes.value.error);
+        }
+      }
+
+      // 6. Proses hasil materials
+      if (materialsRes.status === 'fulfilled' && materialsRes.value.ok && materialsRes.value.data?.materials) {
+        const apiMaterials = materialsRes.value.data.materials;
+        setMaterials(apiMaterials);
+        setMaterialsError(null);
+        await AsyncStorage.setItem(userKeys.MATERIALS, JSON.stringify(apiMaterials));
+      } else {
+        const cached = await AsyncStorage.getItem(userKeys.MATERIALS);
+        if (cached) {
+          setMaterials(JSON.parse(cached));
+        } else {
+          setMaterials([]); // Akun baru: kosong
+        }
+        if (materialsRes.status === 'fulfilled' && !materialsRes.value.ok) {
+          setMaterialsError(materialsRes.value.error);
+        }
+      }
     } catch (error) {
-      console.error('Error loading StudyMate storage:', error);
+      console.error('[Week 8] Error loading data:', error.message);
     } finally {
       setIsLoading(false);
       setCoursesLoading(false);
@@ -1467,26 +1865,29 @@ function StudyMateApp() {
 
   /**
    * handleRefreshCourses:
-   * Mengambil ulang mata kuliah dengan UI State (Loading -> Success/Error)
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request with Tri-State & Per-User Cache
    */
   const handleRefreshCourses = async () => {
     setCoursesLoading(true);
     setCoursesError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      // Cek konektivitas server
-      const isOnline = await checkServerConnectivity();
-      if (!isOnline) {
-        // Tetap gunakan data tersimpan di AsyncStorage
-        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-        if (stored) setCourses(JSON.parse(stored));
-        setCoursesError('Koneksi terputus. Data ditampilkan dari penyimpanan lokal perangkat.');
-      } else {
-        // Berhasil terhubung
-        const stored = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-        if (stored) setCourses(JSON.parse(stored));
+      const result = await requestApi('/courses/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.courses) {
+        setCourses(result.data.courses);
         setCoursesError(null);
+        await AsyncStorage.setItem(userKeys.COURSES, JSON.stringify(result.data.courses));
+      } else {
+        // Fallback ke cache lokal jika server tidak merespons
+        const stored = await AsyncStorage.getItem(userKeys.COURSES);
+        if (stored) setCourses(JSON.parse(stored));
+        setCoursesError(result.error || 'Gagal memuat mata kuliah dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.COURSES);
+      if (stored) setCourses(JSON.parse(stored));
       setCoursesError('Gagal memuat mata kuliah: ' + e.message);
     } finally {
       setCoursesLoading(false);
@@ -1495,19 +1896,28 @@ function StudyMateApp() {
 
   /**
    * handleRefreshMaterials:
-   * Mengambil ulang materi perkuliahan dengan UI State
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request with Tri-State & Per-User Cache
    */
   const handleRefreshMaterials = async () => {
     setMaterialsLoading(true);
     setMaterialsError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      const isOnline = await checkServerConnectivity();
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.MATERIALS);
-      if (stored) setMaterials(JSON.parse(stored));
-      if (!isOnline) {
-        setMaterialsError('Koneksi terputus. Data materi menggunakan cache offline.');
+      const result = await requestApi('/materials/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.materials) {
+        setMaterials(result.data.materials);
+        setMaterialsError(null);
+        await AsyncStorage.setItem(userKeys.MATERIALS, JSON.stringify(result.data.materials));
+      } else {
+        const stored = await AsyncStorage.getItem(userKeys.MATERIALS);
+        if (stored) setMaterials(JSON.parse(stored));
+        setMaterialsError(result.error || 'Gagal memuat materi dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.MATERIALS);
+      if (stored) setMaterials(JSON.parse(stored));
       setMaterialsError('Gagal memuat katalog materi: ' + e.message);
     } finally {
       isShakeRefreshingRef.current = false;
@@ -1521,19 +1931,28 @@ function StudyMateApp() {
 
   /**
    * handleRefreshTasks:
-   * Mengambil ulang tugas perkuliahan dengan UI State
+   * WEEK 8 – ANGGOTA 2: Asynchronous API Request for Tasks (Todo List)
    */
   const handleRefreshTasks = async () => {
     setTasksLoading(true);
     setTasksError(null);
+    const uid = apiUser?.id;
+    const userKeys = uid ? getUserStorageKeys(uid) : STORAGE_KEYS;
+
     try {
-      const isOnline = await checkServerConnectivity();
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      if (stored) setTasks(JSON.parse(stored));
-      if (!isOnline) {
-        setTasksError('Koneksi terputus. Menampilkan tugas dari penyimpanan lokal.');
+      const result = await requestApi('/tasks/index.php', { method: 'GET', requiresAuth: true });
+      if (result.ok && result.data?.tasks) {
+        setTasks(result.data.tasks);
+        setTasksError(null);
+        await AsyncStorage.setItem(userKeys.TASKS, JSON.stringify(result.data.tasks));
+      } else {
+        const stored = await AsyncStorage.getItem(userKeys.TASKS);
+        if (stored) setTasks(JSON.parse(stored));
+        setTasksError(result.error || 'Gagal memuat tugas dari server.');
       }
     } catch (e) {
+      const stored = await AsyncStorage.getItem(userKeys.TASKS);
+      if (stored) setTasks(JSON.parse(stored));
       setTasksError('Gagal memuat daftar tugas: ' + e.message);
     } finally {
       setTasksLoading(false);
@@ -1542,11 +1961,182 @@ function StudyMateApp() {
 
   const persistData = async (key, data) => {
     try {
-      await AsyncStorage.setItem(key, JSON.stringify(data));
+      // Jika key adalah salah satu storage keys global, map ke user-namespaced key jika user login
+      let resolvedKey = key;
+      if (apiUser?.id) {
+        const userKeys = getUserStorageKeys(apiUser.id);
+        if (key === STORAGE_KEYS.COURSES) resolvedKey = userKeys.COURSES;
+        else if (key === STORAGE_KEYS.MATERIALS) resolvedKey = userKeys.MATERIALS;
+        else if (key === STORAGE_KEYS.TASKS) resolvedKey = userKeys.TASKS;
+        else if (key === STORAGE_KEYS.NOTIFICATIONS) resolvedKey = userKeys.NOTIFICATIONS;
+        else if (key === STORAGE_KEYS.SETTINGS) resolvedKey = userKeys.SETTINGS;
+        else if (key === STORAGE_KEYS.USER_PROFILE) resolvedKey = userKeys.USER_PROFILE;
+      }
+      await AsyncStorage.setItem(resolvedKey, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to persist to AsyncStorage:', key, e);
     }
   };
+
+  // =================================================================
+  // WEEK 7 – ANGGOTA 3: ACCELEROMETER & SHAKE TO REFRESH IMPLEMENTATION
+  // =================================================================
+
+  /**
+   * handleRefreshHome:
+   * Memperbarui seluruh ringkasan data pembelajaran (Courses, Materials, Tasks)
+   */
+  const handleRefreshHome = async () => {
+    await Promise.all([
+      handleRefreshCourses(),
+      handleRefreshMaterials(),
+      handleRefreshTasks(),
+    ]);
+  };
+
+  /**
+   * handleTriggerShakeRefresh:
+   * Mengatur alur pembaruan data saat goyangan perangkat terdeteksi:
+   * 1. Getaran haptic feedback singkat (expo-haptics / Vibration)
+   * 2. Notifikasi visual "Goyangan terdeteksi! Memperbarui data..."
+   * 3. Menjalankan refresh sesuai tab aktif
+   * 4. Memberikan feedback keberhasilan / status offline
+   */
+  const handleTriggerShakeRefresh = async () => {
+    if (isShakeRefreshingRef.current) return;
+    isShakeRefreshingRef.current = true;
+    setIsShakeRefreshing(true);
+
+    // 1. Berikan feedback getaran singkat
+    await triggerShakeFeedback();
+
+    // 2. Tampilkan banner floating "Goyangan terdeteksi! Memperbarui data..."
+    setShakeBanner({
+      visible: true,
+      message: '📳 Goyangan terdeteksi! Memperbarui data...',
+      status: 'loading',
+    });
+
+    const activeTab = activeTabRef.current;
+    let targetName = 'Data Belajar';
+
+    try {
+      const isOnline = await checkServerConnectivity();
+
+      if (activeTab === 'Courses') {
+        targetName = 'Mata Kuliah';
+        await handleRefreshCourses();
+      } else if (activeTab === 'Materials') {
+        targetName = 'Katalog Materi';
+        await handleRefreshMaterials();
+      } else if (activeTab === 'Tasks') {
+        targetName = 'Daftar Tugas';
+        await handleRefreshTasks();
+      } else {
+        // Tab Home atau Schedule
+        targetName = 'Dashboard Belajar';
+        await handleRefreshHome();
+      }
+
+      if (isOnline) {
+        setShakeBanner({
+          visible: true,
+          message: `✅ Data ${targetName} berhasil diperbarui via Shake to Refresh!`,
+          status: 'success',
+        });
+      } else {
+        setShakeBanner({
+          visible: true,
+          message: `⚠️ Mode Offline: Data ${targetName} dimuat dari penyimpanan lokal.`,
+          status: 'warning',
+        });
+      }
+    } catch (err) {
+      setShakeBanner({
+        visible: true,
+        message: `❌ Gagal memperbarui: ${err.message}`,
+        status: 'error',
+      });
+    } finally {
+      isShakeRefreshingRef.current = false;
+      setIsShakeRefreshing(false);
+      // Auto-hide floating toast setelah 2.8 detik
+      setTimeout(() => {
+        setShakeBanner((prev) => (prev ? { ...prev, visible: false } : null));
+      }, 2800);
+    }
+  };
+
+  /**
+   * Accelerometer Shake Detection Listener:
+   * Membaca nilai sensor X, Y, Z secara internal tanpa menampilkan angka pada UI.
+   * Menggunakan perhitungan magnitude dan delta dengan threshold dan cooldown.
+   * Subscription otomatis dimatikan jika toggle preferensi dimatikan oleh pengguna.
+   */
+  useEffect(() => {
+    if (settings.shakeToRefresh === false) {
+      return;
+    }
+
+    // Set interval 100ms (10Hz) - efisien baterai dan responsif
+    Accelerometer.setUpdateInterval(100);
+
+    const subscription = Accelerometer.addListener(({ x, y, z }) => {
+      // Jangan jalankan refresh jika modal sedang aktif atau sedang proses refresh
+      if (isModalActiveRef.current || isShakeRefreshingRef.current) {
+        lastAccRef.current = { x, y, z };
+        return;
+      }
+
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      const last = lastAccRef.current;
+      const delta = Math.abs(x - last.x) + Math.abs(y - last.y) + Math.abs(z - last.z);
+      lastAccRef.current = { x, y, z };
+
+      const now = Date.now();
+      // Threshold: magnitude > 1.85g atau delta goyangan cepat > 1.7g, dengan cooldown 2.5s
+      if ((magnitude > 1.85 || delta > 1.7) && (now - lastShakeTimeRef.current > 2500)) {
+        lastShakeTimeRef.current = now;
+        handleTriggerShakeRefresh();
+      }
+    });
+
+    return () => {
+      subscription && subscription.remove();
+    };
+  }, [settings.shakeToRefresh]);
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 2: Asynchronous useEffect dengan Tab Synchronization & Cleanup
+  // Mengambil data spesifik saat pengguna berpindah tab dengan proteksi isMounted
+  // untuk mencegah state updates pada unmounted component atau setelah logout.
+  // =================================================================
+  useEffect(() => {
+    if (!isAuthenticated || !apiUser) return;
+    let isCurrent = true;
+
+    const syncTabData = async () => {
+      try {
+        if (currentTab === 'Courses') {
+          await handleRefreshCourses();
+        } else if (currentTab === 'Materials') {
+          await handleRefreshMaterials();
+        } else if (currentTab === 'Tasks') {
+          await handleRefreshTasks();
+        } else if (currentTab === 'Schedule') {
+          await handleLoadProfile();
+        }
+      } catch (err) {
+        if (isCurrent) console.warn('[Tab Sync Error]', err.message);
+      }
+    };
+
+    syncTabData();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentTab, isAuthenticated, apiUser?.id]);
 
   // =================================================================
   // SPRINT 04 – ANGGOTA 2: AUTH HANDLERS (Register & Login via REST API)
@@ -1728,27 +2318,6 @@ function StudyMateApp() {
             await deleteAccessToken();
             await deleteUserData();
 
-            // =================================================================
-            // WEEK 8 – ANGGOTA 1: User Data Isolation on Logout
-            // Bersihkan seluruh state data pengguna dari memori aplikasi agar
-            // akun berikutnya memulai dari kondisi bersih tanpa kebocoran data.
-            // =================================================================
-            setCourses([]);
-            setMaterials([]);
-            setTasks([]);
-            setNotifications([]);
-            setProfileAvatarUri(null);
-            setUserProfile({
-              name: '',
-              email: '',
-              nim: '',
-              major: '',
-              campus: '',
-              university: '',
-              semester: null,
-              studyStreakDays: 0,
-            });
-
             // Bersihkan seluruh state sesi
             setApiUser(null);
             setIsAuthenticated(false);
@@ -1800,158 +2369,6 @@ function StudyMateApp() {
       });
     } finally {
       setIsApiTesting(false);
-    }
-  };
-
-  // =================================================================
-  // WEEK 8 – ANGGOTA 3: PROFILE MANAGEMENT & EDIT PROFILE HANDLERS
-  // =================================================================
-  const handleLoadProfile = async () => {
-    setProfileLoading(true);
-    try {
-      const result = await requestApi('/users/me.php', { method: 'GET', requiresAuth: true });
-      if (result.ok && result.data?.user) {
-        const u = result.data.user;
-        setApiUser(u);
-        setUserProfile((prev) => ({
-          ...prev,
-          name: u.name,
-          email: u.email,
-          university: u.university || '',
-          major: u.major || '',
-          semester: u.semester || null,
-        }));
-        if (u.avatar_path) {
-          const avatarUrl = API_URL.startsWith('http')
-            ? `${API_URL.replace('/studymate-api', '')}/studymate-api/${u.avatar_path}`
-            : `http://192.168.1.5/studymate-api/${u.avatar_path}`;
-          setProfileAvatarUri(avatarUrl);
-          await AsyncStorage.setItem(`@studymate_avatar_${u.id}`, avatarUrl);
-        }
-      }
-    } catch (e) {
-      console.warn('[Profile Load Warning]', e.message);
-    } finally {
-      setProfileLoading(false);
-    }
-  };
-
-  const handlePickProfilePhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Izin Galeri Diperlukan',
-          'StudyMate membutuhkan izin akses galeri foto untuk memilih foto profil baru.'
-        );
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const pickedUri = result.assets[0].uri;
-        setEditProfilePhotoUri(pickedUri);
-        setEditProfilePhotoPreview(pickedUri);
-      }
-    } catch (err) {
-      Alert.alert('Gagal Membuka Galeri', 'Terjadi kesalahan saat memilih foto: ' + err.message);
-    }
-  };
-
-  const handleSaveProfile = async (newName, newUniversity, newMajor, newSemester) => {
-    if (!newName.trim()) {
-      Alert.alert('Perhatian', 'Nama lengkap pengguna wajib diisi.');
-      return;
-    }
-    setIsSavingProfile(true);
-    try {
-      // 1. Simpan nama, universitas, jurusan, semester ke server via PATCH /users/update-profile.php
-      const result = await requestApi('/users/update-profile.php', {
-        method: 'PATCH',
-        body: {
-          name: newName.trim(),
-          university: (newUniversity || '').trim(),
-          major: (newMajor || '').trim(),
-          semester: newSemester || null,
-        },
-        requiresAuth: true,
-      });
-
-      if (!result.ok) {
-        Alert.alert('Gagal Menyimpan Profil', result.error || 'Server menolak pembaruan profil.');
-        return;
-      }
-
-      const updatedUser = result.data?.user;
-      if (updatedUser) {
-        setApiUser((prev) => ({ ...prev, ...updatedUser }));
-        setUserProfile((prev) => ({
-          ...prev,
-          name: updatedUser.name,
-          university: updatedUser.university || '',
-          major: updatedUser.major || '',
-          semester: updatedUser.semester || null,
-        }));
-        await saveUserData({ ...apiUser, ...updatedUser });
-      }
-
-      // 2. Unggah foto avatar ke backend jika pengguna memilih foto baru dari galeri
-      if (editProfilePhotoUri) {
-        const persistentAvatarUri = await persistImageAsync(editProfilePhotoUri);
-
-        const token = await getAccessToken();
-        const formData = new FormData();
-        formData.append('avatar', {
-          uri: persistentAvatarUri,
-          name: `avatar_${apiUser?.id || 'usr'}_${Date.now()}.jpg`,
-          type: 'image/jpeg',
-        });
-
-        const uploadUrl = API_URL.startsWith('http')
-          ? `${API_URL}/users/upload-avatar.php`
-          : `http://192.168.1.5/studymate-api/users/upload-avatar.php`;
-
-        try {
-          const uploadRes = await fetch(uploadUrl, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          });
-          const uploadData = await uploadRes.json();
-          if (uploadData.success && uploadData.avatar_url) {
-            setProfileAvatarUri(uploadData.avatar_url);
-            if (apiUser?.id) {
-              await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, uploadData.avatar_url);
-            }
-          } else {
-            setProfileAvatarUri(persistentAvatarUri);
-            if (apiUser?.id) {
-              await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, persistentAvatarUri);
-            }
-          }
-        } catch (uploadErr) {
-          console.warn('[Avatar Upload Network]', uploadErr.message);
-          setProfileAvatarUri(persistentAvatarUri);
-          if (apiUser?.id) {
-            await AsyncStorage.setItem(`@studymate_avatar_${apiUser.id}`, persistentAvatarUri);
-          }
-        }
-      }
-
-      setIsEditProfileVisible(false);
-      setEditProfilePhotoUri(null);
-      Alert.alert('Profil Diperbarui 🎉', 'Profil mahasiswa Anda berhasil disimpan.');
-    } catch (e) {
-      Alert.alert('Gagal', 'Terjadi masalah saat menyimpan profil: ' + e.message);
-    } finally {
-      setIsSavingProfile(false);
     }
   };
 
@@ -2084,162 +2501,197 @@ function StudyMateApp() {
       await persistData(STORAGE_KEYS.MATERIALS, updated);
       setMaterialModalVisible(false);
       setEditingMaterial(null);
-    }};
+    };
 
-  // =================================================================
-  // 7. COMPUTED DATA & DASHBOARD STATS
-  // =================================================================
-  const totalMaterials = materials.length;
-  const studiedMaterialsCount = materials.filter((m) => m.isStudied).length;
-  const unstudiedMaterialsCount = totalMaterials - studiedMaterialsCount;
-  const studyProgressPercent =
-    totalMaterials > 0 ? Math.round((studiedMaterialsCount / totalMaterials) * 100) : 0;
+    // =================================================================
+    // 7. COMPUTED DATA & DASHBOARD STATS
+    // =================================================================
+    const totalMaterials = materials.length;
+    const studiedMaterialsCount = materials.filter((m) => m.isStudied).length;
+    const unstudiedMaterialsCount = totalMaterials - studiedMaterialsCount;
+    const studyProgressPercent =
+      totalMaterials > 0 ? Math.round((studiedMaterialsCount / totalMaterials) * 100) : 0;
 
-  const activeTasksCount = tasks.filter((t) => !t.completed).length;
-  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+    const activeTasksCount = tasks.filter((t) => !t.completed).length;
+    const unreadNotifCount = notifications.filter((n) => !n.read).length;
 
-  const filteredMaterials = useMemo(() => {
-    return materials.filter((item) => {
-      const query = materialSearchQuery.toLowerCase().trim();
-      const matchSearch =
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        item.courseName.toLowerCase().includes(query) ||
-        item.meetingTopic.toLowerCase().includes(query);
+    const filteredMaterials = useMemo(() => {
+      return materials.filter((item) => {
+        const query = materialSearchQuery.toLowerCase().trim();
+        const matchSearch =
+          !query ||
+          item.title.toLowerCase().includes(query) ||
+          item.courseName.toLowerCase().includes(query) ||
+          item.meetingTopic.toLowerCase().includes(query);
 
-      const matchCourse =
-        selectedCourseFilter === 'ALL' || item.courseId === selectedCourseFilter;
+        const matchCourse =
+          selectedCourseFilter === 'ALL' || item.courseId === selectedCourseFilter;
 
-      const matchMeeting =
-        selectedMeetingFilter === 'ALL' ||
-        String(item.meetingNumber) === String(selectedMeetingFilter);
+        const matchMeeting =
+          selectedMeetingFilter === 'ALL' ||
+          String(item.meetingNumber) === String(selectedMeetingFilter);
 
-      const matchStatus =
-        selectedStatusFilter === 'ALL' ||
-        (selectedStatusFilter === 'STUDIED' && item.isStudied) ||
-        (selectedStatusFilter === 'UNSTUDIED' && !item.isStudied);
+        const matchStatus =
+          selectedStatusFilter === 'ALL' ||
+          (selectedStatusFilter === 'STUDIED' && item.isStudied) ||
+          (selectedStatusFilter === 'UNSTUDIED' && !item.isStudied);
 
-      return matchSearch && matchCourse && matchMeeting && matchStatus;
-    });
-  }, [
-    materials,
-    materialSearchQuery,
-    selectedCourseFilter,
-    selectedMeetingFilter,
-    selectedStatusFilter,
-  ]);
+        return matchSearch && matchCourse && matchMeeting && matchStatus;
+      });
+    }, [
+      materials,
+      materialSearchQuery,
+      selectedCourseFilter,
+      selectedMeetingFilter,
+      selectedStatusFilter,
+    ]);
 
-  const todayCourse = useMemo(() => {
-    if (!courses || courses.length === 0) return null;
-    const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const currentDay = daysMap[new Date().getDay()];
-    const found = courses.find((c) => c.day && c.day.toLowerCase() === currentDay.toLowerCase());
-    return found || courses[0] || null;
-  }, [courses]);
+    const todayCourse = useMemo(() => {
+      if (!courses || courses.length === 0) return null;
+      const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const currentDay = daysMap[new Date().getDay()];
+      const found = courses.find((c) => c.day && c.day.toLowerCase() === currentDay.toLowerCase());
+      return found || courses[0] || null;
+    }, [courses]);
 
-  const recommendedMaterial = useMemo(() => {
-    if (!materials || materials.length === 0) return null;
-    if (!todayCourse) return materials[0] || null;
-    const unread = materials.find(
-      (m) => m.courseId === todayCourse.id && !m.isStudied
-    );
-    return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0] || null;
-  }, [todayCourse, materials]);
+    const recommendedMaterial = useMemo(() => {
+      if (!materials || materials.length === 0) return null;
+      if (!todayCourse) return materials[0] || null;
+      const unread = materials.find(
+        (m) => m.courseId === todayCourse.id && !m.isStudied
+      );
+      return unread || materials.find((m) => m.courseId === todayCourse.id) || materials[0] || null;
+    }, [todayCourse, materials]);
 
-  // =================================================================
-  // 8. SCREEN RENDERERS WITH OPTIMAL SCROLLING & RESPONSIVENESS
-  // =================================================================
+    // =================================================================
+    // 8. SCREEN RENDERERS WITH OPTIMAL SCROLLING & RESPONSIVENESS
+    // =================================================================
 
-  // =================================================================
-  // SPRINT 04 – ANGGOTA 2: AUTH SCREENS (Login & Register)
-  // Ditampilkan jika isAuthenticated === false
-  // =================================================================
-  const renderAuthScreen = () => {
-    const isRegister = authScreen === 'register';
+    // =================================================================
+    // SPRINT 04 – ANGGOTA 2: AUTH SCREENS (Login & Register)
+    // Ditampilkan jika isAuthenticated === false
+    // =================================================================
+    const renderAuthScreen = () => {
+      const isRegister = authScreen === 'register';
 
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: 'center',
-            paddingHorizontal: 24,
-            paddingVertical: 32,
-          }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Logo & Brand */}
-          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+      return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+          <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'center',
+              paddingHorizontal: 24,
+              paddingVertical: 32,
+            }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Logo & Brand */}
+            <View style={{ alignItems: 'center', marginBottom: 32 }}>
+              <View
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 22,
+                  backgroundColor: COLORS.primary,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 14,
+                  shadowColor: COLORS.primary,
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 10,
+                  elevation: 8,
+                }}
+              >
+                <Ionicons name="school" size={36} color="#FFFFFF" />
+              </View>
+              <Text style={{ fontSize: 26, fontWeight: '900', color: COLORS.textPrimary }}>
+                StudyMate
+              </Text>
+              <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>
+                Personal Study Material Organizer
+              </Text>
+            </View>
+
+            {/* Card Auth */}
             <View
               style={{
-                width: 72,
-                height: 72,
-                borderRadius: 22,
-                backgroundColor: COLORS.primary,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 14,
-                shadowColor: COLORS.primary,
-                shadowOffset: { width: 0, height: 6 },
-                shadowOpacity: 0.3,
-                shadowRadius: 10,
-                elevation: 8,
+                backgroundColor: COLORS.card,
+                borderRadius: 20,
+                padding: 24,
+                borderWidth: 1,
+                borderColor: COLORS.cardBorder,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.06,
+                shadowRadius: 12,
+                elevation: 4,
               }}
             >
-              <Ionicons name="school" size={36} color="#FFFFFF" />
-            </View>
-            <Text style={{ fontSize: 26, fontWeight: '900', color: COLORS.textPrimary }}>
-              StudyMate
-            </Text>
-            <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>
-              Personal Study Material Organizer
-            </Text>
-          </View>
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontWeight: '800',
+                  color: COLORS.textPrimary,
+                  marginBottom: 4,
+                }}
+              >
+                {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali 👋'}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: COLORS.textMuted,
+                  marginBottom: 20,
+                }}
+              >
+                {isRegister
+                  ? 'Daftarkan akun mahasiswa untuk mulai belajar'
+                  : 'Masuk untuk melanjutkan belajarmu'}
+              </Text>
 
-          {/* Card Auth */}
-          <View
-            style={{
-              backgroundColor: COLORS.card,
-              borderRadius: 20,
-              padding: 24,
-              borderWidth: 1,
-              borderColor: COLORS.cardBorder,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.06,
-              shadowRadius: 12,
-              elevation: 4,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: '800',
-                color: COLORS.textPrimary,
-                marginBottom: 4,
-              }}
-            >
-              {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali 👋'}
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                color: COLORS.textMuted,
-                marginBottom: 20,
-              }}
-            >
-              {isRegister
-                ? 'Daftarkan akun mahasiswa untuk mulai belajar'
-                : 'Masuk untuk melanjutkan belajarmu'}
-            </Text>
+              {/* Name (Register only) */}
+              {isRegister && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                    Nama Lengkap
+                  </Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: COLORS.inputBackground,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: COLORS.cardBorder,
+                      paddingHorizontal: 14,
+                      height: 48,
+                    }}
+                  >
+                    <Ionicons name="person-outline" size={18} color={COLORS.textMuted} />
+                    <TextInput
+                      style={{
+                        flex: 1,
+                        marginLeft: 10,
+                        fontSize: 15,
+                        color: COLORS.textPrimary,
+                      }}
+                      placeholder="Nama lengkap kamu"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={authName}
+                      onChangeText={setAuthName}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                </View>
+              )}
 
-            {/* Name (Register only) */}
-            {isRegister && (
+              {/* Email */}
               <View style={{ marginBottom: 14 }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
-                  Nama Lengkap
+                  Email Mahasiswa
                 </Text>
                 <View
                   style={{
@@ -2253,7 +2705,7 @@ function StudyMateApp() {
                     height: 48,
                   }}
                 >
-                  <Ionicons name="person-outline" size={18} color={COLORS.textMuted} />
+                  <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
                   <TextInput
                     style={{
                       flex: 1,
@@ -2261,98 +2713,21 @@ function StudyMateApp() {
                       fontSize: 15,
                       color: COLORS.textPrimary,
                     }}
-                    placeholder="Nama lengkap kamu"
+                    placeholder="email@kampus.ac.id"
                     placeholderTextColor={COLORS.textMuted}
-                    value={authName}
-                    onChangeText={setAuthName}
-                    autoCapitalize="words"
+                    value={authEmail}
+                    onChangeText={setAuthEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
                 </View>
               </View>
-            )}
 
-            {/* Email */}
-            <View style={{ marginBottom: 14 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
-                Email Mahasiswa
-              </Text>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: COLORS.inputBackground,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: COLORS.cardBorder,
-                  paddingHorizontal: 14,
-                  height: 48,
-                }}
-              >
-                <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
-                <TextInput
-                  style={{
-                    flex: 1,
-                    marginLeft: 10,
-                    fontSize: 15,
-                    color: COLORS.textPrimary,
-                  }}
-                  placeholder="email@kampus.ac.id"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={authEmail}
-                  onChangeText={setAuthEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-            </View>
-
-            {/* Password */}
-            <View style={{ marginBottom: isRegister ? 14 : 20 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
-                Password
-              </Text>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: COLORS.inputBackground,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: COLORS.cardBorder,
-                  paddingHorizontal: 14,
-                  height: 48,
-                }}
-              >
-                <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
-                <TextInput
-                  style={{
-                    flex: 1,
-                    marginLeft: 10,
-                    fontSize: 15,
-                    color: COLORS.textPrimary,
-                  }}
-                  placeholder="Minimal 6 karakter"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={authPassword}
-                  onChangeText={setAuthPassword}
-                  secureTextEntry={!showAuthPassword}
-                />
-                <TouchableOpacity onPress={() => setShowAuthPassword((v) => !v)}>
-                  <Ionicons
-                    name={showAuthPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={18}
-                    color={COLORS.textMuted}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Confirm Password (Register only) */}
-            {isRegister && (
-              <View style={{ marginBottom: 20 }}>
+              {/* Password */}
+              <View style={{ marginBottom: isRegister ? 14 : 20 }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
-                  Konfirmasi Password
+                  Password
                 </Text>
                 <View
                   style={{
@@ -2366,7 +2741,7 @@ function StudyMateApp() {
                     height: 48,
                   }}
                 >
-                  <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.textMuted} />
+                  <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
                   <TextInput
                     style={{
                       flex: 1,
@@ -2374,715 +2749,150 @@ function StudyMateApp() {
                       fontSize: 15,
                       color: COLORS.textPrimary,
                     }}
-                    placeholder="Ulangi password"
+                    placeholder="Minimal 6 karakter"
                     placeholderTextColor={COLORS.textMuted}
-                    value={authConfirmPassword}
-                    onChangeText={setAuthConfirmPassword}
-                    secureTextEntry
+                    value={authPassword}
+                    onChangeText={setAuthPassword}
+                    secureTextEntry={!showAuthPassword}
                   />
+                  <TouchableOpacity onPress={() => setShowAuthPassword((v) => !v)}>
+                    <Ionicons
+                      name={showAuthPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color={COLORS.textMuted}
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
-            )}
 
-            {/* Error Message */}
-            {!!authError && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'flex-start',
-                  backgroundColor: COLORS.roseLight,
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 16,
-                  borderWidth: 1,
-                  borderColor: '#FECACA',
-                }}
-              >
-                <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} style={{ marginTop: 1 }} />
-                <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: COLORS.rose, fontWeight: '600' }}>
-                  {authError}
-                </Text>
-              </View>
-            )}
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: isAuthLoading ? COLORS.textMuted : COLORS.primary,
-                borderRadius: 14,
-                height: 50,
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'row',
-              }}
-              onPress={() => (isRegister ? handleApiRegister() : handleApiLogin())}
-              disabled={isAuthLoading}
-              activeOpacity={0.8}
-            >
-              {isAuthLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons
-                    name={isRegister ? 'person-add-outline' : 'log-in-outline'}
-                    size={18}
-                    color="#FFFFFF"
-                  />
-                  <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
-                    {isRegister ? 'Daftar Sekarang' : 'Masuk ke StudyMate'}
+              {/* Confirm Password (Register only) */}
+              {isRegister && (
+                <View style={{ marginBottom: 20 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 }}>
+                    Konfirmasi Password
                   </Text>
-                </>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: COLORS.inputBackground,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: COLORS.cardBorder,
+                      paddingHorizontal: 14,
+                      height: 48,
+                    }}
+                  >
+                    <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.textMuted} />
+                    <TextInput
+                      style={{
+                        flex: 1,
+                        marginLeft: 10,
+                        fontSize: 15,
+                        color: COLORS.textPrimary,
+                      }}
+                      placeholder="Ulangi password"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={authConfirmPassword}
+                      onChangeText={setAuthConfirmPassword}
+                      secureTextEntry
+                    />
+                  </View>
+                </View>
               )}
-            </TouchableOpacity>
-          </View>
 
-          {/* Switch Login/Register */}
-          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 20 }}>
-            <Text style={{ fontSize: 14, color: COLORS.textMuted }}>
-              {isRegister ? 'Sudah punya akun? ' : 'Belum punya akun? '}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                setAuthScreen(isRegister ? 'login' : 'register');
-                setAuthError('');
-                setAuthName('');
-                setAuthPassword('');
-                setAuthConfirmPassword('');
+              {/* Error Message */}
+              {!!authError && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    backgroundColor: COLORS.roseLight,
+                    borderRadius: 10,
+                    padding: 12,
+                    marginBottom: 16,
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                  }}
+                >
+                  <Ionicons name="alert-circle-outline" size={16} color={COLORS.rose} style={{ marginTop: 1 }} />
+                  <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: COLORS.rose, fontWeight: '600' }}>
+                    {authError}
+                  </Text>
+                </View>
+              )}
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={{
+                  backgroundColor: isAuthLoading ? COLORS.textMuted : COLORS.primary,
+                  borderRadius: 14,
+                  height: 50,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                }}
+                onPress={() => (isRegister ? handleApiRegister() : handleApiLogin())}
+                disabled={isAuthLoading}
+                activeOpacity={0.8}
+              >
+                {isAuthLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={isRegister ? 'person-add-outline' : 'log-in-outline'}
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                    <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
+                      {isRegister ? 'Daftar Sekarang' : 'Masuk ke StudyMate'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Switch Login/Register */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 20 }}>
+              <Text style={{ fontSize: 14, color: COLORS.textMuted }}>
+                {isRegister ? 'Sudah punya akun? ' : 'Belum punya akun? '}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setAuthScreen(isRegister ? 'login' : 'register');
+                  setAuthError('');
+                  setAuthName('');
+                  setAuthPassword('');
+                  setAuthConfirmPassword('');
+                }}
+              >
+                <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '800' }}>
+                  {isRegister ? 'Login' : 'Daftar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Note HTTPS */}
+            <Text
+              style={{
+                fontSize: 10,
+                color: COLORS.textMuted,
+                textAlign: 'center',
+                marginTop: 16,
+                lineHeight: 15,
               }}
             >
-              <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '800' }}>
-                {isRegister ? 'Login' : 'Daftar'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Note HTTPS */}
-          <Text
-            style={{
-              fontSize: 10,
-              color: COLORS.textMuted,
-              textAlign: 'center',
-              marginTop: 16,
-              lineHeight: 15,
-            }}
-          >
-            {'🔒'} Koneksi lokal menggunakan HTTP (pengembangan).{'\n'}
-            Deploy produksi wajib menggunakan HTTPS.
-          </Text>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  };
-
-  // SCREEN 1: DASHBOARD AKTIVITAS BELAJAR (Anggota 1)
-  const renderHomeScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Dashboard Belajar"
-        subtitle={`Semangat, ${(apiUser?.name || userProfile.name || 'Mahasiswa').trim().split(' ')[0]}! 🔥`}
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-      />
-
-      {/* Week 6: Offline Banner */}
-      <OfflineBanner
-        isOffline={isOffline}
-        onRetry={checkServerConnectivity}
-        isRetrying={isCheckingConnection}
-      />
-
-      {/* Hero Progress Banner */}
-      <View style={styles.heroBanner}>
-        <View style={styles.heroBannerContent}>
-          <View style={styles.heroStreakRow}>
-            <Ionicons name="flame" size={18} color="#F59E0B" />
-            <Text style={styles.heroStreakText}>
-              {userProfile.studyStreakDays} Hari Belajar Berturut-turut!
+              {'🔒'} Koneksi lokal menggunakan HTTP (pengembangan).{'\n'}
+              Deploy produksi wajib menggunakan HTTPS.
             </Text>
-          </View>
-          <Text style={styles.heroTitle}>Progres Semester Ini</Text>
-          <Text style={styles.heroSubtitle}>
-            {studiedMaterialsCount} dari {totalMaterials} materi telah kamu kuasai ({studyProgressPercent}%)
-          </Text>
-
-          <View style={styles.heroProgressBarBg}>
-            <View
-              style={[
-                styles.heroProgressBarFill,
-                { width: `${Math.min(100, Math.max(0, studyProgressPercent))}%` },
-              ]}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* Responsive Stats Grid */}
-      <View style={styles.statsGrid}>
-        <StatCard
-          title="Total Materi"
-          value={totalMaterials}
-          subtitle="Tersimpan di Cloud"
-          icon="library-outline"
-          iconColor={COLORS.primary}
-          bgColor={COLORS.primaryLight}
-          cardWidth={statCardWidth}
-        />
-        <StatCard
-          title="Sudah Dibaca"
-          value={studiedMaterialsCount}
-          subtitle="Tuntas dipahami"
-          icon="checkmark-done-circle-outline"
-          iconColor={COLORS.emerald}
-          bgColor={COLORS.emeraldLight}
-          cardWidth={statCardWidth}
-        />
-        <StatCard
-          title="Belum Dipelajari"
-          value={unstudiedMaterialsCount}
-          subtitle="Perlu di-review"
-          icon="time-outline"
-          iconColor={COLORS.amber}
-          bgColor={COLORS.amberLight}
-          cardWidth={statCardWidth}
-        />
-        <StatCard
-          title="Tugas Aktif"
-          value={activeTasksCount}
-          subtitle="Perlu diselesaikan"
-          icon="alarm-outline"
-          iconColor={COLORS.rose}
-          bgColor={COLORS.roseLight}
-          cardWidth={statCardWidth}
-        />
-      </View>
-
-      {/* Responsive Quick Action Bar */}
-      <View style={styles.quickActionBar}>
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => {
-            setEditingMaterial(null);
-            setMaterialModalVisible(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight }]}>
-            <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            Upload Materi
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => setScheduleModalVisible(true)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.secondaryLight }]}>
-            <Ionicons name="scan-outline" size={20} color={COLORS.secondary} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            Upload Jadwal
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => {
-            setEditingTask(null);
-            setTaskModalVisible(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.amberLight }]}>
-            <Ionicons name="add-circle-outline" size={20} color={COLORS.amber} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            Tambah Tugas
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionButton}
-          onPress={() => {
-            if (materials.length > 0) handleOpenAiAssistant(materials[0]);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: COLORS.accentLight }]}>
-            <Ionicons name="sparkles" size={20} color={COLORS.accent} />
-          </View>
-          <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
-            AI Assistant
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Recommended Today's Study Section */}
-      <View style={styles.sectionHeaderRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>
-            Rekomendasi Belajar Hari Ini 🎯
-          </Text>
-          <Text style={styles.sectionSubtitle} numberOfLines={1}>
-            {todayCourse ? `Sesuai jadwal: ${todayCourse.name} (${todayCourse.day})` : 'Belum ada jadwal mata kuliah hari ini'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
-          <Text style={styles.sectionActionText}>Semua</Text>
-        </TouchableOpacity>
-      </View>
-
-      {recommendedMaterial ? (
-        <MaterialCard
-          material={recommendedMaterial}
-          onPress={(m) => handleOpenAiAssistant(m)}
-          onToggleStudied={handleToggleMaterialStudied}
-          onOpenAi={handleOpenAiAssistant}
-          onOpenNotes={handleOpenNotes}
-          onDelete={handleDeleteMaterial}
-        />
-      ) : (
-        <EmptyState
-          title="Belum ada materi untuk hari ini"
-          subtitle="Tambahkan mata kuliah dan materi agar StudyMate dapat menyelaraskan jadwal belajarmu."
-          actionText="+ Tambah Materi"
-          onAction={() => {
-            setEditingMaterial(null);
-            setMaterialModalVisible(true);
-          }}
-        />
-      )}
-
-      {/* Urgent Tasks Section */}
-      <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>
-            Tugas Mendekati Deadline ⏳
-          </Text>
-          <Text style={styles.sectionSubtitle} numberOfLines={1}>
-            Kumpulkan sebelum batas waktu berakhir
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setCurrentTab('Tasks')} activeOpacity={0.7}>
-          <Text style={styles.sectionActionText}>Semua</Text>
-        </TouchableOpacity>
-      </View>
-
-      {tasks
-        .filter((t) => !t.completed)
-        .slice(0, 2)
-        .map((t) => (
-          <TaskItem
-            key={t.id}
-            task={t}
-            onToggle={handleToggleTaskCompleted}
-            onDelete={handleDeleteTask}
-          />
-        ))}
-
-      {tasks.length === 0 ? (
-        <EmptyState
-          title="Belum Ada Tugas Kuliah"
-          subtitle="Tambahkan tugas perkuliahan untuk memantau deadline belajarmu."
-          actionText="+ Tambah Tugas"
-          onAction={() => {
-            setEditingTask(null);
-            setTaskModalVisible(true);
-          }}
-        />
-      ) : activeTasksCount === 0 ? (
-        <View style={styles.allClearCard}>
-          <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
-          <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
-          <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
-        </View>
-      ) : null}
-    </ScrollView>
-  );
-
-  // SCREEN 2: DAFTAR MATA KULIAH & DETAIL PERTEMUAN (Anggota 2)
-  const renderCoursesScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Mata Kuliah"
-        subtitle="Semester Ganjil 2026/2027"
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-      />
-
-      {/* Week 6: Offline Banner */}
-      <OfflineBanner
-        isOffline={isOffline}
-        onRetry={handleRefreshCourses}
-        isRetrying={coursesLoading || isCheckingConnection}
-      />
-
-      {/* Week 6: Error State dengan tombol Retry */}
-      {coursesError && (
-        <ApiErrorCard
-          title="Koneksi Data Mata Kuliah"
-          message={coursesError}
-          onRetry={handleRefreshCourses}
-          isRetrying={coursesLoading}
-        />
-      )}
-
-      {/* Week 6: Loading State */}
-      {coursesLoading && <InlineLoadingIndicator message="Memperbarui data mata kuliah..." />}
-
-      <View style={styles.screenBannerRow}>
-        <Text style={styles.screenBannerText}>
-          Kelola materi perkuliahan berdasarkan mata kuliah dan pertemuan 1-16 secara terstruktur.
-        </Text>
-        <TouchableOpacity
-          style={styles.primaryAddButton}
-          onPress={() => {
-            setEditingCourse(null);
-            setCourseModalVisible(true);
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={18} color="#FFFFFF" />
-          <Text style={styles.primaryAddButtonText}>Tambah</Text>
-        </TouchableOpacity>
-      </View>
-
-      {courses.map((course) => {
-        const courseMaterials = materials.filter((m) => m.courseId === course.id);
-        const studied = courseMaterials.filter((m) => m.isStudied).length;
-
-        return (
-          <CourseCard
-            key={course.id}
-            course={course}
-            materialCount={courseMaterials.length}
-            studiedCount={studied}
-            onPress={() => {
-              setSelectedCourseFilter(course.id);
-              setCurrentTab('Materials');
-            }}
-          />
-        );
-      })}
-
-      {courses.length === 0 && (
-        <EmptyState
-          title="Belum Ada Mata Kuliah"
-          subtitle="Tambahkan mata kuliah atau unggah jadwal kuliah untuk membuat otomatis."
-          actionText="+ Tambah Mata Kuliah"
-          onAction={() => setCourseModalVisible(true)}
-        />
-      )}
-    </ScrollView>
-  );
-
-  // SCREEN 3: KATALOG MATERI - SEARCH & FILTER (Anggota 2)
-  const renderMaterialsScreen = () => {
-    const meetingNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-
-    return (
-      <View style={styles.screenContainer}>
-        {/* Fixed Header & Search Section to maintain high performance */}
-        <View style={styles.materialsHeaderWrapper}>
-          <AppHeader
-            title="Katalog Materi"
-            subtitle="Organisasi per Matkul & Pertemuan"
-            unreadCount={unreadNotifCount}
-            onOpenNotif={() => setNotifModalVisible(true)}
-          />
-
-          {/* Week 6: Offline Banner */}
-          <OfflineBanner
-            isOffline={isOffline}
-            onRetry={handleRefreshMaterials}
-            isRetrying={materialsLoading || isCheckingConnection}
-          />
-
-          {/* Week 6: Error State */}
-          {materialsError && (
-            <ApiErrorCard
-              title="Katalog Materi Perkuliahan"
-              message={materialsError}
-              onRetry={handleRefreshMaterials}
-              isRetrying={materialsLoading}
-            />
-          )}
-
-          {/* Week 6: Loading State */}
-          {materialsLoading && <InlineLoadingIndicator message="Menyinkronkan materi perkuliahan..." />}
-
-          {/* Search Bar */}
-          <View style={styles.searchBarContainer}>
-            <Ionicons name="search" size={18} color={COLORS.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Cari modul, topik pertemuan, mata kuliah..."
-              placeholderTextColor={COLORS.textMuted}
-              value={materialSearchQuery}
-              onChangeText={setMaterialSearchQuery}
-            />
-            {materialSearchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setMaterialSearchQuery('')}>
-                <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Status Filter Chips */}
-          <View style={styles.filterPillRow}>
-            <TouchableOpacity
-              style={[
-                styles.statusFilterPill,
-                selectedStatusFilter === 'ALL' && styles.statusFilterPillActive,
-              ]}
-              onPress={() => setSelectedStatusFilter('ALL')}
-            >
-              <Text
-                style={[
-                  styles.statusFilterText,
-                  selectedStatusFilter === 'ALL' && styles.statusFilterTextActive,
-                ]}
-              >
-                Semua ({materials.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.statusFilterPill,
-                selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterPillActive,
-              ]}
-              onPress={() => setSelectedStatusFilter('UNSTUDIED')}
-            >
-              <Text
-                style={[
-                  styles.statusFilterText,
-                  selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterTextActive,
-                ]}
-              >
-                Belum Dibaca ({unstudiedMaterialsCount})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.statusFilterPill,
-                selectedStatusFilter === 'STUDIED' && styles.statusFilterPillActive,
-              ]}
-              onPress={() => setSelectedStatusFilter('STUDIED')}
-            >
-              <Text
-                style={[
-                  styles.statusFilterText,
-                  selectedStatusFilter === 'STUDIED' && styles.statusFilterTextActive,
-                ]}
-              >
-                Selesai ({studiedMaterialsCount})
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Horizontal Course Filters */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.horizontalFilterScroll}
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            <TouchableOpacity
-              style={[
-                styles.courseFilterChip,
-                selectedCourseFilter === 'ALL' && styles.courseFilterChipActive,
-              ]}
-              onPress={() => setSelectedCourseFilter('ALL')}
-            >
-              <Text
-                style={[
-                  styles.courseFilterChipText,
-                  selectedCourseFilter === 'ALL' && styles.courseFilterChipTextActive,
-                ]}
-              >
-                Semua Matkul
-              </Text>
-            </TouchableOpacity>
-
-            {courses.map((crs) => (
-              <TouchableOpacity
-                key={crs.id}
-                style={[
-                  styles.courseFilterChip,
-                  selectedCourseFilter === crs.id && styles.courseFilterChipActive,
-                  selectedCourseFilter === crs.id && { backgroundColor: crs.color },
-                ]}
-                onPress={() => setSelectedCourseFilter(crs.id)}
-              >
-                <Text
-                  style={[
-                    styles.courseFilterChipText,
-                    selectedCourseFilter === crs.id && styles.courseFilterChipTextActive,
-                  ]}
-                >
-                  {crs.code}
-                </Text>
-              </TouchableOpacity>
-            ))}
           </ScrollView>
+        </SafeAreaView>
+      );
+    };
 
-          {/* Horizontal Meeting Filters */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.meetingFilterScroll}
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            <TouchableOpacity
-              style={[
-                styles.meetingFilterChip,
-                selectedMeetingFilter === 'ALL' && styles.meetingFilterChipActive,
-              ]}
-              onPress={() => setSelectedMeetingFilter('ALL')}
-            >
-              <Text
-                style={[
-                  styles.meetingFilterChipText,
-                  selectedMeetingFilter === 'ALL' && styles.meetingFilterChipTextActive,
-                ]}
-              >
-                Semua Pertemuan
-              </Text>
-            </TouchableOpacity>
-            {meetingNumbers.slice(0, 8).map((num) => (
-              <TouchableOpacity
-                key={num}
-                style={[
-                  styles.meetingFilterChip,
-                  selectedMeetingFilter === String(num) && styles.meetingFilterChipActive,
-                ]}
-                onPress={() => setSelectedMeetingFilter(String(num))}
-              >
-                <Text
-                  style={[
-                    styles.meetingFilterChipText,
-                    selectedMeetingFilter === String(num) && styles.meetingFilterChipTextActive,
-                  ]}
-                >
-                  Pertemuan {num}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Scrollable Materials List with bottom padding */}
-        <ScrollView
-          style={{ flex: 1, paddingHorizontal: 16 }}
-          contentContainerStyle={{
-            paddingTop: 8,
-            paddingBottom: scrollContentPaddingBottom,
-          }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.listHeaderRow}>
-            <Text style={styles.listCountText}>
-              Menampilkan {filteredMaterials.length} materi
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {/* WEEK 7 – ANGGOTA 1 & 2: Tombol Scan Materi Kamera HP */}
-              <TouchableOpacity
-                style={styles.scanMaterialBtn}
-                onPress={() => setIsScannerVisible(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="camera" size={15} color="#FFFFFF" />
-                <Text style={styles.scanMaterialBtnText}>Scan Materi</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.addMaterialSmallBtn}
-                onPress={() => {
-                  setEditingMaterial(null);
-                  setMaterialModalVisible(true);
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="cloud-upload" size={14} color="#FFFFFF" />
-                <Text style={styles.addMaterialSmallBtnText}>Upload</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {filteredMaterials.map((item) => (
-            <MaterialCard
-              key={item.id}
-              material={item}
-              onPress={(m) => handleOpenAiAssistant(m)}
-              onToggleStudied={handleToggleMaterialStudied}
-              onOpenAi={handleOpenAiAssistant}
-              onOpenNotes={handleOpenNotes}
-              onDelete={handleDeleteMaterial}
-              onPreviewImage={(m) => setViewingPhotoMaterial(m)}
-            />
-          ))}
-
-          {filteredMaterials.length === 0 && (
-            <View style={{ alignItems: 'center', marginTop: 32, paddingHorizontal: 20 }}>
-              <Ionicons name="document-text-outline" size={52} color={COLORS.textMuted} />
-              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginTop: 12 }}>
-                Tidak ada materi yang cocok
-              </Text>
-              <Text style={{ fontSize: 13, color: COLORS.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 18 }}>
-                Pindai papan tulis / slide dosen menggunakan kamera HP atau unggah berkas materi baru.
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity
-                  style={[styles.scanMaterialBtn, { paddingHorizontal: 16, paddingVertical: 10 }]}
-                  onPress={() => setIsScannerVisible(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="camera" size={16} color="#FFFFFF" />
-                  <Text style={[styles.scanMaterialBtnText, { fontSize: 13 }]}>Scan Materi HP</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.addMaterialSmallBtn, { paddingHorizontal: 16, paddingVertical: 10 }]}
-                  onPress={() => {
-                    setEditingMaterial(null);
-                    setMaterialModalVisible(true);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="cloud-upload" size={16} color="#FFFFFF" />
-                  <Text style={[styles.addMaterialSmallBtnText, { fontSize: 13 }]}>Upload Berkas</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </ScrollView>
-      </View>
-    );
-  };
-
-  // SCREEN 4: PENGELOLAAN TUGAS DAN DEADLINE (Anggota 2)
-  const renderTasksScreen = () => {
-    const activeTasks = tasks.filter((t) => !t.completed);
-    const completedTasks = tasks.filter((t) => t.completed);
-
-    return (
+    // SCREEN 1: DASHBOARD AKTIVITAS BELAJAR (Anggota 1)
+    const renderHomeScreen = () => (
       <ScrollView
         style={styles.screenContainer}
         contentContainerStyle={[
@@ -3092,8 +2902,8 @@ function StudyMateApp() {
         showsVerticalScrollIndicator={false}
       >
         <AppHeader
-          title="Tugas & Deadline"
-          subtitle="Pantau Target Akademik"
+          title="Dashboard Belajar"
+          subtitle={`Semangat, ${(apiUser?.name || userProfile.name || 'Mahasiswa').trim().split(' ')[0]}! 🔥`}
           unreadCount={unreadNotifCount}
           onOpenNotif={() => setNotifModalVisible(true)}
         />
@@ -3101,32 +2911,267 @@ function StudyMateApp() {
         {/* Week 6: Offline Banner */}
         <OfflineBanner
           isOffline={isOffline}
-          onRetry={handleRefreshTasks}
-          isRetrying={tasksLoading || isCheckingConnection}
+          onRetry={checkServerConnectivity}
+          isRetrying={isCheckingConnection}
+        />
+
+        {/* Hero Progress Banner */}
+        <View style={styles.heroBanner}>
+          <View style={styles.heroBannerContent}>
+            <View style={styles.heroStreakRow}>
+              <Ionicons name="flame" size={18} color="#F59E0B" />
+              <Text style={styles.heroStreakText}>
+                {userProfile.studyStreakDays} Hari Belajar Berturut-turut!
+              </Text>
+            </View>
+            <Text style={styles.heroTitle}>Progres Semester Ini</Text>
+            <Text style={styles.heroSubtitle}>
+              {studiedMaterialsCount} dari {totalMaterials} materi telah kamu kuasai ({studyProgressPercent}%)
+            </Text>
+
+            <View style={styles.heroProgressBarBg}>
+              <View
+                style={[
+                  styles.heroProgressBarFill,
+                  { width: `${Math.min(100, Math.max(0, studyProgressPercent))}%` },
+                ]}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Responsive Stats Grid */}
+        <View style={styles.statsGrid}>
+          <StatCard
+            title="Total Materi"
+            value={totalMaterials}
+            subtitle="Tersimpan di Cloud"
+            icon="library-outline"
+            iconColor={COLORS.primary}
+            bgColor={COLORS.primaryLight}
+            cardWidth={statCardWidth}
+          />
+          <StatCard
+            title="Sudah Dibaca"
+            value={studiedMaterialsCount}
+            subtitle="Tuntas dipahami"
+            icon="checkmark-done-circle-outline"
+            iconColor={COLORS.emerald}
+            bgColor={COLORS.emeraldLight}
+            cardWidth={statCardWidth}
+          />
+          <StatCard
+            title="Belum Dipelajari"
+            value={unstudiedMaterialsCount}
+            subtitle="Perlu di-review"
+            icon="time-outline"
+            iconColor={COLORS.amber}
+            bgColor={COLORS.amberLight}
+            cardWidth={statCardWidth}
+          />
+          <StatCard
+            title="Tugas Aktif"
+            value={activeTasksCount}
+            subtitle="Perlu diselesaikan"
+            icon="alarm-outline"
+            iconColor={COLORS.rose}
+            bgColor={COLORS.roseLight}
+            cardWidth={statCardWidth}
+          />
+        </View>
+
+        {/* Responsive Quick Action Bar */}
+        <View style={styles.quickActionBar}>
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => {
+              setEditingMaterial(null);
+              setMaterialModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: COLORS.primaryLight }]}>
+              <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+            </View>
+            <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+              Upload Materi
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => setScheduleModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: COLORS.secondaryLight }]}>
+              <Ionicons name="scan-outline" size={20} color={COLORS.secondary} />
+            </View>
+            <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+              Upload Jadwal
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => {
+              setEditingTask(null);
+              setTaskModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: COLORS.amberLight }]}>
+              <Ionicons name="add-circle-outline" size={20} color={COLORS.amber} />
+            </View>
+            <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+              Tambah Tugas
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => {
+              if (materials.length > 0) handleOpenAiAssistant(materials[0]);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: COLORS.accentLight }]}>
+              <Ionicons name="sparkles" size={20} color={COLORS.accent} />
+            </View>
+            <Text style={[styles.quickActionLabel, isSmallScreen && { fontSize: 10 }]} numberOfLines={1}>
+              AI Assistant
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Recommended Today's Study Section */}
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle} numberOfLines={1}>
+              Rekomendasi Belajar Hari Ini 🎯
+            </Text>
+            <Text style={styles.sectionSubtitle} numberOfLines={1}>
+              {todayCourse ? `Sesuai jadwal: ${todayCourse.name} (${todayCourse.day})` : 'Belum ada jadwal mata kuliah hari ini'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setCurrentTab('Materials')} activeOpacity={0.7}>
+            <Text style={styles.sectionActionText}>Semua</Text>
+          </TouchableOpacity>
+        </View>
+
+        {recommendedMaterial ? (
+          <MaterialCard
+            material={recommendedMaterial}
+            onPress={(m) => handleOpenAiAssistant(m)}
+            onToggleStudied={handleToggleMaterialStudied}
+            onOpenAi={handleOpenAiAssistant}
+            onOpenNotes={handleOpenNotes}
+            onDelete={handleDeleteMaterial}
+          />
+        ) : (
+          <EmptyState
+            title="Belum ada materi untuk hari ini"
+            subtitle="Tambahkan mata kuliah dan materi agar StudyMate dapat menyelaraskan jadwal belajarmu."
+            actionText="+ Tambah Materi"
+            onAction={() => {
+              setEditingMaterial(null);
+              setMaterialModalVisible(true);
+            }}
+          />
+        )}
+
+        {/* Urgent Tasks Section */}
+        <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle} numberOfLines={1}>
+              Tugas Mendekati Deadline ⏳
+            </Text>
+            <Text style={styles.sectionSubtitle} numberOfLines={1}>
+              Kumpulkan sebelum batas waktu berakhir
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setCurrentTab('Tasks')} activeOpacity={0.7}>
+            <Text style={styles.sectionActionText}>Semua</Text>
+          </TouchableOpacity>
+        </View>
+
+        {tasks
+          .filter((t) => !t.completed)
+          .slice(0, 2)
+          .map((t) => (
+            <TaskItem
+              key={t.id}
+              task={t}
+              onToggle={handleToggleTaskCompleted}
+              onDelete={handleDeleteTask}
+            />
+          ))}
+
+        {tasks.length === 0 ? (
+          <EmptyState
+            title="Belum Ada Tugas Kuliah"
+            subtitle="Tambahkan tugas perkuliahan untuk memantau deadline belajarmu."
+            actionText="+ Tambah Tugas"
+            onAction={() => {
+              setEditingTask(null);
+              setTaskModalVisible(true);
+            }}
+          />
+        ) : activeTasksCount === 0 ? (
+          <View style={styles.allClearCard}>
+            <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
+            <Text style={styles.allClearTitle}>Semua Tugas Tuntas!</Text>
+            <Text style={styles.allClearSubtitle}>Kerja bagus! Waktunya me-review materi berikutnya.</Text>
+          </View>
+        ) : null}
+      </ScrollView>
+    );
+
+    // SCREEN 2: DAFTAR MATA KULIAH & DETAIL PERTEMUAN (Anggota 2)
+    const renderCoursesScreen = () => (
+      <ScrollView
+        style={styles.screenContainer}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: scrollContentPaddingBottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <AppHeader
+          title="Mata Kuliah"
+          subtitle="Semester Ganjil 2026/2027"
+          unreadCount={unreadNotifCount}
+          onOpenNotif={() => setNotifModalVisible(true)}
+        />
+
+        {/* Week 6: Offline Banner */}
+        <OfflineBanner
+          isOffline={isOffline}
+          onRetry={handleRefreshCourses}
+          isRetrying={coursesLoading || isCheckingConnection}
         />
 
         {/* Week 6: Error State dengan tombol Retry */}
-        {tasksError && (
+        {coursesError && (
           <ApiErrorCard
-            title="Daftar Tugas & Deadline"
-            message={tasksError}
-            onRetry={handleRefreshTasks}
-            isRetrying={tasksLoading}
+            title="Koneksi Data Mata Kuliah"
+            message={coursesError}
+            onRetry={handleRefreshCourses}
+            isRetrying={coursesLoading}
           />
         )}
 
         {/* Week 6: Loading State */}
-        {tasksLoading && <InlineLoadingIndicator message="Memuat daftar tugas..." />}
+        {coursesLoading && <InlineLoadingIndicator message="Memperbarui data mata kuliah..." />}
 
         <View style={styles.screenBannerRow}>
           <Text style={styles.screenBannerText}>
-            Jangan biarkan tugas terlewat. Setiap tugas terhubung langsung dengan mata kuliah.
+            Kelola materi perkuliahan berdasarkan mata kuliah dan pertemuan 1-16 secara terstruktur.
           </Text>
           <TouchableOpacity
             style={styles.primaryAddButton}
             onPress={() => {
-              setEditingTask(null);
-              setTaskModalVisible(true);
+              setEditingCourse(null);
+              setCourseModalVisible(true);
             }}
             activeOpacity={0.8}
           >
@@ -3135,4365 +3180,5275 @@ function StudyMateApp() {
           </TouchableOpacity>
         </View>
 
-        {/* Section Aktif */}
-        <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>
-          Tugas Aktif ({activeTasks.length})
-        </Text>
+        {courses.map((course) => {
+          const courseMaterials = materials.filter((m) => m.courseId === course.id);
+          const studied = courseMaterials.filter((m) => m.isStudied).length;
 
-        {activeTasks.map((t) => (
-          <TaskItem
-            key={t.id}
-            task={t}
-            onToggle={handleToggleTaskCompleted}
-            onDelete={handleDeleteTask}
-          />
-        ))}
+          return (
+            <CourseCard
+              key={course.id}
+              course={course}
+              materialCount={courseMaterials.length}
+              studiedCount={studied}
+              onPress={() => {
+                setSelectedCourseFilter(course.id);
+                setCurrentTab('Materials');
+              }}
+            />
+          );
+        })}
 
-        {tasks.length === 0 ? (
+        {courses.length === 0 && (
           <EmptyState
-            title="Belum Ada Tugas Perkuliahan"
-            subtitle="Buat tugas pertamamu untuk memantau deadline akademik secara teratur."
-            actionText="+ Tambah Tugas Baru"
-            onAction={() => {
-              setEditingTask(null);
-              setTaskModalVisible(true);
-            }}
+            title="Belum Ada Mata Kuliah"
+            subtitle="Tambahkan mata kuliah atau unggah jadwal kuliah untuk membuat otomatis."
+            actionText="+ Tambah Mata Kuliah"
+            onAction={() => setCourseModalVisible(true)}
           />
-        ) : activeTasks.length === 0 ? (
-          <View style={styles.allClearCard}>
-            <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
-            <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
-            <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
-          </View>
-        ) : null}
-
-        {/* Section Selesai */}
-        {completedTasks.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 8 }]}>
-              Sudah Selesai ({completedTasks.length})
-            </Text>
-            {completedTasks.map((t) => (
-              <TaskItem
-                key={t.id}
-                task={t}
-                onToggle={handleToggleTaskCompleted}
-                onDelete={handleDeleteTask}
-              />
-            ))}
-          </>
         )}
       </ScrollView>
     );
-  };
 
-  // SCREEN 5: JADWAL KULIAH, PENGATURAN & PROFIL (Anggota 2 & 3)
-  const renderScheduleProfileScreen = () => (
-    <ScrollView
-      style={styles.screenContainer}
-      contentContainerStyle={[
-        styles.scrollContent,
-        { paddingBottom: scrollContentPaddingBottom },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <AppHeader
-        title="Jadwal & Profil"
-        subtitle="Sinkronisasi & Pengaturan"
-        unreadCount={unreadNotifCount}
-        onOpenNotif={() => setNotifModalVisible(true)}
-      />
+    // SCREEN 3: KATALOG MATERI - SEARCH & FILTER (Anggota 2)
+    const renderMaterialsScreen = () => {
+      const meetingNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
-      {/* Profil Mahasiswa Card */}
-      <View style={styles.profileHeroCard}>
-        <View style={styles.profileAvatarBox}>
-          {profileAvatarUri ? (
-            <Image
-              source={{ uri: profileAvatarUri }}
-              style={{ width: 60, height: 60, borderRadius: 30 }}
+      return (
+        <View style={styles.screenContainer}>
+          {/* Fixed Header & Search Section to maintain high performance */}
+          <View style={styles.materialsHeaderWrapper}>
+            <AppHeader
+              title="Katalog Materi"
+              subtitle="Organisasi per Matkul & Pertemuan"
+              unreadCount={unreadNotifCount}
+              onOpenNotif={() => setNotifModalVisible(true)}
             />
-          ) : (
-            <Text style={styles.profileAvatarInitials}>
-              {(apiUser?.name || userProfile.name || 'SM')
-                .split(' ')
-                .map((n) => n[0])
-                .slice(0, 2)
-                .join('')}
-            </Text>
-          )}
-        </View>
-        <View style={styles.profileInfoCol}>
-          <Text style={styles.profileNameText} numberOfLines={1}>
-            {userProfile.name}
-          </Text>
-          <Text style={styles.profileNimText}>NIM: {userProfile.nim}</Text>
-          <Text style={styles.profileMajorText} numberOfLines={1}>
-            {userProfile.major}
-          </Text>
-          <Text style={styles.profileCampusText} numberOfLines={1}>
-            {userProfile.campus}
-          </Text>
-        </View>
-      </View>
 
-      {/* Upload Jadwal Support Card */}
-      <View style={styles.scheduleUploadCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-          <View style={styles.scheduleIconCircle}>
-            <Ionicons name="document-attach" size={22} color={COLORS.primary} />
-          </View>
-          <View style={{ marginLeft: 12, flex: 1 }}>
-            <Text style={styles.scheduleUploadTitle}>Upload Jadwal Kuliah (PDF / Screenshot)</Text>
-            <Text style={styles.scheduleUploadDesc}>
-              Jadwal kuliah digunakan sebagai pendukung untuk menghubungkan materi dengan aktivitas belajar harian.
-            </Text>
-          </View>
-        </View>
+            {/* Week 6: Offline Banner */}
+            <OfflineBanner
+              isOffline={isOffline}
+              onRetry={handleRefreshMaterials}
+              isRetrying={materialsLoading || isCheckingConnection}
+            />
 
-        <TouchableOpacity
-          style={styles.uploadScheduleButton}
-          onPress={() => setScheduleModalVisible(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.uploadScheduleButtonText}>Unggah Jadwal KRS</Text>
-        </TouchableOpacity>
-      </View>
+            {/* Week 6: Error State */}
+            {materialsError && (
+              <ApiErrorCard
+                title="Katalog Materi Perkuliahan"
+                message={materialsError}
+                onRetry={handleRefreshMaterials}
+                isRetrying={materialsLoading}
+              />
+            )}
 
-      {/* Jadwal Kuliah Mingguan Preview */}
-      <Text style={[styles.sectionTitle, { marginTop: 18, marginBottom: 10 }]}>
-        Jadwal Kuliah Mingguan 📅
-      </Text>
+            {/* Week 6: Loading State */}
+            {materialsLoading && <InlineLoadingIndicator message="Menyinkronkan materi perkuliahan..." />}
 
-      {courses.map((crs) => (
-        <View key={crs.id} style={styles.scheduleItemRow}>
-          <View style={[styles.scheduleDayBadge, { backgroundColor: crs.color }]}>
-            <Text style={styles.scheduleDayText}>{crs.day}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.scheduleCourseName} numberOfLines={1}>
-              {crs.name}
-            </Text>
-            <Text style={styles.scheduleTimeRoom} numberOfLines={1}>
-              ⏰ {crs.time} • 📍 {crs.room}
-            </Text>
-          </View>
-          <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
-        </View>
-      ))}
-
-      {courses.length === 0 && (
-        <EmptyState
-          title="Belum Ada Jadwal Kuliah"
-          subtitle="Tambahkan mata kuliah atau unggah berkas jadwal KRS untuk membuat jadwal mingguan."
-          actionText="+ Tambah Mata Kuliah"
-          onAction={() => {
-            setEditingCourse(null);
-            setCourseModalVisible(true);
-          }}
-        />
-      )}
-
-      {/* Pengaturan Notifikasi */}
-      <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
-        Preferensi Notifikasi & AI ⚙️
-      </Text>
-
-      <View style={styles.settingsContainer}>
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Pengingat Materi Sebelum Kuliah</Text>
-            <Text style={styles.settingDesc}>Notifikasi materi yang belum dipelajari sebelum jam kelas.</Text>
-          </View>
-          <Switch
-            value={settings.notifyBeforeClass}
-            onValueChange={(val) => {
-              const updated = { ...settings, notifyBeforeClass: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Peringatan Deadline Tugas H-1</Text>
-            <Text style={styles.settingDesc}>Ingatkan otomatis sebelum deadline tugas berakhir.</Text>
-          </View>
-          <Switch
-            value={settings.notifyDeadlines}
-            onValueChange={(val) => {
-              const updated = { ...settings, notifyDeadlines: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.settingLabel}>Auto-Generate Ringkasan AI</Text>
-            <Text style={styles.settingDesc}>Otomatis ekstrak poin penting saat mengunggah materi baru.</Text>
-          </View>
-          <Switch
-            value={settings.autoSummarizeAi}
-            onValueChange={(val) => {
-              const updated = { ...settings, autoSummarizeAi: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
-            }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
-        </View>
-
-        <View style={styles.settingDivider} />
-
-        {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Setting Toggle */}
-        <View style={styles.settingRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="phone-portrait-outline" size={16} color={COLORS.primary} />
-              <Text style={styles.settingLabel}>Goyangkan HP untuk Refresh</Text>
+            {/* Search Bar */}
+            <View style={styles.searchBarContainer}>
+              <Ionicons name="search" size={18} color={COLORS.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Cari modul, topik pertemuan, mata kuliah..."
+                placeholderTextColor={COLORS.textMuted}
+                value={materialSearchQuery}
+                onChangeText={setMaterialSearchQuery}
+              />
+              {materialSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setMaterialSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
-            <Text style={styles.settingDesc}>Goyangkan perangkat untuk memperbarui data StudyMate.</Text>
+
+            {/* Status Filter Chips */}
+            <View style={styles.filterPillRow}>
+              <TouchableOpacity
+                style={[
+                  styles.statusFilterPill,
+                  selectedStatusFilter === 'ALL' && styles.statusFilterPillActive,
+                ]}
+                onPress={() => setSelectedStatusFilter('ALL')}
+              >
+                <Text
+                  style={[
+                    styles.statusFilterText,
+                    selectedStatusFilter === 'ALL' && styles.statusFilterTextActive,
+                  ]}
+                >
+                  Semua ({materials.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.statusFilterPill,
+                  selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterPillActive,
+                ]}
+                onPress={() => setSelectedStatusFilter('UNSTUDIED')}
+              >
+                <Text
+                  style={[
+                    styles.statusFilterText,
+                    selectedStatusFilter === 'UNSTUDIED' && styles.statusFilterTextActive,
+                  ]}
+                >
+                  Belum Dibaca ({unstudiedMaterialsCount})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.statusFilterPill,
+                  selectedStatusFilter === 'STUDIED' && styles.statusFilterPillActive,
+                ]}
+                onPress={() => setSelectedStatusFilter('STUDIED')}
+              >
+                <Text
+                  style={[
+                    styles.statusFilterText,
+                    selectedStatusFilter === 'STUDIED' && styles.statusFilterTextActive,
+                  ]}
+                >
+                  Selesai ({studiedMaterialsCount})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Horizontal Course Filters */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.horizontalFilterScroll}
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.courseFilterChip,
+                  selectedCourseFilter === 'ALL' && styles.courseFilterChipActive,
+                ]}
+                onPress={() => setSelectedCourseFilter('ALL')}
+              >
+                <Text
+                  style={[
+                    styles.courseFilterChipText,
+                    selectedCourseFilter === 'ALL' && styles.courseFilterChipTextActive,
+                  ]}
+                >
+                  Semua Matkul
+                </Text>
+              </TouchableOpacity>
+
+              {courses.map((crs) => (
+                <TouchableOpacity
+                  key={crs.id}
+                  style={[
+                    styles.courseFilterChip,
+                    selectedCourseFilter === crs.id && styles.courseFilterChipActive,
+                    selectedCourseFilter === crs.id && { backgroundColor: crs.color },
+                  ]}
+                  onPress={() => setSelectedCourseFilter(crs.id)}
+                >
+                  <Text
+                    style={[
+                      styles.courseFilterChipText,
+                      selectedCourseFilter === crs.id && styles.courseFilterChipTextActive,
+                    ]}
+                  >
+                    {crs.code}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Horizontal Meeting Filters */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.meetingFilterScroll}
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.meetingFilterChip,
+                  selectedMeetingFilter === 'ALL' && styles.meetingFilterChipActive,
+                ]}
+                onPress={() => setSelectedMeetingFilter('ALL')}
+              >
+                <Text
+                  style={[
+                    styles.meetingFilterChipText,
+                    selectedMeetingFilter === 'ALL' && styles.meetingFilterChipTextActive,
+                  ]}
+                >
+                  Semua Pertemuan
+                </Text>
+              </TouchableOpacity>
+              {meetingNumbers.slice(0, 8).map((num) => (
+                <TouchableOpacity
+                  key={num}
+                  style={[
+                    styles.meetingFilterChip,
+                    selectedMeetingFilter === String(num) && styles.meetingFilterChipActive,
+                  ]}
+                  onPress={() => setSelectedMeetingFilter(String(num))}
+                >
+                  <Text
+                    style={[
+                      styles.meetingFilterChipText,
+                      selectedMeetingFilter === String(num) && styles.meetingFilterChipTextActive,
+                    ]}
+                  >
+                    Pertemuan {num}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
-          <Switch
-            value={settings.shakeToRefresh !== false}
-            onValueChange={(val) => {
-              const updated = { ...settings, shakeToRefresh: val };
-              setSettings(updated);
-              persistData(STORAGE_KEYS.SETTINGS, updated);
+
+          {/* Scrollable Materials List with bottom padding */}
+          <ScrollView
+            style={{ flex: 1, paddingHorizontal: 16 }}
+            contentContainerStyle={{
+              paddingTop: 8,
+              paddingBottom: scrollContentPaddingBottom,
             }}
-            trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
-          />
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.listHeaderRow}>
+              <Text style={styles.listCountText}>
+                Menampilkan {filteredMaterials.length} materi
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {/* WEEK 7 – ANGGOTA 1 & 2: Tombol Scan Materi Kamera HP */}
+                <TouchableOpacity
+                  style={styles.scanMaterialBtn}
+                  onPress={() => setIsScannerVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="camera" size={15} color="#FFFFFF" />
+                  <Text style={styles.scanMaterialBtnText}>Scan Materi</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.addMaterialSmallBtn}
+                  onPress={() => {
+                    setEditingMaterial(null);
+                    setMaterialModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="cloud-upload" size={14} color="#FFFFFF" />
+                  <Text style={styles.addMaterialSmallBtnText}>Upload</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {filteredMaterials.map((item) => (
+              <MaterialCard
+                key={item.id}
+                material={item}
+                onPress={(m) => handleOpenAiAssistant(m)}
+                onToggleStudied={handleToggleMaterialStudied}
+                onOpenAi={handleOpenAiAssistant}
+                onOpenNotes={handleOpenNotes}
+                onDelete={handleDeleteMaterial}
+                onPreviewImage={(m) => setViewingPhotoMaterial(m)}
+              />
+            ))}
+
+            {filteredMaterials.length === 0 && (
+              <View style={{ alignItems: 'center', marginTop: 32, paddingHorizontal: 20 }}>
+                <Ionicons name="document-text-outline" size={52} color={COLORS.textMuted} />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginTop: 12 }}>
+                  Tidak ada materi yang cocok
+                </Text>
+                <Text style={{ fontSize: 13, color: COLORS.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 18 }}>
+                  Pindai papan tulis / slide dosen menggunakan kamera HP atau unggah berkas materi baru.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity
+                    style={[styles.scanMaterialBtn, { paddingHorizontal: 16, paddingVertical: 10 }]}
+                    onPress={() => setIsScannerVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="camera" size={16} color="#FFFFFF" />
+                    <Text style={[styles.scanMaterialBtnText, { fontSize: 13 }]}>Scan Materi HP</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.addMaterialSmallBtn, { paddingHorizontal: 16, paddingVertical: 10 }]}
+                    onPress={() => {
+                      setEditingMaterial(null);
+                      setMaterialModalVisible(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="cloud-upload" size={16} color="#FFFFFF" />
+                    <Text style={[styles.addMaterialSmallBtnText, { fontSize: 13 }]}>Upload Berkas</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </ScrollView>
         </View>
-      </View>
+      );
+    };
 
-      {/* Auth session card removed – debug panel tidak ditampilkan ke pengguna */}
+    // SCREEN 4: PENGELOLAAN TUGAS DAN DEADLINE (Anggota 2)
+    const renderTasksScreen = () => {
+      const activeTasks = tasks.filter((t) => !t.completed);
+      const completedTasks = tasks.filter((t) => t.completed);
 
-      {/* Logout Button */}
-      {isAuthenticated && (
-        <TouchableOpacity
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: COLORS.roseLight,
-            borderRadius: 14,
-            paddingVertical: 14,
-            marginTop: 20,
-            borderWidth: 1,
-            borderColor: '#FECACA',
-          }}
-          onPress={handleApiLogout}
-          activeOpacity={0.8}
+      return (
+        <ScrollView
+          style={styles.screenContainer}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: scrollContentPaddingBottom },
+          ]}
+          showsVerticalScrollIndicator={false}
         >
-          <Ionicons name="log-out-outline" size={20} color={COLORS.rose} />
-          <Text style={{ color: COLORS.rose, fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
-            Logout dari StudyMate
+          <AppHeader
+            title="Tugas & Deadline"
+            subtitle="Pantau Target Akademik"
+            unreadCount={unreadNotifCount}
+            onOpenNotif={() => setNotifModalVisible(true)}
+          />
+
+          {/* Week 6: Offline Banner */}
+          <OfflineBanner
+            isOffline={isOffline}
+            onRetry={handleRefreshTasks}
+            isRetrying={tasksLoading || isCheckingConnection}
+          />
+
+          {/* Week 6: Error State dengan tombol Retry */}
+          {tasksError && (
+            <ApiErrorCard
+              title="Daftar Tugas & Deadline"
+              message={tasksError}
+              onRetry={handleRefreshTasks}
+              isRetrying={tasksLoading}
+            />
+          )}
+
+          {/* Week 6: Loading State */}
+          {tasksLoading && <InlineLoadingIndicator message="Memuat daftar tugas..." />}
+
+          <View style={styles.screenBannerRow}>
+            <Text style={styles.screenBannerText}>
+              Jangan biarkan tugas terlewat. Setiap tugas terhubung langsung dengan mata kuliah.
+            </Text>
+            <TouchableOpacity
+              style={styles.primaryAddButton}
+              onPress={() => {
+                setEditingTask(null);
+                setTaskModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={18} color="#FFFFFF" />
+              <Text style={styles.primaryAddButtonText}>Tambah</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Section Aktif */}
+          <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>
+            Tugas Aktif ({activeTasks.length})
           </Text>
-        </TouchableOpacity>
-      )}
 
-    </ScrollView>
-  );
+          {activeTasks.map((t) => (
+            <TaskItem
+              key={t.id}
+              task={t}
+              onToggle={handleToggleTaskCompleted}
+              onDelete={handleDeleteTask}
+            />
+          ))}
 
-  // =================================================================
-  // 9. MODALS WITH SAFE AREA INTEGRATION (Anggota 2 & 3)
-  // =================================================================
+          {tasks.length === 0 ? (
+            <EmptyState
+              title="Belum Ada Tugas Perkuliahan"
+              subtitle="Buat tugas pertamamu untuk memantau deadline akademik secara teratur."
+              actionText="+ Tambah Tugas Baru"
+              onAction={() => {
+                setEditingTask(null);
+                setTaskModalVisible(true);
+              }}
+            />
+          ) : activeTasks.length === 0 ? (
+            <View style={styles.allClearCard}>
+              <Ionicons name="checkmark-done-circle" size={32} color={COLORS.emerald} />
+              <Text style={styles.allClearTitle}>Tidak Ada Tugas Tertunda</Text>
+              <Text style={styles.allClearSubtitle}>Semua deadline telah berhasil kamu selesaikan!</Text>
+            </View>
+          ) : null}
 
-  // MODAL 1: STUDYMATE AI ASSISTANT
-  const renderAiModal = () => {
-    if (!activeAiMaterial) return null;
+          {/* Section Selesai */}
+          {completedTasks.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 8 }]}>
+                Sudah Selesai ({completedTasks.length})
+              </Text>
+              {completedTasks.map((t) => (
+                <TaskItem
+                  key={t.id}
+                  task={t}
+                  onToggle={handleToggleTaskCompleted}
+                  onDelete={handleDeleteTask}
+                />
+              ))}
+            </>
+          )}
+        </ScrollView>
+      );
+    };
 
-    return (
+    // SCREEN 5: JADWAL KULIAH, PENGATURAN & PROFIL (Anggota 2 & 3)
+    const renderScheduleProfileScreen = () => (
+      <ScrollView
+        style={styles.screenContainer}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: scrollContentPaddingBottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <AppHeader
+          title="Jadwal & Profil"
+          subtitle="Sinkronisasi & Pengaturan"
+          unreadCount={unreadNotifCount}
+          onOpenNotif={() => setNotifModalVisible(true)}
+        />
+
+        {/* Profil Mahasiswa Card */}
+        <View style={styles.profileHeroCard}>
+          <View style={styles.profileAvatarBox}>
+            {profileAvatarUri ? (
+              <Image
+                source={{ uri: profileAvatarUri }}
+                style={{ width: 60, height: 60, borderRadius: 30 }}
+              />
+            ) : (
+              <Text style={styles.profileAvatarInitials}>
+                {(apiUser?.name || userProfile.name || 'SM')
+                  .split(' ')
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('')}
+              </Text>
+            )}
+          </View>
+          <View style={styles.profileInfoCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.profileNameText, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                {apiUser?.name || userProfile.name}
+              </Text>
+              {/* WEEK 8 – ANGGOTA 3: Tombol Edit Profil */}
+              <TouchableOpacity
+                style={styles.editProfilePillBtn}
+                onPress={() => {
+                  setEditProfilePhotoUri(null);
+                  setEditProfilePhotoPreview(profileAvatarUri);
+                  setIsEditProfileVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="create-outline" size={13} color={COLORS.primary} />
+                <Text style={styles.editProfilePillBtnText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.profileNimText} numberOfLines={1}>
+              Email: {apiUser?.email || userProfile.email || 'mahasiswa@studymate.id'}
+            </Text>
+            {(apiUser?.major || userProfile.major) ? (
+              <Text style={styles.profileMajorText} numberOfLines={1}>
+                {apiUser?.major || userProfile.major}
+                {(apiUser?.semester || userProfile.semester)
+                  ? ` · Semester ${apiUser?.semester || userProfile.semester}`
+                  : ''}
+              </Text>
+            ) : null}
+            {(apiUser?.university || userProfile.university || userProfile.campus) ? (
+              <Text style={styles.profileCampusText} numberOfLines={1}>
+                {apiUser?.university || userProfile.university || userProfile.campus}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Upload Jadwal Support Card */}
+        <View style={styles.scheduleUploadCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <View style={styles.scheduleIconCircle}>
+              <Ionicons name="document-attach" size={22} color={COLORS.primary} />
+            </View>
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={styles.scheduleUploadTitle}>Upload Jadwal Kuliah (PDF / Screenshot)</Text>
+              <Text style={styles.scheduleUploadDesc}>
+                Jadwal kuliah digunakan sebagai pendukung untuk menghubungkan materi dengan aktivitas belajar harian.
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.uploadScheduleButton}
+            onPress={() => setScheduleModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.uploadScheduleButtonText}>Unggah Jadwal KRS</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Jadwal Kuliah Mingguan Preview */}
+        <Text style={[styles.sectionTitle, { marginTop: 18, marginBottom: 10 }]}>
+          Jadwal Kuliah Mingguan 📅
+        </Text>
+
+        {courses.map((crs) => (
+          <View key={crs.id} style={styles.scheduleItemRow}>
+            <View style={[styles.scheduleDayBadge, { backgroundColor: crs.color }]}>
+              <Text style={styles.scheduleDayText}>{crs.day}</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.scheduleCourseName} numberOfLines={1}>
+                {crs.name}
+              </Text>
+              <Text style={styles.scheduleTimeRoom} numberOfLines={1}>
+                ⏰ {crs.time} • 📍 {crs.room}
+              </Text>
+            </View>
+            <Badge label={`${crs.sks} SKS`} color={crs.color} bg={crs.color + '18'} />
+          </View>
+        ))}
+
+        {courses.length === 0 && (
+          <EmptyState
+            title="Belum Ada Jadwal Kuliah"
+            subtitle="Tambahkan mata kuliah atau unggah berkas jadwal KRS untuk membuat jadwal mingguan."
+            actionText="+ Tambah Mata Kuliah"
+            onAction={() => {
+              setEditingCourse(null);
+              setCourseModalVisible(true);
+            }}
+          />
+        )}
+
+        {/* Pengaturan Notifikasi */}
+        <Text style={[styles.sectionTitle, { marginTop: 22, marginBottom: 10 }]}>
+          Preferensi Notifikasi & AI ⚙️
+        </Text>
+
+        <View style={styles.settingsContainer}>
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.settingLabel}>Pengingat Materi Sebelum Kuliah</Text>
+              <Text style={styles.settingDesc}>Notifikasi materi yang belum dipelajari sebelum jam kelas.</Text>
+            </View>
+            <Switch
+              value={settings.notifyBeforeClass}
+              onValueChange={(val) => {
+                const updated = { ...settings, notifyBeforeClass: val };
+                setSettings(updated);
+                persistData(STORAGE_KEYS.SETTINGS, updated);
+              }}
+              trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+            />
+          </View>
+
+          <View style={styles.settingDivider} />
+
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.settingLabel}>Peringatan Deadline Tugas H-1</Text>
+              <Text style={styles.settingDesc}>Ingatkan otomatis sebelum deadline tugas berakhir.</Text>
+            </View>
+            <Switch
+              value={settings.notifyDeadlines}
+              onValueChange={(val) => {
+                const updated = { ...settings, notifyDeadlines: val };
+                setSettings(updated);
+                persistData(STORAGE_KEYS.SETTINGS, updated);
+              }}
+              trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+            />
+          </View>
+
+          <View style={styles.settingDivider} />
+
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.settingLabel}>Auto-Generate Ringkasan AI</Text>
+              <Text style={styles.settingDesc}>Otomatis ekstrak poin penting saat mengunggah materi baru.</Text>
+            </View>
+            <Switch
+              value={settings.autoSummarizeAi}
+              onValueChange={(val) => {
+                const updated = { ...settings, autoSummarizeAi: val };
+                setSettings(updated);
+                persistData(STORAGE_KEYS.SETTINGS, updated);
+              }}
+              trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+            />
+          </View>
+
+          <View style={styles.settingDivider} />
+
+          {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Setting Toggle */}
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="phone-portrait-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.settingLabel}>Goyangkan HP untuk Refresh</Text>
+              </View>
+              <Text style={styles.settingDesc}>Goyangkan perangkat untuk memperbarui data StudyMate.</Text>
+            </View>
+            <Switch
+              value={settings.shakeToRefresh !== false}
+              onValueChange={(val) => {
+                const updated = { ...settings, shakeToRefresh: val };
+                setSettings(updated);
+                persistData(STORAGE_KEYS.SETTINGS, updated);
+              }}
+              trackColor={{ false: '#CBD5E1', true: COLORS.primary }}
+            />
+          </View>
+        </View>
+
+        {/* Auth session card removed – debug panel tidak ditampilkan ke pengguna */}
+
+        {/* Logout Button */}
+        {isAuthenticated && (
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: COLORS.roseLight,
+              borderRadius: 14,
+              paddingVertical: 14,
+              marginTop: 20,
+              borderWidth: 1,
+              borderColor: '#FECACA',
+            }}
+            onPress={handleApiLogout}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="log-out-outline" size={20} color={COLORS.rose} />
+            <Text style={{ color: COLORS.rose, fontSize: 15, fontWeight: '800', marginLeft: 8 }}>
+              Logout dari StudyMate
+            </Text>
+          </TouchableOpacity>
+        )}
+
+      </ScrollView>
+    );
+
+    // =================================================================
+    // 9. MODALS WITH SAFE AREA INTEGRATION (Anggota 2 & 3)
+    // =================================================================
+
+    // MODAL 1: STUDYMATE AI ASSISTANT
+    const renderAiModal = () => {
+      if (!activeAiMaterial) return null;
+
+      return (
+        <Modal
+          visible={aiModalVisible}
+          animationType="slide"
+          onRequestClose={() => setAiModalVisible(false)}
+        >
+          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <View style={styles.aiBadgeIcon}>
+                  <Ionicons name="sparkles" size={17} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalHeaderTitle}>StudyMate AI Assistant</Text>
+                  <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
+                    {activeAiMaterial.title}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setAiModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* AI Sub-Tabs */}
+            <View style={styles.aiTabContainer}>
+              <TouchableOpacity
+                style={[styles.aiTabButton, aiSubTab === 'summary' && styles.aiTabButtonActive]}
+                onPress={() => setAiSubTab('summary')}
+              >
+                <Ionicons
+                  name="document-text-outline"
+                  size={15}
+                  color={aiSubTab === 'summary' ? COLORS.primary : COLORS.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.aiTabText,
+                    aiSubTab === 'summary' && styles.aiTabTextActive,
+                  ]}
+                >
+                  Ringkasan Cerdas
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.aiTabButton, aiSubTab === 'points' && styles.aiTabButtonActive]}
+                onPress={() => setAiSubTab('points')}
+              >
+                <Ionicons
+                  name="bulb-outline"
+                  size={15}
+                  color={aiSubTab === 'points' ? COLORS.primary : COLORS.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.aiTabText,
+                    aiSubTab === 'points' && styles.aiTabTextActive,
+                  ]}
+                >
+                  Poin Penting
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.aiTabButton, aiSubTab === 'quiz' && styles.aiTabButtonActive]}
+                onPress={() => setAiSubTab('quiz')}
+              >
+                <Ionicons
+                  name="help-circle-outline"
+                  size={15}
+                  color={aiSubTab === 'quiz' ? COLORS.primary : COLORS.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.aiTabText,
+                    aiSubTab === 'quiz' && styles.aiTabTextActive,
+                  ]}
+                >
+                  Latihan Soal
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalScrollBody}
+              contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
+              showsVerticalScrollIndicator={false}
+            >
+              {aiSubTab === 'summary' && (
+                <View style={styles.aiContentCard}>
+                  <View style={styles.aiBannerPill}>
+                    <Ionicons name="time-outline" size={13} color="#7C3AED" />
+                    <Text style={styles.aiBannerPillText}>Waktu baca: ~3 Menit</Text>
+                  </View>
+                  <Text style={styles.aiSummaryTitle}>Intisari Materi Perkuliahan</Text>
+                  <Text style={styles.aiSummaryParagraph}>{activeAiMaterial.summary}</Text>
+
+                  <View style={styles.aiNoteCallout}>
+                    <Ionicons name="information-circle" size={18} color={COLORS.primary} />
+                    <Text style={styles.aiNoteCalloutText}>
+                      Ringkasan dirancang agar mahasiswa cepat memahami konsep kunci sebelum kelas dimulai.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.aiShareButton}
+                    onPress={() =>
+                      Share.share({
+                        message: `Ringkasan StudyMate AI:\n${activeAiMaterial.title}\n\n${activeAiMaterial.summary}`,
+                      })
+                    }
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
+                    <Text style={styles.aiShareButtonText}>Bagikan Ringkasan</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {aiSubTab === 'points' && (
+                <View style={styles.aiContentCard}>
+                  <Text style={styles.aiSummaryTitle}>Konsep Kunci & Rumus Inti</Text>
+                  <Text style={styles.aiSectionSubtitle}>
+                    Fokus pada poin-poin berikut untuk persiapan ujian atau kuis dosen:
+                  </Text>
+
+                  {activeAiMaterial.keyPoints?.map((point, idx) => (
+                    <View key={idx} style={styles.keyPointRow}>
+                      <View style={styles.keyPointBullet}>
+                        <Text style={styles.keyPointBulletText}>{idx + 1}</Text>
+                      </View>
+                      <Text style={styles.keyPointContent}>{point}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {aiSubTab === 'quiz' && (
+                <View style={styles.aiContentCard}>
+                  <Text style={styles.aiSummaryTitle}>Uji Pemahaman Mandiri</Text>
+                  <Text style={styles.aiSectionSubtitle}>
+                    Jawab pertanyaan latihan berikut untuk menguji pemahaman konsep:
+                  </Text>
+
+                  {activeAiMaterial.quiz?.map((q, qIndex) => {
+                    const isRevealed = !!quizRevealedMap[qIndex];
+
+                    return (
+                      <View key={qIndex} style={styles.quizCard}>
+                        <Text style={styles.quizQuestionText}>
+                          {qIndex + 1}. {q.question}
+                        </Text>
+
+                        {q.options.map((opt, optIndex) => (
+                          <View
+                            key={optIndex}
+                            style={[
+                              styles.quizOptionBox,
+                              isRevealed &&
+                              optIndex === q.correctIndex &&
+                              styles.quizOptionCorrect,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.quizOptionLetter,
+                                isRevealed &&
+                                optIndex === q.correctIndex &&
+                                styles.quizOptionLetterCorrect,
+                              ]}
+                            >
+                              {String.fromCharCode(65 + optIndex)}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.quizOptionLabel,
+                                isRevealed &&
+                                optIndex === q.correctIndex &&
+                                styles.quizOptionLabelCorrect,
+                              ]}
+                            >
+                              {opt}
+                            </Text>
+                          </View>
+                        ))}
+
+                        <TouchableOpacity
+                          style={styles.quizRevealButton}
+                          onPress={() =>
+                            setQuizRevealedMap((prev) => ({
+                              ...prev,
+                              [qIndex]: !prev[qIndex],
+                            }))
+                          }
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={isRevealed ? 'eye-off-outline' : 'eye-outline'}
+                            size={16}
+                            color={COLORS.primary}
+                          />
+                          <Text style={styles.quizRevealButtonText}>
+                            {isRevealed
+                              ? 'Sembunyikan Pembahasan'
+                              : 'Lihat Kunci Jawaban & Pembahasan'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {isRevealed && (
+                          <View style={styles.quizExplanationBox}>
+                            <Text style={styles.quizExplanationTitle}>💡 Penjelasan AI:</Text>
+                            <Text style={styles.quizExplanationText}>{q.explanation}</Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      );
+    };
+
+    // MODAL 2: CATATAN PRIBADI PER MATERI
+    const renderNotesModal = () => {
+      if (!activeNotesMaterial) return null;
+
+      return (
+        <Modal
+          visible={notesModalVisible}
+          animationType="slide"
+          onRequestClose={() => setNotesModalVisible(false)}
+        >
+          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalHeaderTitle}>Catatan Pribadi</Text>
+                <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
+                  {activeNotesMaterial.title}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setNotesModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.notesContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+              <Text style={styles.notesInstructionText}>
+                Tulis rangkuman pribadi, hal-hal penting yang disampaikan dosen saat kelas, atau rumus yang perlu diingat:
+              </Text>
+
+              <TextInput
+                style={styles.notesTextInput}
+                multiline
+                textAlignVertical="top"
+                placeholder="Ketik catatan pribadimu di sini..."
+                placeholderTextColor={COLORS.textMuted}
+                value={currentNoteText}
+                onChangeText={setCurrentNoteText}
+              />
+
+              <TouchableOpacity
+                style={styles.saveNotesButton}
+                onPress={handleSaveNotes}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
+                <Text style={styles.saveNotesButtonText}>Simpan Catatan</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      );
+    };
+
+    // MODAL 3: UPLOAD JADWAL MODAL
+    const renderScheduleModal = () => (
       <Modal
-        visible={aiModalVisible}
+        visible={scheduleModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setScheduleModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.scheduleModalBox}>
+            <View style={styles.scheduleModalHeader}>
+              <Ionicons name="calendar" size={24} color={COLORS.primary} />
+              <Text style={styles.scheduleModalTitle}>Upload Jadwal Kuliah</Text>
+            </View>
+
+            <Text style={styles.scheduleModalSubtitle}>
+              Unggah foto screenshot KRS atau berkas PDF jadwal. StudyMate akan otomatis mendeteksi jadwal untuk mengorganisasi materi belajarmu.
+            </Text>
+
+            {isParsingSchedule ? (
+              <View style={styles.parsingIndicatorBox}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.parsingStatusText}>
+                  Memindai dokumen & menyelaraskan jadwal...
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.uploadOptionsRow}>
+                <TouchableOpacity
+                  style={styles.uploadOptionBtn}
+                  onPress={handlePickScheduleImage}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="image-outline" size={30} color={COLORS.secondary} />
+                  <Text style={styles.uploadOptionBtnTitle}>Screenshot Foto</Text>
+                  <Text style={styles.uploadOptionBtnSub}>Dari Galeri / Kamera</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.uploadOptionBtn}
+                  onPress={handlePickScheduleDocument}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="document-text-outline" size={30} color={COLORS.primary} />
+                  <Text style={styles.uploadOptionBtnTitle}>File Berkas PDF</Text>
+                  <Text style={styles.uploadOptionBtnSub}>Pilih Berkas KRS</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.scheduleCancelBtn}
+              onPress={() => setScheduleModalVisible(false)}
+            >
+              <Text style={styles.scheduleCancelBtnText}>Tutup</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+
+    // MODAL 4: PUSAT NOTIFIKASI
+    const renderNotificationModal = () => (
+      <Modal
+        visible={notifModalVisible}
         animationType="slide"
-        onRequestClose={() => setAiModalVisible(false)}
+        onRequestClose={() => setNotifModalVisible(false)}
       >
         <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <View style={styles.aiBadgeIcon}>
-                <Ionicons name="sparkles" size={17} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalHeaderTitle}>StudyMate AI Assistant</Text>
-                <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
-                  {activeAiMaterial.title}
-                </Text>
-              </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalHeaderTitle}>Pusat Notifikasi</Text>
+              <Text style={styles.modalHeaderSubtitle}>Pengingat Materi & Deadline</Text>
             </View>
             <TouchableOpacity
-              onPress={() => setAiModalVisible(false)}
+              onPress={() => setNotifModalVisible(false)}
               style={styles.modalCloseButton}
             >
               <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* AI Sub-Tabs */}
-          <View style={styles.aiTabContainer}>
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'summary' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('summary')}
-            >
-              <Ionicons
-                name="document-text-outline"
-                size={15}
-                color={aiSubTab === 'summary' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.aiTabText,
-                  aiSubTab === 'summary' && styles.aiTabTextActive,
-                ]}
-              >
-                Ringkasan Cerdas
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'points' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('points')}
-            >
-              <Ionicons
-                name="bulb-outline"
-                size={15}
-                color={aiSubTab === 'points' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.aiTabText,
-                  aiSubTab === 'points' && styles.aiTabTextActive,
-                ]}
-              >
-                Poin Penting
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.aiTabButton, aiSubTab === 'quiz' && styles.aiTabButtonActive]}
-              onPress={() => setAiSubTab('quiz')}
-            >
-              <Ionicons
-                name="help-circle-outline"
-                size={15}
-                color={aiSubTab === 'quiz' ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.aiTabText,
-                  aiSubTab === 'quiz' && styles.aiTabTextActive,
-                ]}
-              >
-                Latihan Soal
-              </Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView
             style={styles.modalScrollBody}
-            contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
+            contentContainerStyle={{ paddingBottom: 30 + insets.bottom }}
             showsVerticalScrollIndicator={false}
           >
-            {aiSubTab === 'summary' && (
-              <View style={styles.aiContentCard}>
-                <View style={styles.aiBannerPill}>
-                  <Ionicons name="time-outline" size={13} color="#7C3AED" />
-                  <Text style={styles.aiBannerPillText}>Waktu baca: ~3 Menit</Text>
-                </View>
-                <Text style={styles.aiSummaryTitle}>Intisari Materi Perkuliahan</Text>
-                <Text style={styles.aiSummaryParagraph}>{activeAiMaterial.summary}</Text>
-
-                <View style={styles.aiNoteCallout}>
-                  <Ionicons name="information-circle" size={18} color={COLORS.primary} />
-                  <Text style={styles.aiNoteCalloutText}>
-                    Ringkasan dirancang agar mahasiswa cepat memahami konsep kunci sebelum kelas dimulai.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.aiShareButton}
-                  onPress={() =>
-                    Share.share({
-                      message: `Ringkasan StudyMate AI:\n${activeAiMaterial.title}\n\n${activeAiMaterial.summary}`,
-                    })
-                  }
-                  activeOpacity={0.8}
+            {notifications.map((n) => (
+              <View key={n.id} style={[styles.notifCard, !n.read && styles.notifCardUnread]}>
+                <View
+                  style={[
+                    styles.notifIconCircle,
+                    {
+                      backgroundColor:
+                        n.type === 'class'
+                          ? COLORS.primaryLight
+                          : n.type === 'material'
+                            ? COLORS.amberLight
+                            : COLORS.roseLight,
+                    },
+                  ]}
                 >
-                  <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
-                  <Text style={styles.aiShareButtonText}>Bagikan Ringkasan</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {aiSubTab === 'points' && (
-              <View style={styles.aiContentCard}>
-                <Text style={styles.aiSummaryTitle}>Konsep Kunci & Rumus Inti</Text>
-                <Text style={styles.aiSectionSubtitle}>
-                  Fokus pada poin-poin berikut untuk persiapan ujian atau kuis dosen:
-                </Text>
-
-                {activeAiMaterial.keyPoints?.map((point, idx) => (
-                  <View key={idx} style={styles.keyPointRow}>
-                    <View style={styles.keyPointBullet}>
-                      <Text style={styles.keyPointBulletText}>{idx + 1}</Text>
-                    </View>
-                    <Text style={styles.keyPointContent}>{point}</Text>
+                  <Ionicons
+                    name={
+                      n.type === 'class'
+                        ? 'school-outline'
+                        : n.type === 'material'
+                          ? 'book-outline'
+                          : 'alarm-outline'
+                    }
+                    size={18}
+                    color={
+                      n.type === 'class'
+                        ? COLORS.primary
+                        : n.type === 'material'
+                          ? COLORS.amber
+                          : COLORS.rose
+                    }
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.notifItemTitle}>{n.title}</Text>
+                    <Text style={styles.notifItemTime}>{n.time}</Text>
                   </View>
-                ))}
+                  <Text style={styles.notifItemMsg}>{n.message}</Text>
+                </View>
               </View>
+            ))}
+
+            {notifications.length === 0 && (
+              <EmptyState
+                title="Belum Ada Notifikasi"
+                subtitle="Notifikasi jadwal dan pengingat materi akan tampil di sini."
+              />
             )}
 
-            {aiSubTab === 'quiz' && (
-              <View style={styles.aiContentCard}>
-                <Text style={styles.aiSummaryTitle}>Uji Pemahaman Mandiri</Text>
-                <Text style={styles.aiSectionSubtitle}>
-                  Jawab pertanyaan latihan berikut untuk menguji pemahaman konsep:
-                </Text>
-
-                {activeAiMaterial.quiz?.map((q, qIndex) => {
-                  const isRevealed = !!quizRevealedMap[qIndex];
-
-                  return (
-                    <View key={qIndex} style={styles.quizCard}>
-                      <Text style={styles.quizQuestionText}>
-                        {qIndex + 1}. {q.question}
-                      </Text>
-
-                      {q.options.map((opt, optIndex) => (
-                        <View
-                          key={optIndex}
-                          style={[
-                            styles.quizOptionBox,
-                            isRevealed &&
-                            optIndex === q.correctIndex &&
-                            styles.quizOptionCorrect,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.quizOptionLetter,
-                              isRevealed &&
-                              optIndex === q.correctIndex &&
-                              styles.quizOptionLetterCorrect,
-                            ]}
-                          >
-                            {String.fromCharCode(65 + optIndex)}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.quizOptionLabel,
-                              isRevealed &&
-                              optIndex === q.correctIndex &&
-                              styles.quizOptionLabelCorrect,
-                            ]}
-                          >
-                            {opt}
-                          </Text>
-                        </View>
-                      ))}
-
-                      <TouchableOpacity
-                        style={styles.quizRevealButton}
-                        onPress={() =>
-                          setQuizRevealedMap((prev) => ({
-                            ...prev,
-                            [qIndex]: !prev[qIndex],
-                          }))
-                        }
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name={isRevealed ? 'eye-off-outline' : 'eye-outline'}
-                          size={16}
-                          color={COLORS.primary}
-                        />
-                        <Text style={styles.quizRevealButtonText}>
-                          {isRevealed
-                            ? 'Sembunyikan Pembahasan'
-                            : 'Lihat Kunci Jawaban & Pembahasan'}
-                        </Text>
-                      </TouchableOpacity>
-
-                      {isRevealed && (
-                        <View style={styles.quizExplanationBox}>
-                          <Text style={styles.quizExplanationTitle}>💡 Penjelasan AI:</Text>
-                          <Text style={styles.quizExplanationText}>{q.explanation}</Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+            <TouchableOpacity
+              style={styles.markAllReadBtn}
+              onPress={async () => {
+                const updated = notifications.map((n) => ({ ...n, read: true }));
+                setNotifications(updated);
+                await persistData(STORAGE_KEYS.NOTIFICATIONS, updated);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-done" size={16} color={COLORS.primary} />
+              <Text style={styles.markAllReadBtnText}>Tandai Semua Sudah Dibaca</Text>
+            </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
       </Modal>
     );
-  };
 
-  // MODAL 2: CATATAN PRIBADI PER MATERI
-  const renderNotesModal = () => {
-    if (!activeNotesMaterial) return null;
+    // =================================================================
+    // WEEK 10 – ANGGOTA 1: GPS Permission & Location Fetch
+    // =================================================================
+
+    /**
+     * handleRequestLocationPermission:
+     * Meminta izin akses foreground location menggunakan expo-location.
+     * Menangani berbagai status: undetermined, granted, denied, blocked.
+     */
+    const handleRequestLocationPermission = async () => {
+      setIsLocationLoading(true);
+      setLocationError(null);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        setLocationPermStatus(status);
+        if (status === 'granted') {
+          await handleGetCurrentLocation();
+        } else if (status === 'denied') {
+          setLocationError('Izin lokasi ditolak. Buka Pengaturan HP untuk mengaktifkan izin lokasi.');
+        }
+      } catch (e) {
+        setLocationError('Gagal meminta izin lokasi: ' + (e.message || 'Error tidak diketahui'));
+      } finally {
+        setIsLocationLoading(false);
+      }
+    };
+
+    /**
+     * handleGetCurrentLocation:
+     * ANGGOTA 1 – Mengambil koordinat GPS aktual (latitude, longitude, accuracy).
+     * Menggunakan akurasi balanced agar efisien baterai.
+     * Juga menjalankan reverse geocoding dan pemeriksaan geofence.
+     */
+    const handleGetCurrentLocation = async () => {
+      setIsLocationLoading(true);
+      setLocationError(null);
+      try {
+        // Periksa apakah GPS/Location service aktif
+        const isEnabled = await Location.hasServicesEnabledAsync();
+        if (!isEnabled) {
+          setLocationError('GPS tidak aktif. Aktifkan Layanan Lokasi di pengaturan HP.');
+          setIsLocationLoading(false);
+          return;
+        }
+
+        // BATTERY OPTIMIZATION: Gunakan Balanced accuracy, bukan High
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 5000,       // min 5 detik antar update
+          distanceInterval: 10,     // min 10 meter perpindahan
+        });
+
+        const coords = {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          accuracy: loc.coords.accuracy,
+        };
+        setCurrentLocation(coords);
+
+        // Jalankan reverse geocoding dan geofence check
+        await handleReverseGeocode(coords);
+        checkGeofenceStatuses(coords, geofences);
+      } catch (e) {
+        if (e.code === 'E_LOCATION_SERVICES_DISABLED') {
+          setLocationError('GPS tidak aktif. Aktifkan Layanan Lokasi di pengaturan HP.');
+        } else {
+          setLocationError('Gagal mendapatkan lokasi: ' + (e.message || 'Error tidak diketahui'));
+        }
+      } finally {
+        setIsLocationLoading(false);
+      }
+    };
+
+    /**
+     * handleCheckLocationPermission:
+     * Memeriksa status izin saat ini tanpa meminta ulang.
+     */
+    const handleCheckLocationPermission = async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        setLocationPermStatus(status);
+        if (status === 'granted') {
+          await handleGetCurrentLocation();
+        }
+      } catch (e) {
+        setLocationError('Gagal memeriksa izin lokasi.');
+      }
+    };
+
+    // =================================================================
+    // WEEK 10 – ANGGOTA 2: Location Subscription (Watch Position)
+    // Battery Optimization: distanceInterval & timeInterval filter
+    // =================================================================
+
+    /**
+     * handleStartLocationWatch:
+     * Memulai pemantauan lokasi secara periodik (foreground only).
+     * Subscription dibersihkan ketika tab berpindah atau komponen dilepas.
+     * BATTERY: hanya update setiap 15 detik atau 20 meter perpindahan.
+     */
+    const handleStartLocationWatch = async () => {
+      if (locationSubRef.current) return; // Jangan duplikasi subscription
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 15000,     // Update min 15 detik sekali
+            distanceInterval: 20,    // Update min 20 meter perpindahan
+          },
+          (loc) => {
+            const coords = {
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              accuracy: loc.coords.accuracy,
+            };
+            setCurrentLocation(coords);
+            // Periksa status geofence setiap ada update lokasi
+            setGeofences((prevFences) => {
+              checkGeofenceStatuses(coords, prevFences);
+              return prevFences;
+            });
+          }
+        );
+        locationSubRef.current = sub;
+      } catch (e) {
+        // Subscription gagal — tidak perlu crash aplikasi
+      }
+    };
+
+    /**
+     * handleStopLocationWatch:
+     * Menghentikan subscription lokasi dan membersihkan resource.
+     */
+    const handleStopLocationWatch = () => {
+      if (locationSubRef.current) {
+        locationSubRef.current.remove();
+        locationSubRef.current = null;
+      }
+    };
+
+    // =================================================================
+    // WEEK 10 – ANGGOTA 3A: Reverse Geocoding
+    // Mengonversi koordinat GPS menjadi informasi alamat
+    // =================================================================
+
+    /**
+     * handleReverseGeocode:
+     * Mengambil alamat dari koordinat menggunakan expo-location.
+     * Menangani koneksi internet terputus dan alamat tidak ditemukan.
+     */
+    const handleReverseGeocode = async (coords) => {
+      if (!coords) return;
+      setIsGeocodingLoading(true);
+      try {
+        const results = await Location.reverseGeocodeAsync({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+        if (results && results.length > 0) {
+          const r = results[0];
+          setReverseAddress({
+            street: [r.streetNumber, r.street].filter(Boolean).join(' ') || null,
+            district: r.district || r.subregion || null,
+            subregion: r.subregion || null,
+            city: r.city || r.region || null,
+            region: r.region || null,
+            country: r.country || null,
+            postalCode: r.postalCode || null,
+            name: r.name || null,
+          });
+        } else {
+          setReverseAddress(null);
+        }
+      } catch (e) {
+        // Koneksi internet terputus atau service tidak tersedia
+        setReverseAddress(null);
+      } finally {
+        setIsGeocodingLoading(false);
+      }
+    };
+
+    // =================================================================
+    // WEEK 10 – ANGGOTA 3B: Geofencing
+    // Menyimpan area, menghitung jarak, mendeteksi masuk/keluar area
+    // =================================================================
+
+    /**
+     * calculateDistance:
+     * Menghitung jarak antara dua koordinat menggunakan Haversine formula (meter).
+     */
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      const R = 6371000; // Radius bumi dalam meter
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    /**
+     * checkGeofenceStatuses:
+     * Memeriksa apakah pengguna berada di dalam atau luar setiap geofence.
+     * Hanya memunculkan alert sekali per peristiwa masuk/keluar.
+     */
+    const checkGeofenceStatuses = (coords, fenceList) => {
+      if (!coords || !fenceList || fenceList.length === 0) return;
+      const newStatuses = {};
+      fenceList.forEach((fence) => {
+        const dist = calculateDistance(
+          coords.latitude, coords.longitude,
+          fence.latitude, fence.longitude
+        );
+        newStatuses[fence.id] = dist <= fence.radius ? 'inside' : 'outside';
+      });
+      setGeofenceStatuses(newStatuses);
+
+      // Alert hanya sekali per perubahan status (masuk atau keluar)
+      setGeofenceAlerted((prevAlerted) => {
+        const updatedAlerted = { ...prevAlerted };
+        fenceList.forEach((fence) => {
+          const newStatus = newStatuses[fence.id];
+          const lastAlerted = prevAlerted[fence.id];
+          if (newStatus !== lastAlerted) {
+            if (newStatus === 'inside') {
+              Alert.alert(
+                '📍 Memasuki Area',
+                `Selamat datang! Kamu telah memasuki area "${fence.name}".`,
+                [{ text: 'OK' }]
+              );
+            } else if (newStatus === 'outside' && lastAlerted === 'inside') {
+              Alert.alert(
+                '📍 Meninggalkan Area',
+                `Lokasi kamu sudah berada di luar area "${fence.name}".`,
+                [{ text: 'OK' }]
+              );
+            }
+            updatedAlerted[fence.id] = newStatus;
+          }
+        });
+        return updatedAlerted;
+      });
+    };
+
+    /**
+     * handleAddGeofence:
+     * Menambah area geofence baru menggunakan koordinat GPS saat ini.
+     * Menyimpan ke AsyncStorage dengan namespace per pengguna.
+     */
+    const handleAddGeofence = async () => {
+      if (!currentLocation) {
+        Alert.alert('Lokasi Belum Tersedia', 'Ambil lokasi GPS terlebih dahulu sebelum membuat area.');
+        return;
+      }
+      if (!newGeofenceName.trim()) {
+        Alert.alert('Nama Area Kosong', 'Masukkan nama untuk area geofence ini.');
+        return;
+      }
+      const radiusNum = parseInt(newGeofenceRadius, 10);
+      if (isNaN(radiusNum) || radiusNum < 10 || radiusNum > 50000) {
+        Alert.alert('Radius Tidak Valid', 'Masukkan radius antara 10 hingga 50.000 meter.');
+        return;
+      }
+      const newFence = {
+        id: `gf_${Date.now()}`,
+        name: newGeofenceName.trim(),
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        radius: radiusNum,
+      };
+      const updated = [...geofences, newFence];
+      setGeofences(updated);
+      setIsAddGeofenceVisible(false);
+      setNewGeofenceName('');
+      setNewGeofenceRadius('200');
+
+      // Simpan ke AsyncStorage per pengguna
+      const userId = apiUser?.id;
+      if (userId) {
+        try {
+          const key = getUserStorageKeys(userId).GEOFENCES;
+          await AsyncStorage.setItem(key, JSON.stringify(updated));
+        } catch (_) { }
+      }
+
+      // Langsung periksa status untuk fence baru
+      checkGeofenceStatuses(currentLocation, updated);
+      Alert.alert('Area Disimpan', `Area "${newFence.name}" berhasil ditambahkan dengan radius ${radiusNum} meter.`);
+    };
+
+    /**
+     * handleDeleteGeofence:
+     * Menghapus geofence dari daftar dan AsyncStorage.
+     */
+    const handleDeleteGeofence = async (fenceId) => {
+      const updated = geofences.filter((f) => f.id !== fenceId);
+      setGeofences(updated);
+      const updatedStatuses = { ...geofenceStatuses };
+      delete updatedStatuses[fenceId];
+      setGeofenceStatuses(updatedStatuses);
+      const userId = apiUser?.id;
+      if (userId) {
+        try {
+          const key = getUserStorageKeys(userId).GEOFENCES;
+          await AsyncStorage.setItem(key, JSON.stringify(updated));
+        } catch (_) { }
+      }
+    };
+
+    /**
+     * handleLoadGeofences:
+     * Memuat konfigurasi geofence dari AsyncStorage untuk pengguna yang login.
+     */
+    const handleLoadGeofences = async (userId) => {
+      if (!userId) return;
+      try {
+        const key = getUserStorageKeys(userId).GEOFENCES;
+        const raw = await AsyncStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setGeofences(parsed);
+        }
+      } catch (_) { }
+    };
+
+    // =================================================================
+    // 10. BOTTOM NAVIGATION BAR (Anggota 3)
+    // =================================================================
+    const renderBottomNav = () => {
+      const tabs = [
+        { id: 'Home', label: 'Beranda', iconActive: 'home', iconInactive: 'home-outline' },
+        { id: 'Courses', label: 'Matkul', iconActive: 'book', iconInactive: 'book-outline' },
+        { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
+        { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
+        { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+        { id: 'Location', label: 'Lokasi', iconActive: 'location', iconInactive: 'location-outline' },
+      ];
+
+      return (
+        <View
+          style={[
+            styles.bottomNavContainer,
+            {
+              paddingBottom: Math.max(insets.bottom, 8),
+              height: 58 + Math.max(insets.bottom, 8),
+            },
+          ]}
+        >
+          {tabs.map((tab) => {
+            const isActive = currentTab === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={styles.bottomNavItem}
+                onPress={() => setCurrentTab(tab.id)}
+                accessibilityLabel={`Menu ${tab.label}`}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={isActive ? tab.iconActive : tab.iconInactive}
+                  size={22}
+                  color={isActive ? COLORS.primary : COLORS.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.bottomNavLabel,
+                    isActive && styles.bottomNavLabelActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      );
+    };
+
+    // Loading Screen Fallback
+    if (isLoading) {
+      return (
+        <SafeAreaView style={[styles.screenContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={{ marginTop: 12, color: COLORS.textSecondary, fontWeight: '600' }}>
+            Menyiapkan StudyMate...
+          </Text>
+        </SafeAreaView>
+      );
+    }
+
+    // Sprint 04 – Anggota 2: Tampilkan halaman Auth jika belum login via API
+    if (!isAuthenticated) {
+      return renderAuthScreen();
+    }
 
     return (
-      <Modal
-        visible={notesModalVisible}
-        animationType="slide"
-        onRequestClose={() => setNotesModalVisible(false)}
-      >
-        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalHeaderTitle}>Catatan Pribadi</Text>
-              <Text style={styles.modalHeaderSubtitle} numberOfLines={1}>
-                {activeNotesMaterial.title}
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeAreaContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+        <View style={styles.mainContentFlex}>
+          {currentTab === 'Home' && renderHomeScreen()}
+          {currentTab === 'Courses' && renderCoursesScreen()}
+          {currentTab === 'Materials' && renderMaterialsScreen()}
+          {currentTab === 'Tasks' && renderTasksScreen()}
+          {currentTab === 'Schedule' && renderScheduleProfileScreen()}
+          {currentTab === 'Location' && (
+            <LocationScreen
+              scrollContentPaddingBottom={scrollContentPaddingBottom}
+              unreadNotifCount={unreadNotifCount}
+              onOpenNotif={() => setNotifModalVisible(true)}
+              locationPermStatus={locationPermStatus}
+              currentLocation={currentLocation}
+              isLocationLoading={isLocationLoading}
+              locationError={locationError}
+              reverseAddress={reverseAddress}
+              isGeocodingLoading={isGeocodingLoading}
+              geofences={geofences}
+              geofenceStatuses={geofenceStatuses}
+              isAddGeofenceVisible={isAddGeofenceVisible}
+              newGeofenceName={newGeofenceName}
+              newGeofenceRadius={newGeofenceRadius}
+              onSetNewGeofenceName={setNewGeofenceName}
+              onSetNewGeofenceRadius={setNewGeofenceRadius}
+              onSetIsAddGeofenceVisible={setIsAddGeofenceVisible}
+              onRequestPermission={handleRequestLocationPermission}
+              onGetCurrentLocation={handleGetCurrentLocation}
+              onAddGeofence={handleAddGeofence}
+              onDeleteGeofence={handleDeleteGeofence}
+              calculateDistance={calculateDistance}
+              apiUserId={apiUser?.id}
+              onLoadGeofences={handleLoadGeofences}
+              onStartLocationWatch={handleStartLocationWatch}
+              onStopLocationWatch={handleStopLocationWatch}
+            />
+          )}
+        </View>
+
+        {/* Persistent Bottom Navigation with Safe Area Padding */}
+        {renderBottomNav()}
+
+        {/* All Sub-Modals */}
+        <MaterialFormModal
+          visible={materialModalVisible}
+          editingMaterial={editingMaterial}
+          courses={courses}
+          insets={insets}
+          onClose={() => setMaterialModalVisible(false)}
+          onSave={handleSaveMaterial}
+        />
+
+        <CourseFormModal
+          visible={courseModalVisible}
+          editingCourse={editingCourse}
+          insets={insets}
+          onClose={() => setCourseModalVisible(false)}
+          onSave={async (formData) => {
+            let updated;
+            try {
+              if (editingCourse) {
+                // PUT /courses/index.php?id={id}
+                const result = await requestApi(`/courses/index.php?id=${editingCourse.id}`, {
+                  method: 'PUT',
+                  body: {
+                    code: formData.code,
+                    name: formData.name,
+                    lecturer: formData.lecturer,
+                    day: formData.day,
+                    time: formData.time,
+                    room: formData.room,
+                    sks: parseInt(formData.sks, 10) || 3,
+                    color: formData.color || COLORS.primary,
+                  },
+                  requiresAuth: true,
+                });
+
+                updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
+              } else {
+                // POST /courses/index.php
+                const result = await requestApi('/courses/index.php', {
+                  method: 'POST',
+                  body: {
+                    code: formData.code,
+                    name: formData.name,
+                    lecturer: formData.lecturer,
+                    day: formData.day,
+                    time: formData.time,
+                    room: formData.room,
+                    sks: parseInt(formData.sks, 10) || 3,
+                    color: formData.color || COLORS.primary,
+                  },
+                  requiresAuth: true,
+                });
+
+                const serverCourse = result.ok && result.data?.course ? result.data.course : null;
+                const newCourse = serverCourse || {
+                  id: `crs_${Date.now()}`,
+                  ...formData,
+                  color: formData.color || COLORS.primary,
+                };
+                updated = [...courses, newCourse];
+              }
+              setCourses(updated);
+              await persistData(STORAGE_KEYS.COURSES, updated);
+              setCourseModalVisible(false);
+              setEditingCourse(null);
+            } catch (err) {
+              Alert.alert('Peringatan', 'Data mata kuliah disimpan ke memori lokal: ' + err.message);
+              setCourseModalVisible(false);
+              setEditingCourse(null);
+            }
+          }}
+        />
+
+        <TaskFormModal
+          visible={taskModalVisible}
+          editingTask={editingTask}
+          courses={courses}
+          insets={insets}
+          onClose={() => setTaskModalVisible(false)}
+          onSave={handleSaveTask}
+        />
+
+        {renderNotesModal()}
+        {renderAiModal()}
+        {renderScheduleModal()}
+        {renderNotificationModal()}
+
+        {/* WEEK 7 – ANGGOTA 1 & 2: Smart Material Scanner Camera Modal */}
+        <SmartMaterialScannerModal
+          visible={isScannerVisible}
+          courses={courses}
+          insets={insets}
+          onClose={() => setIsScannerVisible(false)}
+          onSaveMaterial={handleSaveScannedMaterial}
+        />
+
+        {/* WEEK 7 – ANGGOTA 2: Full-Screen Scanned Photo Viewer Modal */}
+        <PhotoViewerModal
+          material={viewingPhotoMaterial}
+          insets={insets}
+          onClose={() => setViewingPhotoMaterial(null)}
+          onDelete={(id) => {
+            setViewingPhotoMaterial(null);
+            handleDeleteMaterial(id);
+          }}
+        />
+
+        {/* WEEK 8 – ANGGOTA 3: Modal Edit Profil Mahasiswa */}
+        <EditProfileModal
+          visible={isEditProfileVisible}
+          currentName={apiUser?.name || userProfile.name || ''}
+          currentEmail={apiUser?.email || userProfile.email || ''}
+          currentAvatarUri={profileAvatarUri}
+          currentUniversity={apiUser?.university || userProfile.university || ''}
+          currentMajor={apiUser?.major || userProfile.major || ''}
+          currentSemester={apiUser?.semester || userProfile.semester || null}
+          photoPreview={editProfilePhotoPreview}
+          insets={insets}
+          onClose={() => {
+            setIsEditProfileVisible(false);
+            setEditProfilePhotoUri(null);
+            setEditProfilePhotoPreview(null);
+          }}
+          onPickPhoto={handlePickProfilePhoto}
+          onSave={handleSaveProfile}
+          isSaving={isSavingProfile}
+        />
+
+        {/* WEEK 7 – ANGGOTA 3: Shake to Refresh Floating Toast Feedback */}
+        {shakeBanner && shakeBanner.visible && (
+          <View style={[styles.shakeFloatingToast, { top: insets.top + 10 }]}>
+            <Ionicons
+              name={
+                shakeBanner.status === 'loading'
+                  ? 'sync'
+                  : shakeBanner.status === 'success'
+                    ? 'checkmark-circle'
+                    : shakeBanner.status === 'warning'
+                      ? 'cloud-offline'
+                      : 'alert-circle'
+              }
+              size={20}
+              color={
+                shakeBanner.status === 'loading'
+                  ? '#38BDF8'
+                  : shakeBanner.status === 'success'
+                    ? '#34D399'
+                    : shakeBanner.status === 'warning'
+                      ? '#FBBF24'
+                      : '#F87171'
+              }
+            />
+            <Text style={styles.shakeFloatingToastText} numberOfLines={2}>
+              {shakeBanner.message}
+            </Text>
+          </View>
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // =================================================================
+  // 11. MODAL FORMS SUB-COMPONENTS
+  // =================================================================
+
+  // =================================================================
+  // WEEK 8 – ANGGOTA 3: Modal Edit Profil Mahasiswa
+  // Fitur: Ubah nama, pilih foto dari galeri, preview foto, simpan/batal
+  // =================================================================
+  function EditProfileModal({
+    visible,
+    currentName,
+    currentEmail,
+    currentAvatarUri,
+    currentUniversity,
+    currentMajor,
+    currentSemester,
+    photoPreview,
+    insets,
+    onClose,
+    onPickPhoto,
+    onSave,
+    isSaving,
+  }) {
+    const [name, setName] = useState('');
+    const [university, setUniversity] = useState('');
+    const [major, setMajor] = useState('');
+    const [semester, setSemester] = useState(null);
+    const [showSemesterPicker, setShowSemesterPicker] = useState(false);
+
+    useEffect(() => {
+      if (visible) {
+        setName(currentName || '');
+        setUniversity(currentUniversity || '');
+        setMajor(currentMajor || '');
+        setSemester(currentSemester || null);
+        setShowSemesterPicker(false);
+      }
+    }, [visible, currentName, currentUniversity, currentMajor, currentSemester]);
+
+    const activeAvatar = photoPreview || currentAvatarUri;
+
+    if (!visible) return null;
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.editProfileContainer}>
+          {/* Top Header */}
+          <View style={styles.editProfileHeader}>
+            <TouchableOpacity onPress={onClose} style={styles.editProfileHeaderBtn} disabled={isSaving}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.editProfileHeaderTitle}>Edit Profil Mahasiswa</Text>
+            <TouchableOpacity
+              onPress={() => onSave(name, university, major, semester)}
+              style={styles.editProfileSaveBtn}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.editProfileSaveBtnText}>Simpan</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 20 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Avatar Section */}
+            <View style={styles.editProfileAvatarSection}>
+              <View style={styles.editProfileAvatarWrapper}>
+                {activeAvatar ? (
+                  <Image source={{ uri: activeAvatar }} style={styles.editProfileAvatarImage} />
+                ) : (
+                  <View style={styles.editProfileAvatarPlaceholder}>
+                    <Text style={styles.editProfileAvatarPlaceholderText}>
+                      {(name || 'SM')
+                        .split(' ')
+                        .map((n) => n[0])
+                        .slice(0, 2)
+                        .join('')}
+                    </Text>
+                  </View>
+                )}
+                {/* Badge Camera Overlay */}
+                <TouchableOpacity
+                  style={styles.editProfileAvatarBadge}
+                  onPress={onPickPhoto}
+                  disabled={isSaving}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="camera" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.editProfileChangePhotoBtn}
+                onPress={onPickPhoto}
+                disabled={isSaving}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="image-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.editProfileChangePhotoBtnText}>Ganti Foto dari Galeri</Text>
+              </TouchableOpacity>
+              {photoPreview && (
+                <Text style={styles.editProfilePreviewBadge}>Preview Foto Baru Terpilih ✨</Text>
+              )}
+            </View>
+
+            {/* ── Informasi Pribadi ── */}
+            <Text style={styles.editProfileSectionHeader}>Informasi Pribadi</Text>
+
+            <View style={styles.editProfileFormGroup}>
+              <Text style={styles.editProfileLabel}>Nama Lengkap Mahasiswa *</Text>
+              <TextInput
+                style={styles.editProfileInput}
+                value={name}
+                onChangeText={setName}
+                placeholder="Masukkan nama lengkap Anda"
+                placeholderTextColor={COLORS.textMuted}
+                editable={!isSaving}
+                maxLength={100}
+              />
+            </View>
+
+            <View style={styles.editProfileFormGroup}>
+              <Text style={styles.editProfileLabel}>Email Akun StudyMate</Text>
+              <View style={[styles.editProfileInput, { backgroundColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center' }]}>
+                <Ionicons name="lock-closed" size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
+                <Text style={{ color: COLORS.textSecondary, fontSize: 14 }}>{currentEmail || 'Akun Terdaftar'}</Text>
+              </View>
+              <Text style={styles.editProfileHelperText}>
+                Email adalah identitas akun utama dan tidak dapat diubah tanpa verifikasi ulang.
               </Text>
             </View>
-            <TouchableOpacity
-              onPress={() => setNotesModalVisible(false)}
-              style={styles.modalCloseButton}
-            >
+
+            {/* ── Informasi Akademik ── */}
+            <Text style={styles.editProfileSectionHeader}>Informasi Akademik</Text>
+
+            <View style={styles.editProfileFormGroup}>
+              <Text style={styles.editProfileLabel}>Nama Universitas</Text>
+              <TextInput
+                style={styles.editProfileInput}
+                value={university}
+                onChangeText={setUniversity}
+                placeholder="Contoh: Universitas Indonesia"
+                placeholderTextColor={COLORS.textMuted}
+                editable={!isSaving}
+                maxLength={150}
+              />
+            </View>
+
+            <View style={styles.editProfileFormGroup}>
+              <Text style={styles.editProfileLabel}>Jurusan / Program Studi</Text>
+              <TextInput
+                style={styles.editProfileInput}
+                value={major}
+                onChangeText={setMajor}
+                placeholder="Contoh: Teknik Informatika"
+                placeholderTextColor={COLORS.textMuted}
+                editable={!isSaving}
+                maxLength={150}
+              />
+            </View>
+
+            <View style={styles.editProfileFormGroup}>
+              <Text style={styles.editProfileLabel}>Semester</Text>
+              <TouchableOpacity
+                style={[
+                  styles.editProfileInput,
+                  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+                ]}
+                onPress={() => !isSaving && setShowSemesterPicker(!showSemesterPicker)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: semester ? COLORS.textPrimary : COLORS.textMuted,
+                  }}
+                >
+                  {semester ? `Semester ${semester}` : 'Pilih semester Anda'}
+                </Text>
+                <Ionicons
+                  name={showSemesterPicker ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
+              {showSemesterPicker && (
+                <View
+                  style={{
+                    borderWidth: 1,
+                    borderColor: COLORS.cardBorder,
+                    borderRadius: 10,
+                    marginTop: 6,
+                    backgroundColor: COLORS.card,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((s) => (
+                      <TouchableOpacity
+                        key={s}
+                        style={{
+                          paddingVertical: 11,
+                          paddingHorizontal: 16,
+                          backgroundColor: semester === s ? COLORS.primaryLight : 'transparent',
+                          borderBottomWidth: s < 14 ? 1 : 0,
+                          borderBottomColor: '#F1F5F9',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                        onPress={() => {
+                          setSemester(s);
+                          setShowSemesterPicker(false);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            color: semester === s ? COLORS.primary : COLORS.textPrimary,
+                            fontWeight: semester === s ? '700' : '400',
+                          }}
+                        >
+                          Semester {s}
+                        </Text>
+                        {semester === s && (
+                          <Ionicons name="checkmark-circle" size={18} color={COLORS.primary} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ marginTop: 24, gap: 12 }}>
+              <TouchableOpacity
+                style={styles.editProfileMainSubmitBtn}
+                onPress={() => onSave(name, university, major, semester)}
+                disabled={isSaving}
+                activeOpacity={0.8}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                    <Text style={styles.editProfileMainSubmitBtnText}>Simpan Perubahan</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.editProfileCancelBtn}
+                onPress={onClose}
+                disabled={isSaving}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.editProfileCancelBtnText}>Batalkan</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // Form Modal Tambah / Edit Materi
+  function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
+    const [title, setTitle] = useState('');
+    const [courseId, setCourseId] = useState(courses[0]?.id || '');
+    const [meetingNumber, setMeetingNumber] = useState('1');
+    const [meetingTopic, setMeetingTopic] = useState('');
+    const [fileType, setFileType] = useState('PDF');
+    const [fileName, setFileName] = useState('');
+    const [fileSize, setFileSize] = useState('3.8 MB');
+
+    useEffect(() => {
+      if (editingMaterial) {
+        setTitle(editingMaterial.title);
+        setCourseId(editingMaterial.courseId);
+        setMeetingNumber(String(editingMaterial.meetingNumber || 1));
+        setMeetingTopic(editingMaterial.meetingTopic || '');
+        setFileType(editingMaterial.fileType || 'PDF');
+        setFileName(editingMaterial.fileName || '');
+        setFileSize(editingMaterial.fileSize || '3.5 MB');
+      } else {
+        setTitle('');
+        setCourseId(courses[0]?.id || '');
+        setMeetingNumber('1');
+        setMeetingTopic('');
+        setFileType('PDF');
+        setFileName('');
+        setFileSize('3.2 MB');
+      }
+    }, [editingMaterial, visible, courses]);
+
+    const handlePickDocument = async () => {
+      try {
+        const res = await DocumentPicker.getDocumentAsync({
+          type: [
+            'application/pdf',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          ],
+        });
+        if (!res.canceled && res.assets && res.assets.length > 0) {
+          setFileName(res.assets[0].name);
+          setFileSize('4.5 MB');
+          if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
+        }
+      } catch (e) {
+        setFileName('Materi_Kuliah_Pertemuan.pdf');
+      }
+    };
+
+    const handleSave = () => {
+      if (!title.trim()) {
+        Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
+        return;
+      }
+      onSave({
+        title: title.trim(),
+        courseId,
+        meetingNumber: parseInt(meetingNumber, 10) || 1,
+        meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
+        fileType,
+        fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
+        fileSize,
+      });
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>
+              {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
               <Ionicons name="close" size={24} color={COLORS.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.notesContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            <Text style={styles.notesInstructionText}>
-              Tulis rangkuman pribadi, hal-hal penting yang disampaikan dosen saat kelas, atau rumus yang perlu diingat:
-            </Text>
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
+              <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
+              <Text style={styles.filePickerButtonTitle}>
+                {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
+              </Text>
+              <Text style={styles.filePickerButtonSub}>
+                Mendukung format PDF, PPT, PPTX, dan Dokumen
+              </Text>
+            </TouchableOpacity>
 
+            <Text style={styles.formLabel}>Judul Materi</Text>
             <TextInput
-              style={styles.notesTextInput}
-              multiline
-              textAlignVertical="top"
-              placeholder="Ketik catatan pribadimu di sini..."
+              style={styles.formInput}
+              placeholder="Contoh: Modul 3 - React Navigation"
               placeholderTextColor={COLORS.textMuted}
-              value={currentNoteText}
-              onChangeText={setCurrentNoteText}
+              value={title}
+              onChangeText={setTitle}
             />
 
-            <TouchableOpacity
-              style={styles.saveNotesButton}
-              onPress={handleSaveNotes}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
-              <Text style={styles.saveNotesButtonText}>Simpan Catatan</Text>
+            <Text style={styles.formLabel}>Mata Kuliah</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {courses.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[
+                    styles.formCourseOption,
+                    courseId === c.id && styles.formCourseOptionActive,
+                    courseId === c.id && { borderColor: c.color },
+                  ]}
+                  onPress={() => setCourseId(c.id)}
+                >
+                  <Text
+                    style={[
+                      styles.formCourseOptionText,
+                      courseId === c.id && { color: c.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Pertemuan Ke-</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="1 - 16"
+                  placeholderTextColor={COLORS.textMuted}
+                  keyboardType="numeric"
+                  value={meetingNumber}
+                  onChangeText={setMeetingNumber}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Format Berkas</Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {['PDF', 'PPT', 'DOC'].map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.fileTypeChoice,
+                        fileType === type && styles.fileTypeChoiceActive,
+                      ]}
+                      onPress={() => setFileType(type)}
+                    >
+                      <Text
+                        style={[
+                          styles.fileTypeChoiceText,
+                          fileType === type && styles.fileTypeChoiceTextActive,
+                        ]}
+                      >
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.formLabel}>Topik Pertemuan</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Komponen UI & Layouting Flexbox"
+              placeholderTextColor={COLORS.textMuted}
+              value={meetingTopic}
+              onChangeText={setMeetingTopic}
+            />
+
+            <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     );
-  };
-
-  // MODAL 3: UPLOAD JADWAL MODAL
-  const renderScheduleModal = () => (
-    <Modal
-      visible={scheduleModalVisible}
-      animationType="fade"
-      transparent
-      onRequestClose={() => setScheduleModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.scheduleModalBox}>
-          <View style={styles.scheduleModalHeader}>
-            <Ionicons name="calendar" size={24} color={COLORS.primary} />
-            <Text style={styles.scheduleModalTitle}>Upload Jadwal Kuliah</Text>
-          </View>
-
-          <Text style={styles.scheduleModalSubtitle}>
-            Unggah foto screenshot KRS atau berkas PDF jadwal. StudyMate akan otomatis mendeteksi jadwal untuk mengorganisasi materi belajarmu.
-          </Text>
-
-          {isParsingSchedule ? (
-            <View style={styles.parsingIndicatorBox}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.parsingStatusText}>
-                Memindai dokumen & menyelaraskan jadwal...
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.uploadOptionsRow}>
-              <TouchableOpacity
-                style={styles.uploadOptionBtn}
-                onPress={handlePickScheduleImage}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="image-outline" size={30} color={COLORS.secondary} />
-                <Text style={styles.uploadOptionBtnTitle}>Screenshot Foto</Text>
-                <Text style={styles.uploadOptionBtnSub}>Dari Galeri / Kamera</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.uploadOptionBtn}
-                onPress={handlePickScheduleDocument}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="document-text-outline" size={30} color={COLORS.primary} />
-                <Text style={styles.uploadOptionBtnTitle}>File Berkas PDF</Text>
-                <Text style={styles.uploadOptionBtnSub}>Pilih Berkas KRS</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={styles.scheduleCancelBtn}
-            onPress={() => setScheduleModalVisible(false)}
-          >
-            <Text style={styles.scheduleCancelBtnText}>Tutup</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // MODAL 4: PUSAT NOTIFIKASI
-  const renderNotificationModal = () => (
-    <Modal
-      visible={notifModalVisible}
-      animationType="slide"
-      onRequestClose={() => setNotifModalVisible(false)}
-    >
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modalHeaderTitle}>Pusat Notifikasi</Text>
-            <Text style={styles.modalHeaderSubtitle}>Pengingat Materi & Deadline</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => setNotifModalVisible(false)}
-            style={styles.modalCloseButton}
-          >
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 30 + insets.bottom }}
-          showsVerticalScrollIndicator={false}
-        >
-          {notifications.map((n) => (
-            <View key={n.id} style={[styles.notifCard, !n.read && styles.notifCardUnread]}>
-              <View
-                style={[
-                  styles.notifIconCircle,
-                  {
-                    backgroundColor:
-                      n.type === 'class'
-                        ? COLORS.primaryLight
-                        : n.type === 'material'
-                          ? COLORS.amberLight
-                          : COLORS.roseLight,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={
-                    n.type === 'class'
-                      ? 'school-outline'
-                      : n.type === 'material'
-                        ? 'book-outline'
-                        : 'alarm-outline'
-                  }
-                  size={18}
-                  color={
-                    n.type === 'class'
-                      ? COLORS.primary
-                      : n.type === 'material'
-                        ? COLORS.amber
-                        : COLORS.rose
-                  }
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={styles.notifItemTitle}>{n.title}</Text>
-                  <Text style={styles.notifItemTime}>{n.time}</Text>
-                </View>
-                <Text style={styles.notifItemMsg}>{n.message}</Text>
-              </View>
-            </View>
-          ))}
-
-          {notifications.length === 0 && (
-            <EmptyState
-              title="Belum Ada Notifikasi"
-              subtitle="Notifikasi jadwal dan pengingat materi akan tampil di sini."
-            />
-          )}
-
-          <TouchableOpacity
-            style={styles.markAllReadBtn}
-            onPress={async () => {
-              const updated = notifications.map((n) => ({ ...n, read: true }));
-              setNotifications(updated);
-              await persistData(STORAGE_KEYS.NOTIFICATIONS, updated);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="checkmark-done" size={16} color={COLORS.primary} />
-            <Text style={styles.markAllReadBtnText}>Tandai Semua Sudah Dibaca</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-
-  // =================================================================
-  // 10. BOTTOM NAVIGATION BAR (Anggota 3)
-  // =================================================================
-  const renderBottomNav = () => {
-    const tabs = [
-      { id: 'Home', label: 'Beranda', iconActive: 'home', iconInactive: 'home-outline' },
-      { id: 'Courses', label: 'Matkul', iconActive: 'book', iconInactive: 'book-outline' },
-      { id: 'Materials', label: 'Materi', iconActive: 'folder', iconInactive: 'folder-outline' },
-      { id: 'Tasks', label: 'Tugas', iconActive: 'checkbox', iconInactive: 'checkbox-outline' },
-      { id: 'Schedule', label: 'Jadwal', iconActive: 'calendar', iconInactive: 'calendar-outline' },
-    ];
-
-    return (
-      <View
-        style={[
-          styles.bottomNavContainer,
-          {
-            paddingBottom: Math.max(insets.bottom, 8),
-            height: 58 + Math.max(insets.bottom, 8),
-          },
-        ]}
-      >
-        {tabs.map((tab) => {
-          const isActive = currentTab === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              style={styles.bottomNavItem}
-              onPress={() => setCurrentTab(tab.id)}
-              accessibilityLabel={`Menu ${tab.label}`}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={isActive ? tab.iconActive : tab.iconInactive}
-                size={22}
-                color={isActive ? COLORS.primary : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.bottomNavLabel,
-                  isActive && styles.bottomNavLabelActive,
-                ]}
-                numberOfLines={1}
-              >
-                {tab.label}
-              </Text>
-
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  };
-
-  // Loading Screen Fallback
-  if (isLoading) {
-    return (
-      <SafeAreaView style={[styles.screenContainer, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{ marginTop: 12, color: COLORS.textSecondary, fontWeight: '600' }}>
-          Menyiapkan StudyMate...
-        </Text>
-      </SafeAreaView>
-    );
   }
 
-  // Sprint 04 – Anggota 2: Tampilkan halaman Auth jika belum login via API
-  if (!isAuthenticated) {
-    return renderAuthScreen();
-  }
+  // Form Modal Tambah / Edit Tugas
+  function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
+    const [title, setTitle] = useState('');
+    const [courseId, setCourseId] = useState(courses[0]?.id || '');
+    const [deadline, setDeadline] = useState('2026-11-10');
+    const [priority, setPriority] = useState('Sedang');
+    const [description, setDescription] = useState('');
 
-  return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeAreaContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      <View style={styles.mainContentFlex}>
-        {currentTab === 'Home' && renderHomeScreen()}
-        {currentTab === 'Courses' && renderCoursesScreen()}
-        {currentTab === 'Materials' && renderMaterialsScreen()}
-        {currentTab === 'Tasks' && renderTasksScreen()}
-        {currentTab === 'Schedule' && renderScheduleProfileScreen()}
-      </View>
-
-      {/* Persistent Bottom Navigation with Safe Area Padding */}
-      {renderBottomNav()}
-
-      {/* All Sub-Modals */}
-      <MaterialFormModal
-        visible={materialModalVisible}
-        editingMaterial={editingMaterial}
-        courses={courses}
-        insets={insets}
-        onClose={() => setMaterialModalVisible(false)}
-        onSave={handleSaveMaterial}
-      />
-
-      <CourseFormModal
-        visible={courseModalVisible}
-        editingCourse={editingCourse}
-        insets={insets}
-        onClose={() => setCourseModalVisible(false)}
-        onSave={async (formData) => {
-          let updated;
-          try {
-            if (editingCourse) {
-              // PUT /courses/index.php?id={id}
-              const result = await requestApi(`/courses/index.php?id=${editingCourse.id}`, {
-                method: 'PUT',
-                body: {
-                  code: formData.code,
-                  name: formData.name,
-                  lecturer: formData.lecturer,
-                  day: formData.day,
-                  time: formData.time,
-                  room: formData.room,
-                  sks: parseInt(formData.sks, 10) || 3,
-                  color: formData.color || COLORS.primary,
-                },
-                requiresAuth: true,
-              });
-
-              updated = courses.map((c) => (c.id === editingCourse.id ? { ...c, ...formData } : c));
-            } else {
-              // POST /courses/index.php
-              const result = await requestApi('/courses/index.php', {
-                method: 'POST',
-                body: {
-                  code: formData.code,
-                  name: formData.name,
-                  lecturer: formData.lecturer,
-                  day: formData.day,
-                  time: formData.time,
-                  room: formData.room,
-                  sks: parseInt(formData.sks, 10) || 3,
-                  color: formData.color || COLORS.primary,
-                },
-                requiresAuth: true,
-              });
-
-              const serverCourse = result.ok && result.data?.course ? result.data.course : null;
-              const newCourse = serverCourse || {
-                id: `crs_${Date.now()}`,
-                ...formData,
-                color: formData.color || COLORS.primary,
-              };
-              updated = [...courses, newCourse];
-            }
-            setCourses(updated);
-            await persistData(STORAGE_KEYS.COURSES, updated);
-            setCourseModalVisible(false);
-            setEditingCourse(null);
-          } catch (err) {
-            Alert.alert('Peringatan', 'Data mata kuliah disimpan ke memori lokal: ' + err.message);
-            setCourseModalVisible(false);
-            setEditingCourse(null);
-          }
-        }}
-      />
-
-      <TaskFormModal
-        visible={taskModalVisible}
-        editingTask={editingTask}
-        courses={courses}
-        insets={insets}
-        onClose={() => setTaskModalVisible(false)}
-        onSave={handleSaveTask}
-      />
-
-      {renderNotesModal()}
-      {renderAiModal()}
-      {renderScheduleModal()}
-      {renderNotificationModal()}
-
-      {/* WEEK 7 – ANGGOTA 1 & 2: Smart Material Scanner Camera Modal */}
-      <SmartMaterialScannerModal
-        visible={isScannerVisible}
-        courses={courses}
-        insets={insets}
-        onClose={() => setIsScannerVisible(false)}
-        onSaveMaterial={handleSaveScannedMaterial}
-      />
-
-    </SafeAreaView>
-  );
-}
-
-// =================================================================
-// 11. MODAL FORMS SUB-COMPONENTS
-// =================================================================
-
-// Form Modal Tambah / Edit Materi
-function MaterialFormModal({ visible, editingMaterial, courses, insets, onClose, onSave }) {
-  const [title, setTitle] = useState('');
-  const [courseId, setCourseId] = useState(courses[0]?.id || '');
-  const [meetingNumber, setMeetingNumber] = useState('1');
-  const [meetingTopic, setMeetingTopic] = useState('');
-  const [fileType, setFileType] = useState('PDF');
-  const [fileName, setFileName] = useState('');
-  const [fileSize, setFileSize] = useState('3.8 MB');
-
-  useEffect(() => {
-    if (editingMaterial) {
-      setTitle(editingMaterial.title);
-      setCourseId(editingMaterial.courseId);
-      setMeetingNumber(String(editingMaterial.meetingNumber || 1));
-      setMeetingTopic(editingMaterial.meetingTopic || '');
-      setFileType(editingMaterial.fileType || 'PDF');
-      setFileName(editingMaterial.fileName || '');
-      setFileSize(editingMaterial.fileSize || '3.5 MB');
-    } else {
-      setTitle('');
-      setCourseId(courses[0]?.id || '');
-      setMeetingNumber('1');
-      setMeetingTopic('');
-      setFileType('PDF');
-      setFileName('');
-      setFileSize('3.2 MB');
-    }
-  }, [editingMaterial, visible, courses]);
-
-  const handlePickDocument = async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/vnd.ms-powerpoint',
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        ],
-      });
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        setFileName(res.assets[0].name);
-        setFileSize('4.5 MB');
-        if (!title) setTitle(res.assets[0].name.replace(/\.[^/.]+$/, ''));
+    useEffect(() => {
+      if (editingTask) {
+        setTitle(editingTask.title);
+        setCourseId(editingTask.courseId);
+        setDeadline(editingTask.deadline);
+        setPriority(editingTask.priority);
+        setDescription(editingTask.description || '');
+      } else {
+        setTitle('');
+        setCourseId(courses[0]?.id || '');
+        setDeadline('2026-11-10');
+        setPriority('Sedang');
+        setDescription('');
       }
-    } catch (e) {
-      setFileName('Materi_Kuliah_Pertemuan.pdf');
-    }
-  };
+    }, [editingTask, visible, courses]);
 
-  const handleSave = () => {
-    if (!title.trim()) {
-      Alert.alert('Perhatian', 'Harap isi judul materi perkuliahan.');
-      return;
-    }
-    onSave({
-      title: title.trim(),
-      courseId,
-      meetingNumber: parseInt(meetingNumber, 10) || 1,
-      meetingTopic: meetingTopic.trim() || `Topik Pertemuan ${meetingNumber}`,
-      fileType,
-      fileName: fileName.trim() || `${title.replace(/\s+/g, '_')}.${fileType.toLowerCase()}`,
-      fileSize,
-    });
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>
-            {editingMaterial ? 'Edit Materi Kuliah' : 'Upload Materi Baru'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-          showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity style={styles.filePickerButton} onPress={handlePickDocument} activeOpacity={0.8}>
-            <Ionicons name="cloud-upload" size={28} color={COLORS.primary} />
-            <Text style={styles.filePickerButtonTitle}>
-              {fileName ? fileName : 'Pilih Berkas PDF / PPT dari HP'}
-            </Text>
-            <Text style={styles.filePickerButtonSub}>
-              Mendukung format PDF, PPT, PPTX, dan Dokumen
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.formLabel}>Judul Materi</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Modul 3 - React Navigation"
-            placeholderTextColor={COLORS.textMuted}
-            value={title}
-            onChangeText={setTitle}
-          />
-
-          <Text style={styles.formLabel}>Mata Kuliah</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {courses.map((c) => (
-              <TouchableOpacity
-                key={c.id}
-                style={[
-                  styles.formCourseOption,
-                  courseId === c.id && styles.formCourseOptionActive,
-                  courseId === c.id && { borderColor: c.color },
-                ]}
-                onPress={() => setCourseId(c.id)}
-              >
-                <Text
-                  style={[
-                    styles.formCourseOptionText,
-                    courseId === c.id && { color: c.color, fontWeight: '700' },
-                  ]}
-                >
-                  {c.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Pertemuan Ke-</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="1 - 16"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="numeric"
-                value={meetingNumber}
-                onChangeText={setMeetingNumber}
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Format Berkas</Text>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {['PDF', 'PPT', 'DOC'].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      styles.fileTypeChoice,
-                      fileType === type && styles.fileTypeChoiceActive,
-                    ]}
-                    onPress={() => setFileType(type)}
-                  >
-                    <Text
-                      style={[
-                        styles.fileTypeChoiceText,
-                        fileType === type && styles.fileTypeChoiceTextActive,
-                      ]}
-                    >
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </View>
-
-          <Text style={styles.formLabel}>Topik Pertemuan</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Komponen UI & Layouting Flexbox"
-            placeholderTextColor={COLORS.textMuted}
-            value={meetingTopic}
-            onChangeText={setMeetingTopic}
-          />
-
-          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.formSubmitButtonText}>Simpan Materi</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-// Form Modal Tambah / Edit Tugas
-function TaskFormModal({ visible, editingTask, courses, insets, onClose, onSave }) {
-  const [title, setTitle] = useState('');
-  const [courseId, setCourseId] = useState(courses[0]?.id || '');
-  const [deadline, setDeadline] = useState('2026-11-10');
-  const [priority, setPriority] = useState('Sedang');
-  const [description, setDescription] = useState('');
-
-  useEffect(() => {
-    if (editingTask) {
-      setTitle(editingTask.title);
-      setCourseId(editingTask.courseId);
-      setDeadline(editingTask.deadline);
-      setPriority(editingTask.priority);
-      setDescription(editingTask.description || '');
-    } else {
-      setTitle('');
-      setCourseId(courses[0]?.id || '');
-      setDeadline('2026-11-10');
-      setPriority('Sedang');
-      setDescription('');
-    }
-  }, [editingTask, visible, courses]);
-
-  const handleSave = () => {
-    if (!title.trim()) {
-      Alert.alert('Perhatian', 'Harap isi judul tugas.');
-      return;
-    }
-    onSave({
-      title: title.trim(),
-      courseId,
-      deadline,
-      priority,
-      description: description.trim(),
-    });
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>
-            {editingTask ? 'Edit Tugas' : 'Tambah Tugas Baru'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.formLabel}>Judul Tugas</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Buat Laporan Praktikum Modul 2"
-            placeholderTextColor={COLORS.textMuted}
-            value={title}
-            onChangeText={setTitle}
-          />
-
-          <Text style={styles.formLabel}>Mata Kuliah</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {courses.map((c) => (
-              <TouchableOpacity
-                key={c.id}
-                style={[
-                  styles.formCourseOption,
-                  courseId === c.id && styles.formCourseOptionActive,
-                  courseId === c.id && { borderColor: c.color },
-                ]}
-                onPress={() => setCourseId(c.id)}
-              >
-                <Text
-                  style={[
-                    styles.formCourseOptionText,
-                    courseId === c.id && { color: c.color, fontWeight: '700' },
-                  ]}
-                >
-                  {c.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <Text style={styles.formLabel}>Tenggat Waktu (Deadline: YYYY-MM-DD)</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="2026-11-10"
-            placeholderTextColor={COLORS.textMuted}
-            value={deadline}
-            onChangeText={setDeadline}
-          />
-
-          <Text style={styles.formLabel}>Prioritas</Text>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-            {['Tinggi', 'Sedang', 'Rendah'].map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.priorityOptionBtn,
-                  priority === p && styles.priorityOptionBtnActive,
-                ]}
-                onPress={() => setPriority(p)}
-              >
-                <Text
-                  style={[
-                    styles.priorityOptionBtnText,
-                    priority === p && styles.priorityOptionBtnTextActive,
-                  ]}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.formLabel}>Catatan Tambahan / Deskripsi</Text>
-          <TextInput
-            style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
-            multiline
-            placeholder="Detail instruksi tugas atau tautan pengumpulan..."
-            placeholderTextColor={COLORS.textMuted}
-            value={description}
-            onChangeText={setDescription}
-          />
-
-          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.formSubmitButtonText}>Simpan Tugas</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-// Form Modal Tambah / Edit Mata Kuliah
-function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
-  const [lecturer, setLecturer] = useState('');
-  const [day, setDay] = useState('Senin');
-  const [time, setTime] = useState('08:00 - 10:30');
-  const [room, setRoom] = useState('Lab 1');
-  const [sks, setSks] = useState('3');
-
-  const daysList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-
-  useEffect(() => {
-    if (editingCourse) {
-      setName(editingCourse.name);
-      setCode(editingCourse.code);
-      setLecturer(editingCourse.lecturer);
-      setDay(editingCourse.day);
-      setTime(editingCourse.time);
-      setRoom(editingCourse.room);
-      setSks(String(editingCourse.sks || 3));
-    } else {
-      setName('');
-      setCode('');
-      setLecturer('');
-      setDay('Senin');
-      setTime('08:00 - 10:30');
-      setRoom('Lab 1');
-      setSks('3');
-    }
-  }, [editingCourse, visible]);
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert('Perhatian', 'Harap isi nama mata kuliah.');
-      return;
-    }
-    onSave({
-      name: name.trim(),
-      code: code.trim() || 'IF101',
-      lecturer: lecturer.trim() || 'Dosen Pengampu',
-      day,
-      time: time.trim() || '08:00 - 10:30',
-      room: room.trim() || 'Ruang Kuliah',
-      sks: parseInt(sks, 10) || 3,
-    });
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>
-            {editingCourse ? 'Edit Mata Kuliah' : 'Tambah Mata Kuliah'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.modalScrollBody}
-          contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.formLabel}>Nama Mata Kuliah</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Contoh: Interaksi Manusia dan Komputer"
-            placeholderTextColor={COLORS.textMuted}
-            value={name}
-            onChangeText={setName}
-          />
-
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Kode Matkul</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="IF3201"
-                placeholderTextColor={COLORS.textMuted}
-                value={code}
-                onChangeText={setCode}
-              />
-            </View>
-            <View style={{ width: 100 }}>
-              <Text style={styles.formLabel}>SKS</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="3"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="numeric"
-                value={sks}
-                onChangeText={setSks}
-              />
-            </View>
-          </View>
-
-          <Text style={styles.formLabel}>Dosen Pengampu</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="Nama Dosen dan Gelar"
-            placeholderTextColor={COLORS.textMuted}
-            value={lecturer}
-            onChangeText={setLecturer}
-          />
-
-          <Text style={styles.formLabel}>Hari Kuliah</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {daysList.map((d) => (
-              <TouchableOpacity
-                key={d}
-                style={[styles.dayChoiceBtn, day === d && styles.dayChoiceBtnActive]}
-                onPress={() => setDay(d)}
-              >
-                <Text style={[styles.dayChoiceBtnText, day === d && styles.dayChoiceBtnTextActive]}>
-                  {d}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Jam Kuliah</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="08:00 - 10:30"
-                placeholderTextColor={COLORS.textMuted}
-                value={time}
-                onChangeText={setTime}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>Ruangan</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Lab 203"
-                placeholderTextColor={COLORS.textMuted}
-                value={room}
-                onChangeText={setRoom}
-              />
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.formSubmitButtonText}>Simpan Mata Kuliah</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-// =================================================================
-// WEEK 7 – ANGGOTA 1 & 2: SMART MATERIAL SCANNER CAMERA MODAL
-// =================================================================
-function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMaterial }) {
-  const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef(null);
-
-  // Scanner Steps: 'CAMERA' | 'PREVIEW' | 'FORM'
-  const [step, setStep] = useState('CAMERA');
-  const [capturedPhotoUri, setCapturedPhotoUri] = useState(null);
-  const [facing, setFacing] = useState('back');
-  const [torch, setTorch] = useState(false);
-  const [isTakingPicture, setIsTakingPicture] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
-  // FIX: Track kamera siap – shutter hanya aktif setelah onCameraReady terpanggil
-  const [isCameraReady, setIsCameraReady] = useState(false);
-  const [cameraError, setCameraError] = useState(null);
-
-  // Form Fields
-  const [title, setTitle] = useState('');
-  const [courseId, setCourseId] = useState(courses[0]?.id || '');
-  const [meetingNumber, setMeetingNumber] = useState('1');
-  const [meetingTopic, setMeetingTopic] = useState('');
-  const [userNotes, setUserNotes] = useState('');
-
-  // Reset state saat modal dibuka
-  useEffect(() => {
-    if (visible) {
-      setStep('CAMERA');
-      setCapturedPhotoUri(null);
-      setFacing('back');
-      setTorch(false);
-      setIsTakingPicture(false);
-      setIsSaving(false);
-      setIsCameraReady(false);
-      setCameraError(null);
-      setTitle('');
-      setCourseId(courses[0]?.id || '');
-      setMeetingNumber('1');
-      setMeetingTopic('');
-      setUserNotes('');
-    }
-  }, [visible, courses]);
-
-  // Shutter action
-  const handleCapturePhoto = async () => {
-    if (!isCameraReady) {
-      Alert.alert('Kamera Belum Siap', 'Tunggu sebentar hingga kamera live viewfinder aktif.');
-      return;
-    }
-    if (cameraRef.current && !isTakingPicture) {
-      try {
-        setIsTakingPicture(true);
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.85,
-          skipProcessing: false,
-        });
-        if (photo?.uri) {
-          setCapturedPhotoUri(photo.uri);
-          setStep('PREVIEW');
-        }
-      } catch (err) {
-        Alert.alert('Gagal Memotret', 'Terjadi masalah saat mengambil foto kamera: ' + err.message);
-      } finally {
-        setIsTakingPicture(false);
+    const handleSave = () => {
+      if (!title.trim()) {
+        Alert.alert('Perhatian', 'Harap isi judul tugas.');
+        return;
       }
-    }
-  };
-
-  // Submit action
-  const handleSubmitForm = async () => {
-    if (!title.trim()) {
-      Alert.alert('Perhatian', 'Harap masukkan judul materi hasil scan.');
-      return;
-    }
-    setIsSaving(true);
-    try {
-      await onSaveMaterial({
-        imageUri: capturedPhotoUri,
+      onSave({
         title: title.trim(),
-        courseId: courseId || (courses[0]?.id || 'crs_1'),
-        meetingNumber: parseInt(meetingNumber, 10) || 1,
-        meetingTopic: meetingTopic.trim(),
-        userNotes: userNotes.trim(),
+        courseId,
+        deadline,
+        priority,
+        description: description.trim(),
       });
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    };
 
-  if (!visible) return null;
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: '#000000' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
-
-        {/* 1. Permission Check */}
-        {!permission ? (
-          <View style={styles.cameraPermissionBox}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600' }}>
-              Memeriksa izin akses kamera...
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>
+              {editingTask ? 'Edit Tugas' : 'Tambah Tugas Baru'}
             </Text>
-          </View>
-        ) : !permission.granted ? (
-          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.cameraPermissionBox}>
-            <View style={styles.cameraPermissionIconWrap}>
-              <Ionicons
-                name={permission.canAskAgain === false ? 'camera-off-outline' : 'camera-outline'}
-                size={56}
-                color={permission.canAskAgain === false ? COLORS.error : COLORS.primary}
-              />
-            </View>
-            <Text style={styles.cameraPermissionTitle}>Izin Kamera Diperlukan</Text>
-            {permission.canAskAgain === false ? (
-              <>
-                <Text style={styles.cameraPermissionSubtitle}>
-                  Izin kamera telah ditolak secara permanen. Untuk menggunakan Smart Material Scanner,
-                  buka Pengaturan Android → Aplikasi → StudyMate → Izin → Kamera, lalu aktifkan izin kamera secara manual.
-                </Text>
-                <View style={[styles.cameraPermissionGrantBtn, { backgroundColor: COLORS.textSecondary }]}>
-                  <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.cameraPermissionGrantBtnText}>Buka Pengaturan Android</Text>
-                </View>
-              </>
-            ) : (
-              <>
-                <Text style={styles.cameraPermissionSubtitle}>
-                  StudyMate Smart Material Scanner memerlukan izin untuk mengakses kamera perangkat Anda.
-                  Kamera digunakan secara langsung untuk memotret papan tulis, slide materi kuliah dosen, atau catatan belajar.
-                </Text>
-                <TouchableOpacity
-                  style={styles.cameraPermissionGrantBtn}
-                  onPress={requestPermission}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
-                  <Text style={styles.cameraPermissionGrantBtnText}>Berikan Izin Kamera</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            <TouchableOpacity
-              style={styles.cameraPermissionBackBtn}
-              onPress={onClose}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.cameraPermissionBackBtnText}>Batal / Kembali ke Katalog Materi</Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
             </TouchableOpacity>
-          </SafeAreaView>
-        ) : step === 'CAMERA' ? (
-          /* 2. Step CAMERA: Live Viewfinder */
-          <View style={{ flex: 1 }}>
-            {/* CameraView – flash/torch dikendalikan via enableTorch (boolean), bukan prop flash */}
-            <CameraView
-              ref={cameraRef}
-              style={StyleSheet.absoluteFillObject}
-              facing={facing}
-              enableTorch={torch}
-              onCameraReady={() => {
-                setIsCameraReady(true);
-                setCameraError(null);
-              }}
-              onMountError={(error) => {
-                setCameraError(error?.message || 'Kamera gagal dimuat');
-                setIsCameraReady(false);
-              }}
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.formLabel}>Judul Tugas</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Buat Laporan Praktikum Modul 2"
+              placeholderTextColor={COLORS.textMuted}
+              value={title}
+              onChangeText={setTitle}
             />
 
-            {/* Loading overlay saat kamera belum siap */}
-            {!isCameraReady && !cameraError && (
-              <View
-                style={{
-                  ...StyleSheet.absoluteFillObject,
-                  backgroundColor: 'rgba(0,0,0,0.75)',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600', fontSize: 14 }}>
-                  Menyiapkan kamera...
-                </Text>
-              </View>
-            )}
-
-            {/* Error overlay jika kamera gagal mount */}
-            {cameraError && (
-              <View
-                style={{
-                  ...StyleSheet.absoluteFillObject,
-                  backgroundColor: '#0D0D0D',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  paddingHorizontal: 32,
-                }}
-              >
-                <Ionicons name="camera-off-outline" size={56} color={COLORS.rose} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginTop: 16, textAlign: 'center' }}>
-                  Kamera Tidak Dapat Diaktifkan
-                </Text>
-                <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-                  {cameraError}
-                </Text>
+            <Text style={styles.formLabel}>Mata Kuliah</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {courses.map((c) => (
                 <TouchableOpacity
-                  style={{
-                    backgroundColor: COLORS.primary,
-                    borderRadius: 12,
-                    paddingVertical: 12,
-                    paddingHorizontal: 24,
-                    marginTop: 24,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                  onPress={() => {
-                    setCameraError(null);
-                    setIsCameraReady(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="refresh" size={18} color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Coba Lagi</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ marginTop: 16 }}
-                  onPress={onClose}
-                  activeOpacity={0.75}
-                >
-                  <Text style={{ color: '#94A3B8', fontSize: 13 }}>Kembali ke Katalog Materi</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Top Toolbar */}
-            <SafeAreaView edges={['top']} style={styles.cameraLiveTopBar}>
-              <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
-                <Ionicons name="close" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-
-              <View style={styles.cameraLiveTitleBadge}>
-                <Ionicons name="scan" size={15} color="#FFFFFF" />
-                <Text style={styles.cameraLiveTitleText}>Smart Material Scanner</Text>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity
-                  style={[styles.cameraCircleBtn, torch && { backgroundColor: COLORS.amber }]}
-                  onPress={() => setTorch(!torch)}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name={torch ? 'flash' : 'flash-off'} size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.cameraCircleBtn}
-                  onPress={() => {
-                    setIsCameraReady(false);
-                    setCameraError(null);
-                    setFacing(facing === 'back' ? 'front' : 'back');
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-            </SafeAreaView>
-
-            {/* Center Viewfinder Guide */}
-            <View style={styles.cameraViewfinderContainer} pointerEvents="none">
-              <View style={styles.cameraViewfinderFrame}>
-                <View style={[styles.cornerGuide, styles.cornerTL]} />
-                <View style={[styles.cornerGuide, styles.cornerTR]} />
-                <View style={[styles.cornerGuide, styles.cornerBL]} />
-                <View style={[styles.cornerGuide, styles.cornerBR]} />
-              </View>
-              <View style={styles.cameraGuideBadge}>
-                <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
-                <Text style={styles.cameraGuideText}>
-                  Arahkan kamera ke papan tulis, slide, atau catatan
-                </Text>
-              </View>
-            </View>
-
-            {/* Bottom Shutter Controls */}
-            <SafeAreaView edges={['bottom']} style={styles.cameraLiveBottomBar}>
-              <View style={{ alignItems: 'center' }}>
-                <TouchableOpacity
+                  key={c.id}
                   style={[
-                    styles.cameraShutterOuter,
-                    (!isCameraReady || isTakingPicture) && { opacity: 0.45 },
+                    styles.formCourseOption,
+                    courseId === c.id && styles.formCourseOptionActive,
+                    courseId === c.id && { borderColor: c.color },
                   ]}
-                  onPress={handleCapturePhoto}
-                  disabled={isTakingPicture || !isCameraReady}
-                  activeOpacity={0.7}
+                  onPress={() => setCourseId(c.id)}
                 >
-                  {isTakingPicture ? (
-                    <ActivityIndicator size="small" color={COLORS.primary} />
-                  ) : (
-                    <View style={styles.cameraShutterInner} />
-                  )}
+                  <Text
+                    style={[
+                      styles.formCourseOptionText,
+                      courseId === c.id && { color: c.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
                 </TouchableOpacity>
-                <Text style={styles.cameraShutterHintText}>
-                  {isCameraReady ? 'Ketuk untuk Memotret' : 'Menyiapkan kamera...'}
-                </Text>
-              </View>
-            </SafeAreaView>
-          </View>
-        ) : step === 'PREVIEW' ? (
-          /* 3. Step PREVIEW: Photo Review with Retake and Use Photo */
-          <View style={{ flex: 1, backgroundColor: '#090D16' }}>
-            <SafeAreaView edges={['top']} style={styles.cameraPreviewTopBar}>
-              <TouchableOpacity
-                style={styles.cameraCircleBtn}
-                onPress={() => {
-                  setCapturedPhotoUri(null);
-                  setIsCameraReady(false);
-                  setCameraError(null);
-                  setStep('CAMERA');
-                }}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-              <Text style={styles.cameraPreviewTitle}>Preview Foto Materi</Text>
-              <View style={{ width: 40 }} />
-            </SafeAreaView>
+              ))}
+            </ScrollView>
 
-            <View style={styles.cameraPreviewImageWrapper}>
-              <Image
-                source={{ uri: capturedPhotoUri }}
-                style={styles.cameraPreviewImage}
-                resizeMode="contain"
-              />
-            </View>
+            <Text style={styles.formLabel}>Tenggat Waktu (Deadline: YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="2026-11-10"
+              placeholderTextColor={COLORS.textMuted}
+              value={deadline}
+              onChangeText={setDeadline}
+            />
 
-            <SafeAreaView edges={['bottom']} style={styles.cameraPreviewBottomBar}>
-              <TouchableOpacity
-                style={styles.cameraRetakeBtn}
-                onPress={() => {
-                  setCapturedPhotoUri(null);
-                  setStep('CAMERA');
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.cameraRetakeBtnText}>Ambil Ulang</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.cameraUsePhotoBtn}
-                onPress={() => {
-                  const currentCourse = courses.find((c) => c.id === courseId) || courses[0];
-                  if (!title.trim()) {
-                    setTitle(`Catatan Slide ${currentCourse?.code || ''} - Pertemuan ${meetingNumber}`);
-                  }
-                  if (!meetingTopic.trim()) {
-                    setMeetingTopic(`Dokumentasi Slide / Papan Tulis Pertemuan ${meetingNumber}`);
-                  }
-                  setStep('FORM');
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                <Text style={styles.cameraUsePhotoBtnText}>Gunakan Foto</Text>
-              </TouchableOpacity>
-            </SafeAreaView>
-          </View>
-        ) : (
-          /* 4. Step FORM: Material Info Form */
-          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.cameraFormWrapper}>
-            <View style={styles.cameraFormHeader}>
-              <TouchableOpacity
-                onPress={() => setStep('PREVIEW')}
-                style={styles.cameraFormBackBtn}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="arrow-back" size={22} color={COLORS.textPrimary} />
-              </TouchableOpacity>
-              <Text style={styles.cameraFormHeaderTitle}>Informasi Materi Scan</Text>
-              <TouchableOpacity onPress={onClose} style={styles.cameraFormBackBtn} activeOpacity={0.7}>
-                <Ionicons name="close" size={22} color={COLORS.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={styles.cameraFormScroll}
-              contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Photo Preview Thumbnail */}
-              <View style={styles.cameraFormPhotoCard}>
-                <Image
-                  source={{ uri: capturedPhotoUri }}
-                  style={styles.cameraFormPhotoThumb}
-                  resizeMode="cover"
-                />
-                <View style={styles.cameraFormPhotoBadge}>
-                  <Ionicons name="camera" size={13} color="#FFFFFF" />
-                  <Text style={styles.cameraFormPhotoBadgeText}>Hasil Pemindaian Kamera</Text>
-                </View>
+            <Text style={styles.formLabel}>Prioritas</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {['Tinggi', 'Sedang', 'Rendah'].map((p) => (
                 <TouchableOpacity
-                  style={styles.cameraFormRetakeFloatBtn}
-                  onPress={() => setStep('PREVIEW')}
-                  activeOpacity={0.8}
+                  key={p}
+                  style={[
+                    styles.priorityOptionBtn,
+                    priority === p && styles.priorityOptionBtnActive,
+                  ]}
+                  onPress={() => setPriority(p)}
                 >
-                  <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
-                  <Text style={styles.cameraFormRetakeFloatText}>Perbesar</Text>
+                  <Text
+                    style={[
+                      styles.priorityOptionBtnText,
+                      priority === p && styles.priorityOptionBtnTextActive,
+                    ]}
+                  >
+                    {p}
+                  </Text>
                 </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.formLabel}>Catatan Tambahan / Deskripsi</Text>
+            <TextInput
+              style={[styles.formInput, { height: 90, textAlignVertical: 'top' }]}
+              multiline
+              placeholder="Detail instruksi tugas atau tautan pengumpulan..."
+              placeholderTextColor={COLORS.textMuted}
+              value={description}
+              onChangeText={setDescription}
+            />
+
+            <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.formSubmitButtonText}>Simpan Tugas</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // Form Modal Tambah / Edit Mata Kuliah
+  function CourseFormModal({ visible, editingCourse, insets, onClose, onSave }) {
+    const [name, setName] = useState('');
+    const [code, setCode] = useState('');
+    const [lecturer, setLecturer] = useState('');
+    const [day, setDay] = useState('Senin');
+    const [time, setTime] = useState('08:00 - 10:30');
+    const [room, setRoom] = useState('Lab 1');
+    const [sks, setSks] = useState('3');
+
+    const daysList = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+    useEffect(() => {
+      if (editingCourse) {
+        setName(editingCourse.name);
+        setCode(editingCourse.code);
+        setLecturer(editingCourse.lecturer);
+        setDay(editingCourse.day);
+        setTime(editingCourse.time);
+        setRoom(editingCourse.room);
+        setSks(String(editingCourse.sks || 3));
+      } else {
+        setName('');
+        setCode('');
+        setLecturer('');
+        setDay('Senin');
+        setTime('08:00 - 10:30');
+        setRoom('Lab 1');
+        setSks('3');
+      }
+    }, [editingCourse, visible]);
+
+    const handleSave = () => {
+      if (!name.trim()) {
+        Alert.alert('Perhatian', 'Harap isi nama mata kuliah.');
+        return;
+      }
+      onSave({
+        name: name.trim(),
+        code: code.trim() || 'IF101',
+        lecturer: lecturer.trim() || 'Dosen Pengampu',
+        day,
+        time: time.trim() || '08:00 - 10:30',
+        room: room.trim() || 'Ruang Kuliah',
+        sks: parseInt(sks, 10) || 3,
+      });
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>
+              {editingCourse ? 'Edit Mata Kuliah' : 'Tambah Mata Kuliah'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollBody}
+            contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.formLabel}>Nama Mata Kuliah</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Contoh: Interaksi Manusia dan Komputer"
+              placeholderTextColor={COLORS.textMuted}
+              value={name}
+              onChangeText={setName}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Kode Matkul</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="IF3201"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={code}
+                  onChangeText={setCode}
+                />
               </View>
+              <View style={{ width: 100 }}>
+                <Text style={styles.formLabel}>SKS</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="3"
+                  placeholderTextColor={COLORS.textMuted}
+                  keyboardType="numeric"
+                  value={sks}
+                  onChangeText={setSks}
+                />
+              </View>
+            </View>
 
-              {/* Judul Materi */}
-              <Text style={styles.scannerFormLabel}>Judul Materi Perkuliahan *</Text>
-              <TextInput
-                style={styles.scannerFormInput}
-                placeholder="Contoh: Slide Struktur Data Graph & Pohon"
-                placeholderTextColor={COLORS.textMuted}
-                value={title}
-                onChangeText={setTitle}
-              />
+            <Text style={styles.formLabel}>Dosen Pengampu</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="Nama Dosen dan Gelar"
+              placeholderTextColor={COLORS.textMuted}
+              value={lecturer}
+              onChangeText={setLecturer}
+            />
 
-              {/* Mata Kuliah */}
-              <Text style={styles.scannerFormLabel}>Mata Kuliah *</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 14 }}
-                contentContainerStyle={{ gap: 8 }}
+            <Text style={styles.formLabel}>Hari Kuliah</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {daysList.map((d) => (
+                <TouchableOpacity
+                  key={d}
+                  style={[styles.dayChoiceBtn, day === d && styles.dayChoiceBtnActive]}
+                  onPress={() => setDay(d)}
+                >
+                  <Text style={[styles.dayChoiceBtnText, day === d && styles.dayChoiceBtnTextActive]}>
+                    {d}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Jam Kuliah</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="08:00 - 10:30"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={time}
+                  onChangeText={setTime}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.formLabel}>Ruangan</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Lab 203"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={room}
+                  onChangeText={setRoom}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.formSubmitButton} onPress={handleSave} activeOpacity={0.8}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.formSubmitButtonText}>Simpan Mata Kuliah</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // =================================================================
+  // WEEK 7 – ANGGOTA 1 & 2: SMART MATERIAL SCANNER CAMERA MODAL
+  // =================================================================
+  function SmartMaterialScannerModal({ visible, courses, insets, onClose, onSaveMaterial }) {
+    const [permission, requestPermission] = useCameraPermissions();
+    const cameraRef = useRef(null);
+
+    // Scanner Steps: 'CAMERA' | 'PREVIEW' | 'FORM'
+    const [step, setStep] = useState('CAMERA');
+    const [capturedPhotoUri, setCapturedPhotoUri] = useState(null);
+    const [facing, setFacing] = useState('back');
+    const [torch, setTorch] = useState(false);
+    const [isTakingPicture, setIsTakingPicture] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    // FIX: Track kamera siap – shutter hanya aktif setelah onCameraReady terpanggil
+    const [isCameraReady, setIsCameraReady] = useState(false);
+    const [cameraError, setCameraError] = useState(null);
+
+    // Form Fields
+    const [title, setTitle] = useState('');
+    const [courseId, setCourseId] = useState(courses[0]?.id || '');
+    const [meetingNumber, setMeetingNumber] = useState('1');
+    const [meetingTopic, setMeetingTopic] = useState('');
+    const [userNotes, setUserNotes] = useState('');
+
+    // Reset state saat modal dibuka
+    useEffect(() => {
+      if (visible) {
+        setStep('CAMERA');
+        setCapturedPhotoUri(null);
+        setFacing('back');
+        setTorch(false);
+        setIsTakingPicture(false);
+        setIsSaving(false);
+        setIsCameraReady(false);
+        setCameraError(null);
+        setTitle('');
+        setCourseId(courses[0]?.id || '');
+        setMeetingNumber('1');
+        setMeetingTopic('');
+        setUserNotes('');
+      }
+    }, [visible, courses]);
+
+    // Shutter action
+    const handleCapturePhoto = async () => {
+      if (!isCameraReady) {
+        Alert.alert('Kamera Belum Siap', 'Tunggu sebentar hingga kamera live viewfinder aktif.');
+        return;
+      }
+      if (cameraRef.current && !isTakingPicture) {
+        try {
+          setIsTakingPicture(true);
+          const photo = await cameraRef.current.takePictureAsync({
+            quality: 0.85,
+            skipProcessing: false,
+          });
+          if (photo?.uri) {
+            setCapturedPhotoUri(photo.uri);
+            setStep('PREVIEW');
+          }
+        } catch (err) {
+          Alert.alert('Gagal Memotret', 'Terjadi masalah saat mengambil foto kamera: ' + err.message);
+        } finally {
+          setIsTakingPicture(false);
+        }
+      }
+    };
+
+    // Submit action
+    const handleSubmitForm = async () => {
+      if (!title.trim()) {
+        Alert.alert('Perhatian', 'Harap masukkan judul materi hasil scan.');
+        return;
+      }
+      setIsSaving(true);
+      try {
+        await onSaveMaterial({
+          imageUri: capturedPhotoUri,
+          title: title.trim(),
+          courseId: courseId || (courses[0]?.id || 'crs_1'),
+          meetingNumber: parseInt(meetingNumber, 10) || 1,
+          meetingTopic: meetingTopic.trim(),
+          userNotes: userNotes.trim(),
+        });
+      } finally {
+        setIsSaving(false);
+      }
+    };
+
+    if (!visible) return null;
+
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: '#000000' }}>
+          <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+          {/* 1. Permission Check */}
+          {!permission ? (
+            <View style={styles.cameraPermissionBox}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600' }}>
+                Memeriksa izin akses kamera...
+              </Text>
+            </View>
+          ) : !permission.granted ? (
+            <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.cameraPermissionBox}>
+              <View style={styles.cameraPermissionIconWrap}>
+                <Ionicons
+                  name={permission.canAskAgain === false ? 'camera-off-outline' : 'camera-outline'}
+                  size={56}
+                  color={permission.canAskAgain === false ? COLORS.error : COLORS.primary}
+                />
+              </View>
+              <Text style={styles.cameraPermissionTitle}>Izin Kamera Diperlukan</Text>
+              {permission.canAskAgain === false ? (
+                <>
+                  <Text style={styles.cameraPermissionSubtitle}>
+                    Izin kamera telah ditolak secara permanen. Untuk menggunakan Smart Material Scanner,
+                    buka Pengaturan Android → Aplikasi → StudyMate → Izin → Kamera, lalu aktifkan izin kamera secara manual.
+                  </Text>
+                  <View style={[styles.cameraPermissionGrantBtn, { backgroundColor: COLORS.textSecondary }]}>
+                    <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.cameraPermissionGrantBtnText}>Buka Pengaturan Android</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.cameraPermissionSubtitle}>
+                    StudyMate Smart Material Scanner memerlukan izin untuk mengakses kamera perangkat Anda.
+                    Kamera digunakan secara langsung untuk memotret papan tulis, slide materi kuliah dosen, atau catatan belajar.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.cameraPermissionGrantBtn}
+                    onPress={requestPermission}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+                    <Text style={styles.cameraPermissionGrantBtnText}>Berikan Izin Kamera</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              <TouchableOpacity
+                style={styles.cameraPermissionBackBtn}
+                onPress={onClose}
+                activeOpacity={0.8}
               >
-                {courses.map((crs) => {
-                  const isSelected = crs.id === courseId;
-                  return (
-                    <TouchableOpacity
-                      key={crs.id}
-                      style={[
-                        styles.scannerCourseChip,
-                        isSelected && { backgroundColor: crs.color, borderColor: crs.color },
-                      ]}
-                      onPress={() => setCourseId(crs.id)}
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={[
-                          styles.scannerCourseChipText,
-                          isSelected && { color: '#FFFFFF', fontWeight: '800' },
-                        ]}
-                      >
-                        {crs.code} – {crs.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Pertemuan */}
-              <Text style={styles.scannerFormLabel}>Pertemuan Keberapa? *</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 14 }}
-                contentContainerStyle={{ gap: 8 }}
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((num) => {
-                  const isSelected = String(num) === String(meetingNumber);
-                  return (
-                    <TouchableOpacity
-                      key={num}
-                      style={[
-                        styles.scannerMeetingChip,
-                        isSelected && styles.scannerMeetingChipActive,
-                      ]}
-                      onPress={() => setMeetingNumber(String(num))}
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={[
-                          styles.scannerMeetingChipText,
-                          isSelected && styles.scannerMeetingChipTextActive,
-                        ]}
-                      >
-                        P{num}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Topik Pertemuan */}
-              <Text style={styles.scannerFormLabel}>Topik Pertemuan / Bahasan</Text>
-              <TextInput
-                style={styles.scannerFormInput}
-                placeholder="Contoh: Implementasi Traversal BFS & DFS"
-                placeholderTextColor={COLORS.textMuted}
-                value={meetingTopic}
-                onChangeText={setMeetingTopic}
+                <Text style={styles.cameraPermissionBackBtnText}>Batal / Kembali ke Katalog Materi</Text>
+              </TouchableOpacity>
+            </SafeAreaView>
+          ) : step === 'CAMERA' ? (
+            /* 2. Step CAMERA: Live Viewfinder */
+            <View style={{ flex: 1 }}>
+              {/* CameraView – flash/torch dikendalikan via enableTorch (boolean), bukan prop flash */}
+              <CameraView
+                ref={cameraRef}
+                style={StyleSheet.absoluteFillObject}
+                facing={facing}
+                enableTorch={torch}
+                onCameraReady={() => {
+                  setIsCameraReady(true);
+                  setCameraError(null);
+                }}
+                onMountError={(error) => {
+                  setCameraError(error?.message || 'Kamera gagal dimuat');
+                  setIsCameraReady(false);
+                }}
               />
 
-              {/* Catatan Tambahan */}
-              <Text style={styles.scannerFormLabel}>Deskripsi atau Catatan Tambahan (Opsional)</Text>
-              <TextInput
-                style={[styles.scannerFormInput, { height: 75, textAlignVertical: 'top' }]}
-                placeholder="Tulis catatan penting dosen saat memaparkan slide atau materi ini..."
-                placeholderTextColor={COLORS.textMuted}
-                value={userNotes}
-                onChangeText={setUserNotes}
-                multiline
-              />
+              {/* Loading overlay saat kamera belum siap */}
+              {!isCameraReady && !cameraError && (
+                <View
+                  style={{
+                    ...StyleSheet.absoluteFillObject,
+                    backgroundColor: 'rgba(0,0,0,0.75)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <ActivityIndicator size="large" color={COLORS.primary} />
+                  <Text style={{ color: '#FFFFFF', marginTop: 12, fontWeight: '600', fontSize: 14 }}>
+                    Menyiapkan kamera...
+                  </Text>
+                </View>
+              )}
 
-              {/* Penjelasan Penyimpanan Lokal Persisten */}
-              <View style={styles.scannerStorageInfoCard}>
-                <Ionicons name="folder-open-outline" size={20} color={COLORS.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.scannerStorageInfoTitle}>Penyimpanan Foto Lokal Persisten</Text>
-                  <Text style={styles.scannerStorageInfoDesc}>
-                    Foto disalin ke direktori dokumen lokal HP Anda secara permanen. Materi dan foto tetap dapat dibuka kembali kapan saja meskipun aplikasi ditutup atau tanpa internet.
+              {/* Error overlay jika kamera gagal mount */}
+              {cameraError && (
+                <View
+                  style={{
+                    ...StyleSheet.absoluteFillObject,
+                    backgroundColor: '#0D0D0D',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    paddingHorizontal: 32,
+                  }}
+                >
+                  <Ionicons name="camera-off-outline" size={56} color={COLORS.rose} />
+                  <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginTop: 16, textAlign: 'center' }}>
+                    Kamera Tidak Dapat Diaktifkan
+                  </Text>
+                  <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                    {cameraError}
+                  </Text>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: COLORS.primary,
+                      borderRadius: 12,
+                      paddingVertical: 12,
+                      paddingHorizontal: 24,
+                      marginTop: 24,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                    onPress={() => {
+                      setCameraError(null);
+                      setIsCameraReady(false);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="refresh" size={18} color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Coba Lagi</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ marginTop: 16 }}
+                    onPress={onClose}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{ color: '#94A3B8', fontSize: 13 }}>Kembali ke Katalog Materi</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Top Toolbar */}
+              <SafeAreaView edges={['top']} style={styles.cameraLiveTopBar}>
+                <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <View style={styles.cameraLiveTitleBadge}>
+                  <Ionicons name="scan" size={15} color="#FFFFFF" />
+                  <Text style={styles.cameraLiveTitleText}>Smart Material Scanner</Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity
+                    style={[styles.cameraCircleBtn, torch && { backgroundColor: COLORS.amber }]}
+                    onPress={() => setTorch(!torch)}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name={torch ? 'flash' : 'flash-off'} size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.cameraCircleBtn}
+                    onPress={() => {
+                      setIsCameraReady(false);
+                      setCameraError(null);
+                      setFacing(facing === 'back' ? 'front' : 'back');
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              </SafeAreaView>
+
+              {/* Center Viewfinder Guide */}
+              <View style={styles.cameraViewfinderContainer} pointerEvents="none">
+                <View style={styles.cameraViewfinderFrame}>
+                  <View style={[styles.cornerGuide, styles.cornerTL]} />
+                  <View style={[styles.cornerGuide, styles.cornerTR]} />
+                  <View style={[styles.cornerGuide, styles.cornerBL]} />
+                  <View style={[styles.cornerGuide, styles.cornerBR]} />
+                </View>
+                <View style={styles.cameraGuideBadge}>
+                  <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                  <Text style={styles.cameraGuideText}>
+                    Arahkan kamera ke papan tulis, slide, atau catatan
                   </Text>
                 </View>
               </View>
 
-              {/* Action Buttons */}
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+              {/* Bottom Shutter Controls */}
+              <SafeAreaView edges={['bottom']} style={styles.cameraLiveBottomBar}>
+                <View style={{ alignItems: 'center' }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.cameraShutterOuter,
+                      (!isCameraReady || isTakingPicture) && { opacity: 0.45 },
+                    ]}
+                    onPress={handleCapturePhoto}
+                    disabled={isTakingPicture || !isCameraReady}
+                    activeOpacity={0.7}
+                  >
+                    {isTakingPicture ? (
+                      <ActivityIndicator size="small" color={COLORS.primary} />
+                    ) : (
+                      <View style={styles.cameraShutterInner} />
+                    )}
+                  </TouchableOpacity>
+                  <Text style={styles.cameraShutterHintText}>
+                    {isCameraReady ? 'Ketuk untuk Memotret' : 'Menyiapkan kamera...'}
+                  </Text>
+                </View>
+              </SafeAreaView>
+            </View>
+          ) : step === 'PREVIEW' ? (
+            /* 3. Step PREVIEW: Photo Review with Retake and Use Photo */
+            <View style={{ flex: 1, backgroundColor: '#090D16' }}>
+              <SafeAreaView edges={['top']} style={styles.cameraPreviewTopBar}>
                 <TouchableOpacity
-                  style={styles.scannerCancelBtn}
-                  onPress={() => setStep('PREVIEW')}
+                  style={styles.cameraCircleBtn}
+                  onPress={() => {
+                    setCapturedPhotoUri(null);
+                    setIsCameraReady(false);
+                    setCameraError(null);
+                    setStep('CAMERA');
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+                <Text style={styles.cameraPreviewTitle}>Preview Foto Materi</Text>
+                <View style={{ width: 40 }} />
+              </SafeAreaView>
+
+              <View style={styles.cameraPreviewImageWrapper}>
+                <Image
+                  source={{ uri: capturedPhotoUri }}
+                  style={styles.cameraPreviewImage}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <SafeAreaView edges={['bottom']} style={styles.cameraPreviewBottomBar}>
+                <TouchableOpacity
+                  style={styles.cameraRetakeBtn}
+                  onPress={() => {
+                    setCapturedPhotoUri(null);
+                    setStep('CAMERA');
+                  }}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.scannerCancelBtnText}>Kembali ke Foto</Text>
+                  <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.cameraRetakeBtnText}>Ambil Ulang</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.scannerSubmitBtn}
-                  onPress={handleSubmitForm}
-                  disabled={isSaving}
+                  style={styles.cameraUsePhotoBtn}
+                  onPress={() => {
+                    const currentCourse = courses.find((c) => c.id === courseId) || courses[0];
+                    if (!title.trim()) {
+                      setTitle(`Catatan Slide ${currentCourse?.code || ''} - Pertemuan ${meetingNumber}`);
+                    }
+                    if (!meetingTopic.trim()) {
+                      setMeetingTopic(`Dokumentasi Slide / Papan Tulis Pertemuan ${meetingNumber}`);
+                    }
+                    setStep('FORM');
+                  }}
                   activeOpacity={0.8}
                 >
-                  {isSaving ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                      <Text style={styles.scannerSubmitBtnText}>Simpan ke Materi</Text>
-                    </>
-                  )}
+                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                  <Text style={styles.cameraUsePhotoBtnText}>Gunakan Foto</Text>
+                </TouchableOpacity>
+              </SafeAreaView>
+            </View>
+          ) : (
+            /* 4. Step FORM: Material Info Form */
+            <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.cameraFormWrapper}>
+              <View style={styles.cameraFormHeader}>
+                <TouchableOpacity
+                  onPress={() => setStep('PREVIEW')}
+                  style={styles.cameraFormBackBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="arrow-back" size={22} color={COLORS.textPrimary} />
+                </TouchableOpacity>
+                <Text style={styles.cameraFormHeaderTitle}>Informasi Materi Scan</Text>
+                <TouchableOpacity onPress={onClose} style={styles.cameraFormBackBtn} activeOpacity={0.7}>
+                  <Ionicons name="close" size={22} color={COLORS.textPrimary} />
                 </TouchableOpacity>
               </View>
-            </ScrollView>
-          </SafeAreaView>
-        )}
-      </View>
-    </Modal>
-  );
-}
 
-// =================================================================
-// WEEK 7 – ANGGOTA 2: FULL-SCREEN SCANNED PHOTO VIEWER MODAL
-// =================================================================
-function PhotoViewerModal({ material, insets, onClose, onDelete }) {
-  if (!material || !material.imageUri) return null;
+              <ScrollView
+                style={styles.cameraFormScroll}
+                contentContainerStyle={{ paddingBottom: 40 + (insets?.bottom || 16) }}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Photo Preview Thumbnail */}
+                <View style={styles.cameraFormPhotoCard}>
+                  <Image
+                    source={{ uri: capturedPhotoUri }}
+                    style={styles.cameraFormPhotoThumb}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.cameraFormPhotoBadge}>
+                    <Ionicons name="camera" size={13} color="#FFFFFF" />
+                    <Text style={styles.cameraFormPhotoBadgeText}>Hasil Pemindaian Kamera</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.cameraFormRetakeFloatBtn}
+                    onPress={() => setStep('PREVIEW')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
+                    <Text style={styles.cameraFormRetakeFloatText}>Perbesar</Text>
+                  </TouchableOpacity>
+                </View>
 
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        title: material.title,
-        message: `Materi Kuliah StudyMate: ${material.title} (${material.courseName} - Pertemuan ${material.meetingNumber})`,
-        url: material.imageUri,
-      });
-    } catch { }
-  };
+                {/* Judul Materi */}
+                <Text style={styles.scannerFormLabel}>Judul Materi Perkuliahan *</Text>
+                <TextInput
+                  style={styles.scannerFormInput}
+                  placeholder="Contoh: Slide Struktur Data Graph & Pohon"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={title}
+                  onChangeText={setTitle}
+                />
 
-  return (
-    <Modal visible={true} animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: '#090D16' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#090D16" />
+                {/* Mata Kuliah */}
+                <Text style={styles.scannerFormLabel}>Mata Kuliah *</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 14 }}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {courses.map((crs) => {
+                    const isSelected = crs.id === courseId;
+                    return (
+                      <TouchableOpacity
+                        key={crs.id}
+                        style={[
+                          styles.scannerCourseChip,
+                          isSelected && { backgroundColor: crs.color, borderColor: crs.color },
+                        ]}
+                        onPress={() => setCourseId(crs.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.scannerCourseChipText,
+                            isSelected && { color: '#FFFFFF', fontWeight: '800' },
+                          ]}
+                        >
+                          {crs.code} – {crs.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
 
-        {/* Top Header */}
-        <SafeAreaView edges={['top']} style={styles.photoViewerTopBar}>
-          <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
+                {/* Pertemuan */}
+                <Text style={styles.scannerFormLabel}>Pertemuan Keberapa? *</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 14 }}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map((num) => {
+                    const isSelected = String(num) === String(meetingNumber);
+                    return (
+                      <TouchableOpacity
+                        key={num}
+                        style={[
+                          styles.scannerMeetingChip,
+                          isSelected && styles.scannerMeetingChipActive,
+                        ]}
+                        onPress={() => setMeetingNumber(String(num))}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.scannerMeetingChipText,
+                            isSelected && styles.scannerMeetingChipTextActive,
+                          ]}
+                        >
+                          P{num}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
 
-          <View style={{ flex: 1, marginHorizontal: 12 }}>
-            <Text style={styles.photoViewerTitle} numberOfLines={1}>
-              {material.title}
-            </Text>
-            <Text style={styles.photoViewerSubtitle} numberOfLines={1}>
-              {material.courseName} • Pertemuan {material.meetingNumber}
-            </Text>
-          </View>
+                {/* Topik Pertemuan */}
+                <Text style={styles.scannerFormLabel}>Topik Pertemuan / Bahasan</Text>
+                <TextInput
+                  style={styles.scannerFormInput}
+                  placeholder="Contoh: Implementasi Traversal BFS & DFS"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={meetingTopic}
+                  onChangeText={setMeetingTopic}
+                />
 
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity style={styles.cameraCircleBtn} onPress={handleShare} activeOpacity={0.75}>
-              <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
-            </TouchableOpacity>
+                {/* Catatan Tambahan */}
+                <Text style={styles.scannerFormLabel}>Deskripsi atau Catatan Tambahan (Opsional)</Text>
+                <TextInput
+                  style={[styles.scannerFormInput, { height: 75, textAlignVertical: 'top' }]}
+                  placeholder="Tulis catatan penting dosen saat memaparkan slide atau materi ini..."
+                  placeholderTextColor={COLORS.textMuted}
+                  value={userNotes}
+                  onChangeText={setUserNotes}
+                  multiline
+                />
 
-            <TouchableOpacity
-              style={[styles.cameraCircleBtn, { backgroundColor: COLORS.rose + '33' }]}
-              onPress={() => onDelete(material.id)}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
+                {/* Penjelasan Penyimpanan Lokal Persisten */}
+                <View style={styles.scannerStorageInfoCard}>
+                  <Ionicons name="folder-open-outline" size={20} color={COLORS.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scannerStorageInfoTitle}>Penyimpanan Foto Lokal Persisten</Text>
+                    <Text style={styles.scannerStorageInfoDesc}>
+                      Foto disalin ke direktori dokumen lokal HP Anda secara permanen. Materi dan foto tetap dapat dibuka kembali kapan saja meskipun aplikasi ditutup atau tanpa internet.
+                    </Text>
+                  </View>
+                </View>
 
-        {/* Image Full Center */}
-        <View style={styles.photoViewerImageWrapper}>
-          <Image
-            source={{ uri: material.imageUri }}
-            style={styles.photoViewerImage}
-            resizeMode="contain"
-          />
+                {/* Action Buttons */}
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                  <TouchableOpacity
+                    style={styles.scannerCancelBtn}
+                    onPress={() => setStep('PREVIEW')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.scannerCancelBtnText}>Kembali ke Foto</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.scannerSubmitBtn}
+                    onPress={handleSubmitForm}
+                    disabled={isSaving}
+                    activeOpacity={0.8}
+                  >
+                    {isSaving ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                        <Text style={styles.scannerSubmitBtnText}>Simpan ke Materi</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </SafeAreaView>
+          )}
         </View>
+      </Modal>
+    );
+  }
 
-        {/* Bottom Info Bar */}
-        <SafeAreaView edges={['bottom']} style={styles.photoViewerBottomBar}>
-          <View style={styles.photoViewerBottomMetaRow}>
-            <Ionicons name="document-text-outline" size={16} color={COLORS.accent} />
-            <Text style={styles.photoViewerBottomTopic} numberOfLines={2}>
-              {material.meetingTopic || 'Hasil Scan Papan Tulis / Slide'}
-            </Text>
+  // =================================================================
+  // WEEK 7 – ANGGOTA 2: FULL-SCREEN SCANNED PHOTO VIEWER MODAL
+  // =================================================================
+  function PhotoViewerModal({ material, insets, onClose, onDelete }) {
+    if (!material || !material.imageUri) return null;
+
+    const handleShare = async () => {
+      try {
+        await Share.share({
+          title: material.title,
+          message: `Materi Kuliah StudyMate: ${material.title} (${material.courseName} - Pertemuan ${material.meetingNumber})`,
+          url: material.imageUri,
+        });
+      } catch { }
+    };
+
+    return (
+      <Modal visible={true} animationType="fade" onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: '#090D16' }}>
+          <StatusBar barStyle="light-content" backgroundColor="#090D16" />
+
+          {/* Top Header */}
+          <SafeAreaView edges={['top']} style={styles.photoViewerTopBar}>
+            <TouchableOpacity style={styles.cameraCircleBtn} onPress={onClose} activeOpacity={0.75}>
+              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <View style={{ flex: 1, marginHorizontal: 12 }}>
+              <Text style={styles.photoViewerTitle} numberOfLines={1}>
+                {material.title}
+              </Text>
+              <Text style={styles.photoViewerSubtitle} numberOfLines={1}>
+                {material.courseName} • Pertemuan {material.meetingNumber}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity style={styles.cameraCircleBtn} onPress={handleShare} activeOpacity={0.75}>
+                <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.cameraCircleBtn, { backgroundColor: COLORS.rose + '33' }]}
+                onPress={() => onDelete(material.id)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="trash-outline" size={18} color={COLORS.rose} />
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+
+          {/* Image Full Center */}
+          <View style={styles.photoViewerImageWrapper}>
+            <Image
+              source={{ uri: material.imageUri }}
+              style={styles.photoViewerImage}
+              resizeMode="contain"
+            />
           </View>
-          {material.userNotes ? (
-            <Text style={styles.photoViewerNotesText} numberOfLines={3}>
-              📝 Catatan: {material.userNotes}
-            </Text>
-          ) : null}
-          <View style={styles.photoViewerStorageBadge}>
-            <Ionicons name="save-outline" size={13} color="#94A3B8" />
-            <Text style={styles.photoViewerStorageText}>
-              Tersimpan Permanen di Memori HP (Offline Ready)
-            </Text>
-          </View>
-        </SafeAreaView>
-      </View>
-    </Modal>
-  );
+
+          {/* Bottom Info Bar */}
+          <SafeAreaView edges={['bottom']} style={styles.photoViewerBottomBar}>
+            <View style={styles.photoViewerBottomMetaRow}>
+              <Ionicons name="document-text-outline" size={16} color={COLORS.accent} />
+              <Text style={styles.photoViewerBottomTopic} numberOfLines={2}>
+                {material.meetingTopic || 'Hasil Scan Papan Tulis / Slide'}
+              </Text>
+            </View>
+            {material.userNotes ? (
+              <Text style={styles.photoViewerNotesText} numberOfLines={3}>
+                📝 Catatan: {material.userNotes}
+              </Text>
+            ) : null}
+            <View style={styles.photoViewerStorageBadge}>
+              <Ionicons name="save-outline" size={13} color="#94A3B8" />
+              <Text style={styles.photoViewerStorageText}>
+                Tersimpan Permanen di Memori HP (Offline Ready)
+              </Text>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+    );
+  }
+
+  // =================================================================
+  // 12. ROOT EXPORT DENGAN SAFE AREA PROVIDER (Anggota 3)
+  // =================================================================
+  export default function App() {
+    return (
+      <SafeAreaProvider>
+        <StudyMateApp />
+      </SafeAreaProvider>
+    );
+  }
+
+  // =================================================================
+  // 13. STYLESHEET (CLEAN, RESPONSIVE, WCAG AAA ACCESSIBLE)
+  // =================================================================
+  const styles = StyleSheet.create({
+    safeAreaContainer: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    mainContentFlex: {
+      flex: 1,
+    },
+    screenContainer: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    scrollContent: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+
+    // App Header
+    headerContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 14,
+    },
+    headerTextGroup: {
+      flex: 1,
+      marginRight: 10,
+    },
+    headerSubtitle: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+      fontWeight: '500',
+    },
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+      letterSpacing: -0.4,
+      marginTop: 1,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    headerIconButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    headerBadge: {
+      position: 'absolute',
+      top: -2,
+      right: -2,
+      backgroundColor: COLORS.rose,
+      minWidth: 17,
+      height: 17,
+      borderRadius: 8.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 3,
+    },
+    headerBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 9,
+      fontWeight: '800',
+    },
+
+    // Badge Component
+    badgeContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    badgeText: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+
+    // Hero Progress Banner
+    heroBanner: {
+      backgroundColor: COLORS.primaryDark,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 16,
+      elevation: 3,
+      shadowColor: COLORS.primaryDark,
+      shadowOpacity: 0.22,
+      shadowOffset: { width: 0, height: 3 },
+      shadowRadius: 6,
+    },
+    heroBannerContent: {
+      flex: 1,
+    },
+    heroStreakRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 4,
+    },
+    heroStreakText: {
+      color: '#FEF08A',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    heroTitle: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: '#FFFFFF',
+      marginBottom: 3,
+    },
+    heroSubtitle: {
+      fontSize: 12,
+      color: '#E0E7FF',
+      marginBottom: 12,
+      lineHeight: 16,
+    },
+    heroProgressBarBg: {
+      height: 7,
+      backgroundColor: 'rgba(255, 255, 255, 0.22)',
+      borderRadius: 3.5,
+      overflow: 'hidden',
+    },
+    heroProgressBarFill: {
+      height: '100%',
+      backgroundColor: '#34D399',
+      borderRadius: 3.5,
+    },
+
+    // Stats Grid (Responsive 2 Columns or 4 on Wide)
+    statsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+      marginBottom: 16,
+    },
+    statCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOpacity: 0.03,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+    },
+    statIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    statContentCol: {
+      flex: 1,
+      marginLeft: 10,
+    },
+    statValue: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    statTitle: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    statSubtitle: {
+      fontSize: 9,
+      color: COLORS.textMuted,
+    },
+
+    // Quick Action Bar
+    quickActionBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 18,
+    },
+    quickActionButton: {
+      alignItems: 'center',
+      flex: 1,
+      paddingHorizontal: 2,
+    },
+    quickActionIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 5,
+    },
+    quickActionLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textPrimary,
+      textAlign: 'center',
+    },
+
+    // Section Headers
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      marginBottom: 10,
+    },
+    sectionTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    sectionSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+    },
+    sectionActionText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+
+    // Material Card
+    materialCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 12,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+    },
+    materialCardTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    materialMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+      flexWrap: 'wrap',
+      gap: 6,
+      marginRight: 8,
+    },
+    materialCourseTag: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+      flexShrink: 1,
+    },
+    checkCircleButton: {
+      padding: 2,
+    },
+    materialTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      lineHeight: 19,
+      marginBottom: 4,
+    },
+    materialTopicText: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+      marginBottom: 3,
+    },
+    materialFileMeta: {
+      fontSize: 11,
+      color: COLORS.textMuted,
+      marginBottom: 10,
+    },
+    materialCardFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderTopWidth: 1,
+      borderTopColor: COLORS.divider,
+      paddingTop: 10,
+      gap: 8,
+    },
+    actionPillAi: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.accentLight,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 20,
+      gap: 4,
+    },
+    actionPillAiText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#7C3AED',
+    },
+    actionPillNotes: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primaryLight,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 20,
+      gap: 4,
+    },
+    actionPillNotesText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.primary,
+    },
+    actionDeleteButton: {
+      marginLeft: 'auto',
+      padding: 5,
+    },
+
+    // Course Card
+    courseCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 15,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 12,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+    },
+    courseCardTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 10,
+    },
+    courseMainInfo: {
+      flex: 1,
+      marginRight: 10,
+    },
+    courseBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 4,
+    },
+    courseCodeBadge: {
+      fontSize: 11,
+      fontWeight: '800',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    courseSksText: {
+      fontSize: 11,
+      color: COLORS.textMuted,
+      fontWeight: '600',
+    },
+    courseNameText: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+      marginBottom: 3,
+    },
+    courseLecturerText: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+    },
+    courseSchedulePill: {
+      alignItems: 'flex-end',
+      flexShrink: 0,
+    },
+    courseDayText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    courseTimeText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    courseRoomText: {
+      fontSize: 10,
+      color: COLORS.textMuted,
+      marginTop: 2,
+    },
+    courseProgressContainer: {
+      borderTopWidth: 1,
+      borderTopColor: COLORS.divider,
+      paddingTop: 8,
+    },
+    courseProgressRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 5,
+    },
+    courseProgressLabel: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      fontWeight: '500',
+    },
+    courseProgressValue: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    progressBarBg: {
+      height: 5,
+      backgroundColor: COLORS.inputBackground,
+      borderRadius: 2.5,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: '100%',
+      borderRadius: 2.5,
+    },
+
+    // Task Item Card
+    taskItemCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 9,
+    },
+    taskItemCardCompleted: {
+      opacity: 0.65,
+      backgroundColor: '#F8FAFC',
+    },
+    taskCheckboxTouch: {
+      padding: 4,
+      alignSelf: 'flex-start',
+      marginTop: 2,
+    },
+    taskDetailsCol: {
+      flex: 1,
+      paddingHorizontal: 8,
+    },
+    taskTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    taskTitleCompleted: {
+      textDecorationLine: 'line-through',
+      color: COLORS.textMuted,
+    },
+    taskCourseSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    taskDescText: {
+      fontSize: 11,
+      color: COLORS.textMuted,
+      marginTop: 2,
+    },
+    taskMetaRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 6,
+    },
+    taskDeleteTouch: {
+      padding: 6,
+    },
+
+    // Materials Screen Wrapper
+    materialsHeaderWrapper: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+    searchBarContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.inputBackground,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      height: 42,
+      marginBottom: 10,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 13,
+      color: COLORS.textPrimary,
+      marginLeft: 8,
+    },
+    filterPillRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 10,
+      flexWrap: 'wrap',
+    },
+    statusFilterPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 18,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    statusFilterPillActive: {
+      backgroundColor: COLORS.primaryLight,
+      borderColor: COLORS.primary,
+    },
+    statusFilterText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+    },
+    statusFilterTextActive: {
+      color: COLORS.primary,
+      fontWeight: '700',
+    },
+    horizontalFilterScroll: {
+      marginBottom: 8,
+    },
+    courseFilterChip: {
+      paddingHorizontal: 11,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginRight: 8,
+    },
+    courseFilterChipActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    courseFilterChipText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+    },
+    courseFilterChipTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    meetingFilterScroll: {
+      marginBottom: 8,
+    },
+    meetingFilterChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 6,
+      backgroundColor: COLORS.inputBackground,
+      marginRight: 6,
+    },
+    meetingFilterChipActive: {
+      backgroundColor: COLORS.textPrimary,
+    },
+    meetingFilterChipText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      fontWeight: '600',
+    },
+    meetingFilterChipTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    listHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    listCountText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.textMuted,
+    },
+    addMaterialSmallBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      gap: 4,
+    },
+    addMaterialSmallBtnText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#FFFFFF',
+    },
+
+    // Screen Banner & Add Button
+    screenBannerRow: {
+      backgroundColor: COLORS.primaryLight,
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    screenBannerText: {
+      flex: 1,
+      fontSize: 11,
+      color: COLORS.primaryDark,
+      lineHeight: 16,
+      marginRight: 8,
+    },
+    primaryAddButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 8,
+      gap: 3,
+    },
+    primaryAddButtonText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+
+    // Empty State
+    emptyContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 32,
+      paddingHorizontal: 20,
+    },
+    emptyIconCircle: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: COLORS.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+    emptyTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginBottom: 3,
+      textAlign: 'center',
+    },
+    emptySubtitle: {
+      fontSize: 12,
+      color: COLORS.textMuted,
+      textAlign: 'center',
+      lineHeight: 17,
+      marginBottom: 12,
+    },
+    emptyActionButton: {
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 8,
+    },
+    emptyActionText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    allClearCard: {
+      backgroundColor: COLORS.emeraldLight,
+      borderRadius: 12,
+      padding: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 4,
+    },
+    allClearTitle: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: '#065F46',
+      marginTop: 4,
+    },
+    allClearSubtitle: {
+      fontSize: 11,
+      color: '#047857',
+      marginTop: 2,
+    },
+
+    // Profile & Schedule Screen
+    profileHeroCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 14,
+    },
+    profileAvatarBox: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: COLORS.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    profileAvatarInitials: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    profileInfoCol: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    profileNameText: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    profileNimText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    profileMajorText: {
+      fontSize: 11,
+      color: COLORS.primary,
+      fontWeight: '600',
+      marginTop: 1,
+    },
+    profileCampusText: {
+      fontSize: 10,
+      color: COLORS.textMuted,
+    },
+    scheduleUploadCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 14,
+    },
+    scheduleIconCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: COLORS.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scheduleUploadTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    scheduleUploadDesc: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+      lineHeight: 15,
+    },
+    uploadScheduleButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: COLORS.primary,
+      borderRadius: 10,
+      paddingVertical: 9,
+      gap: 6,
+      marginTop: 6,
+    },
+    uploadScheduleButtonText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    scheduleItemRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 8,
+    },
+    scheduleDayBadge: {
+      width: 50,
+      height: 36,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scheduleDayText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    scheduleCourseName: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    scheduleTimeRoom: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    settingsContainer: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    settingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+    },
+    settingDivider: {
+      height: 1,
+      backgroundColor: COLORS.divider,
+    },
+    settingLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    settingDesc: {
+      fontSize: 10,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+
+    // Modal Common Styles
+    modalSafeArea: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      backgroundColor: COLORS.card,
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.cardBorder,
+    },
+    modalHeaderTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    modalHeaderSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 1,
+    },
+    modalCloseButton: {
+      padding: 4,
+    },
+    modalScrollBody: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+
+    // AI Assistant Modal Styles
+    aiBadgeIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: COLORS.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    aiTabContainer: {
+      flexDirection: 'row',
+      backgroundColor: COLORS.card,
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.cardBorder,
+    },
+    aiTabButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 11,
+      gap: 5,
+      borderBottomWidth: 2,
+      borderBottomColor: 'transparent',
+    },
+    aiTabButtonActive: {
+      borderBottomColor: COLORS.primary,
+    },
+    aiTabText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textMuted,
+    },
+    aiTabTextActive: {
+      color: COLORS.primary,
+      fontWeight: '800',
+    },
+    aiContentCard: {
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 14,
+    },
+    aiBannerPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.accentLight,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+      alignSelf: 'flex-start',
+      gap: 4,
+      marginBottom: 8,
+    },
+    aiBannerPillText: {
+      fontSize: 11,
+      color: '#7C3AED',
+      fontWeight: '700',
+    },
+    aiSummaryTitle: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+      marginBottom: 6,
+    },
+    aiSectionSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginBottom: 12,
+      lineHeight: 16,
+    },
+    aiSummaryParagraph: {
+      fontSize: 13,
+      color: COLORS.textSecondary,
+      lineHeight: 20,
+      marginBottom: 12,
+    },
+    aiNoteCallout: {
+      flexDirection: 'row',
+      backgroundColor: COLORS.primaryLight,
+      borderRadius: 10,
+      padding: 10,
+      gap: 6,
+      marginBottom: 12,
+    },
+    aiNoteCalloutText: {
+      flex: 1,
+      fontSize: 11,
+      color: COLORS.primaryDark,
+      lineHeight: 16,
+    },
+    aiShareButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 9,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: COLORS.primary,
+      gap: 6,
+    },
+    aiShareButtonText: {
+      color: COLORS.primary,
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    keyPointRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 10,
+      gap: 8,
+    },
+    keyPointBullet: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: COLORS.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 2,
+    },
+    keyPointBulletText: {
+      color: COLORS.primary,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    keyPointContent: {
+      flex: 1,
+      fontSize: 12,
+      color: COLORS.textPrimary,
+      lineHeight: 18,
+    },
+    quizCard: {
+      backgroundColor: COLORS.background,
+      borderRadius: 12,
+      padding: 11,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    quizQuestionText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      lineHeight: 19,
+      marginBottom: 8,
+    },
+    quizOptionBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 8,
+      padding: 8,
+      marginBottom: 5,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+    },
+    quizOptionCorrect: {
+      borderColor: COLORS.emerald,
+      backgroundColor: COLORS.emeraldLight,
+    },
+    quizOptionLetter: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: COLORS.textSecondary,
+      width: 20,
+    },
+    quizOptionLetterCorrect: {
+      color: '#065F46',
+    },
+    quizOptionLabel: {
+      fontSize: 11,
+      color: COLORS.textPrimary,
+      flex: 1,
+    },
+    quizOptionLabelCorrect: {
+      color: '#065F46',
+      fontWeight: '700',
+    },
+    quizRevealButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 7,
+      gap: 5,
+      marginTop: 4,
+    },
+    quizRevealButtonText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+    quizExplanationBox: {
+      backgroundColor: COLORS.card,
+      borderRadius: 8,
+      padding: 9,
+      marginTop: 6,
+      borderLeftWidth: 3,
+      borderLeftColor: COLORS.primary,
+    },
+    quizExplanationTitle: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: COLORS.primary,
+      marginBottom: 2,
+    },
+    quizExplanationText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      lineHeight: 15,
+    },
+
+    // Notes Modal Styles
+    notesContainer: {
+      flex: 1,
+      padding: 16,
+    },
+    notesInstructionText: {
+      fontSize: 12,
+      color: COLORS.textSecondary,
+      lineHeight: 17,
+      marginBottom: 10,
+    },
+    notesTextInput: {
+      flex: 1,
+      backgroundColor: COLORS.card,
+      borderRadius: 14,
+      padding: 14,
+      fontSize: 13,
+      color: COLORS.textPrimary,
+      lineHeight: 20,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 12,
+    },
+    saveNotesButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: COLORS.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      gap: 6,
+    },
+    saveNotesButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+
+    // Form Components & Modals
+    formLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginBottom: 5,
+      marginTop: 6,
+    },
+    formInput: {
+      backgroundColor: COLORS.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      fontSize: 12,
+      color: COLORS.textPrimary,
+      marginBottom: 6,
+    },
+    filePickerButton: {
+      backgroundColor: COLORS.primaryLight,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: COLORS.primary,
+      borderRadius: 12,
+      padding: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+    filePickerButtonTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.primaryDark,
+      marginTop: 4,
+      textAlign: 'center',
+    },
+    filePickerButtonSub: {
+      fontSize: 10,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    formCourseOption: {
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginRight: 6,
+    },
+    formCourseOptionActive: {
+      backgroundColor: COLORS.primaryLight,
+    },
+    formCourseOptionText: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      fontWeight: '600',
+    },
+    fileTypeChoice: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      alignItems: 'center',
+    },
+    fileTypeChoiceActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    fileTypeChoiceText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    fileTypeChoiceTextActive: {
+      color: '#FFFFFF',
+    },
+    priorityOptionBtn: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      alignItems: 'center',
+    },
+    priorityOptionBtnActive: {
+      backgroundColor: COLORS.textPrimary,
+      borderColor: COLORS.textPrimary,
+    },
+    priorityOptionBtnText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    priorityOptionBtnTextActive: {
+      color: '#FFFFFF',
+    },
+    dayChoiceBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: COLORS.card,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginRight: 6,
+    },
+    dayChoiceBtnActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    dayChoiceBtnText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.textSecondary,
+    },
+    dayChoiceBtnTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    formSubmitButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: COLORS.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      gap: 6,
+      marginTop: 12,
+    },
+    formSubmitButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+
+    // Schedule Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(15, 23, 42, 0.65)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+    },
+    scheduleModalBox: {
+      width: '100%',
+      maxWidth: 380,
+      backgroundColor: COLORS.card,
+      borderRadius: 18,
+      padding: 18,
+      elevation: 8,
+    },
+    scheduleModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 6,
+    },
+    scheduleModalTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    scheduleModalSubtitle: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      lineHeight: 16,
+      marginBottom: 14,
+    },
+    uploadOptionsRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginBottom: 14,
+    },
+    uploadOptionBtn: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      padding: 14,
+      alignItems: 'center',
+    },
+    uploadOptionBtnTitle: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginTop: 6,
+      textAlign: 'center',
+    },
+    uploadOptionBtnSub: {
+      fontSize: 9,
+      color: COLORS.textMuted,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    parsingIndicatorBox: {
+      paddingVertical: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    parsingStatusText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: COLORS.primary,
+      marginTop: 10,
+      textAlign: 'center',
+    },
+    scheduleCancelBtn: {
+      paddingVertical: 8,
+      alignItems: 'center',
+    },
+    scheduleCancelBtnText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textMuted,
+    },
+
+    // Notification Modal Styles
+    notifCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.card,
+      borderRadius: 12,
+      padding: 11,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      marginBottom: 8,
+    },
+    notifCardUnread: {
+      backgroundColor: COLORS.primaryLight,
+      borderColor: COLORS.primary + '40',
+    },
+    notifIconCircle: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    notifItemTitle: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+    },
+    notifItemTime: {
+      fontSize: 9,
+      color: COLORS.textMuted,
+    },
+    notifItemMsg: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      marginTop: 2,
+      lineHeight: 15,
+    },
+    markAllReadBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      gap: 6,
+      marginTop: 6,
+    },
+    markAllReadBtnText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+
+    // Bottom Navigation Bar (Anggota 3)
+    bottomNavContainer: {
+      flexDirection: 'row',
+      backgroundColor: COLORS.card,
+      borderTopWidth: 1,
+      borderTopColor: COLORS.cardBorder,
+      alignItems: 'center',
+      justifyContent: 'space-around',
+      elevation: 8,
+      shadowColor: '#000',
+      shadowOpacity: 0.08,
+      shadowOffset: { width: 0, height: -2 },
+      shadowRadius: 5,
+    },
+    bottomNavItem: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 4,
+      position: 'relative',
+    },
+    bottomNavLabel: {
+      fontSize: 10,
+      fontWeight: '600',
+      color: COLORS.textMuted,
+      marginTop: 2,
+    },
+    bottomNavLabelActive: {
+      color: COLORS.primary,
+      fontWeight: '800',
+    },
+
+    // =================================================================
+    // WEEK 6 STYLES: Offline Banner, Error Card, Loading Indicator
+    // =================================================================
+    offlineBannerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#FFFBEB',
+      borderWidth: 1,
+      borderColor: '#FDE68A',
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 14,
+    },
+    offlineBannerTitle: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: '#B45309',
+    },
+    offlineBannerSubtitle: {
+      fontSize: 11,
+      color: '#92400E',
+      marginTop: 2,
+    },
+    offlineRetryButton: {
+      backgroundColor: '#FEF3C7',
+      borderWidth: 1,
+      borderColor: '#FCD34D',
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    offlineRetryText: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: '#B45309',
+    },
+
+    apiErrorCardContainer: {
+      backgroundColor: '#FFF1F2',
+      borderWidth: 1,
+      borderColor: '#FECDD3',
+      borderRadius: 16,
+      padding: 16,
+      alignItems: 'center',
+      marginVertical: 12,
+    },
+    apiErrorIconCircle: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#FFE4E6',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 8,
+    },
+    apiErrorTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: COLORS.rose,
+      marginBottom: 4,
+    },
+    apiErrorMessage: {
+      fontSize: 13,
+      color: '#9F1239',
+      textAlign: 'center',
+      lineHeight: 18,
+      marginBottom: 12,
+    },
+    apiErrorRetryButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.rose,
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      borderRadius: 10,
+    },
+    apiErrorRetryText: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+
+    inlineLoadingContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      gap: 8,
+    },
+    inlineLoadingText: {
+      fontSize: 13,
+      color: COLORS.textMuted,
+      fontWeight: '600',
+    },
+
+    // =================================================================
+    // WEEK 7 – DEVICE SENSORS & SMART MATERIAL SCANNER STYLES
+    // =================================================================
+
+    // Scan Button in Materials Header
+    scanMaterialBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#7C3AED',
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 8,
+      gap: 5,
+    },
+    scanMaterialBtnText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+
+    // Material Card Scanned Thumbnail
+    materialPhotoThumbBox: {
+      position: 'relative',
+      height: 140,
+      borderRadius: 10,
+      overflow: 'hidden',
+      marginTop: 8,
+      marginBottom: 4,
+      backgroundColor: '#0F172A',
+    },
+    materialPhotoThumbImage: {
+      width: '100%',
+      height: '100%',
+    },
+    materialPhotoThumbOverlay: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    },
+    materialPhotoThumbBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    materialPhotoThumbBadgeText: {
+      color: '#EDE9FE',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    materialPhotoExpandBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: '#7C3AED',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    materialPhotoExpandText: {
+      color: '#FFFFFF',
+      fontSize: 10,
+      fontWeight: '800',
+    },
+
+    // Footer Action Pill for Scan
+    actionPillScan: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#EDE9FE',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      gap: 4,
+    },
+    actionPillScanText: {
+      color: '#7C3AED',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+
+    // Camera Permission Box
+    cameraPermissionBox: {
+      flex: 1,
+      backgroundColor: '#090D16',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 28,
+    },
+    cameraPermissionIconWrap: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+      backgroundColor: COLORS.primaryLight,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    cameraPermissionTitle: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: '#FFFFFF',
+      marginBottom: 10,
+      textAlign: 'center',
+    },
+    cameraPermissionSubtitle: {
+      fontSize: 14,
+      color: '#94A3B8',
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: 28,
+    },
+    cameraPermissionGrantBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.primary,
+      paddingHorizontal: 24,
+      paddingVertical: 14,
+      borderRadius: 12,
+      gap: 8,
+      width: '100%',
+      justifyContent: 'center',
+    },
+    cameraPermissionGrantBtnText: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '800',
+    },
+    cameraPermissionBackBtn: {
+      paddingVertical: 14,
+      marginTop: 10,
+    },
+    cameraPermissionBackBtnText: {
+      color: '#94A3B8',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+
+    // Camera Live Viewfinder
+    cameraLiveTopBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    },
+    cameraCircleBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    cameraLiveTitleBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: 'rgba(124, 58, 237, 0.8)',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+    },
+    cameraLiveTitleText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    cameraViewfinderContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    cameraViewfinderFrame: {
+      width: '84%',
+      height: '65%',
+      position: 'relative',
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.35)',
+    },
+    cornerGuide: {
+      position: 'absolute',
+      width: 24,
+      height: 24,
+      borderColor: '#A78BFA',
+    },
+    cornerTL: {
+      top: -2,
+      left: -2,
+      borderTopWidth: 4,
+      borderLeftWidth: 4,
+      borderTopLeftRadius: 16,
+    },
+    cornerTR: {
+      top: -2,
+      right: -2,
+      borderTopWidth: 4,
+      borderRightWidth: 4,
+      borderTopRightRadius: 16,
+    },
+    cornerBL: {
+      bottom: -2,
+      left: -2,
+      borderBottomWidth: 4,
+      borderLeftWidth: 4,
+      borderBottomLeftRadius: 16,
+    },
+    cornerBR: {
+      bottom: -2,
+      right: -2,
+      borderBottomWidth: 4,
+      borderRightWidth: 4,
+      borderBottomRightRadius: 16,
+    },
+    cameraGuideBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: 'rgba(15, 23, 42, 0.75)',
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 20,
+      marginTop: 18,
+    },
+    cameraGuideText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    cameraLiveBottomBar: {
+      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+      paddingVertical: 20,
+      alignItems: 'center',
+    },
+    cameraShutterOuter: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      borderWidth: 4,
+      borderColor: '#FFFFFF',
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    cameraShutterInner: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: '#FFFFFF',
+    },
+    cameraShutterHintText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '700',
+      marginTop: 8,
+    },
+
+    // Camera Preview Screen
+    cameraPreviewTopBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: '#0F172A',
+    },
+    cameraPreviewTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    cameraPreviewImageWrapper: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 12,
+    },
+    cameraPreviewImage: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 12,
+    },
+    cameraPreviewBottomBar: {
+      flexDirection: 'row',
+      paddingHorizontal: 20,
+      paddingVertical: 18,
+      backgroundColor: '#0F172A',
+      gap: 12,
+    },
+    cameraRetakeBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 13,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: '#475569',
+      gap: 6,
+    },
+    cameraRetakeBtnText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    cameraUsePhotoBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 13,
+      borderRadius: 12,
+      backgroundColor: COLORS.primary,
+      gap: 6,
+    },
+    cameraUsePhotoBtnText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '800',
+    },
+
+    // Camera Info Form
+    cameraFormWrapper: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+    cameraFormHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.cardBorder,
+      backgroundColor: COLORS.card,
+    },
+    cameraFormBackBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: COLORS.inputBackground,
+    },
+    cameraFormHeaderTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: COLORS.textPrimary,
+    },
+    cameraFormScroll: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+    cameraFormPhotoCard: {
+      position: 'relative',
+      height: 160,
+      borderRadius: 14,
+      overflow: 'hidden',
+      backgroundColor: '#0F172A',
+      marginBottom: 16,
+    },
+    cameraFormPhotoThumb: {
+      width: '100%',
+      height: '100%',
+    },
+    cameraFormPhotoBadge: {
+      position: 'absolute',
+      top: 10,
+      left: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: 'rgba(15, 23, 42, 0.75)',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+    },
+    cameraFormPhotoBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    cameraFormRetakeFloatBtn: {
+      position: 'absolute',
+      bottom: 10,
+      right: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(124, 58, 237, 0.85)',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    cameraFormRetakeFloatText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    scannerFormLabel: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textPrimary,
+      marginBottom: 6,
+    },
+    scannerFormInput: {
+      backgroundColor: COLORS.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: COLORS.textPrimary,
+      marginBottom: 14,
+    },
+    scannerCourseChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      backgroundColor: COLORS.card,
+    },
+    scannerCourseChipText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    scannerMeetingChip: {
+      width: 44,
+      height: 38,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      backgroundColor: COLORS.card,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    scannerMeetingChipActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    scannerMeetingChipText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    scannerMeetingChipTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '800',
+    },
+    scannerStorageInfoCard: {
+      flexDirection: 'row',
+      backgroundColor: COLORS.primaryLight,
+      padding: 12,
+      borderRadius: 12,
+      gap: 10,
+      alignItems: 'flex-start',
+      borderWidth: 1,
+      borderColor: '#C7D2FE',
+      marginBottom: 10,
+    },
+    scannerStorageInfoTitle: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: COLORS.primary,
+      marginBottom: 2,
+    },
+    scannerStorageInfoDesc: {
+      fontSize: 11,
+      color: COLORS.textSecondary,
+      lineHeight: 16,
+    },
+    scannerCancelBtn: {
+      flex: 1,
+      paddingVertical: 13,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: COLORS.cardBorder,
+      backgroundColor: COLORS.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scannerCancelBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: COLORS.textSecondary,
+    },
+    scannerSubmitBtn: {
+      flex: 1.5,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 13,
+      borderRadius: 12,
+      backgroundColor: COLORS.primary,
+      gap: 6,
+    },
+    scannerSubmitBtnText: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+
+    // Full-Screen Photo Viewer
+    photoViewerTopBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    },
+    photoViewerTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    photoViewerSubtitle: {
+      fontSize: 12,
+      color: '#94A3B8',
+      marginTop: 1,
+    },
+    photoViewerImageWrapper: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 8,
+    },
+    photoViewerImage: {
+      width: '100%',
+      height: '100%',
+    },
+    photoViewerBottomBar: {
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+    },
+    photoViewerBottomMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 6,
+    },
+    photoViewerBottomTopic: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '700',
+      color: '#FFFFFF',
+    },
+    photoViewerNotesText: {
+      fontSize: 12,
+      color: '#CBD5E1',
+      lineHeight: 18,
+      marginBottom: 8,
+    },
+    photoViewerStorageBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      marginTop: 2,
+    },
+    photoViewerStorageText: {
+      fontSize: 11,
+      color: '#64748B',
+      fontWeight: '600',
+    },
+
+    // Floating Toast for Shake to Refresh
+    shakeFloatingToast: {
+      position: 'absolute',
+      left: 20,
+      right: 20,
+      zIndex: 9999,
+      backgroundColor: '#0F172AEB',
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+      borderWidth: 1,
+      borderColor: '#334155',
+    },
+    shakeFloatingToastText: {
+      flex: 1,
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '700',
+      lineHeight: 18,
+    },
+
+  });
 }
-
-// =================================================================
-// 12. ROOT EXPORT DENGAN SAFE AREA PROVIDER (Anggota 3)
-// =================================================================
-export default function App() {
-  return (
-    <SafeAreaProvider>
-      <StudyMateApp />
-    </SafeAreaProvider>
-  );
-}
-
-// =================================================================
-// 13. STYLESHEET (CLEAN, RESPONSIVE, WCAG AAA ACCESSIBLE)
-// =================================================================
-const styles = StyleSheet.create({
-  safeAreaContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  mainContentFlex: {
-    flex: 1,
-  },
-  screenContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-
-  // App Header
-  headerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  headerTextGroup: {
-    flex: 1,
-    marginRight: 10,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.4,
-    marginTop: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  headerBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: COLORS.rose,
-    minWidth: 17,
-    height: 17,
-    borderRadius: 8.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  headerBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-
-  // Badge Component
-  badgeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Hero Progress Banner
-  heroBanner: {
-    backgroundColor: COLORS.primaryDark,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 3,
-    shadowColor: COLORS.primaryDark,
-    shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-  },
-  heroBannerContent: {
-    flex: 1,
-  },
-  heroStreakRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  heroStreakText: {
-    color: '#FEF08A',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  heroTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 3,
-  },
-  heroSubtitle: {
-    fontSize: 12,
-    color: '#E0E7FF',
-    marginBottom: 12,
-    lineHeight: 16,
-  },
-  heroProgressBarBg: {
-    height: 7,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    borderRadius: 3.5,
-    overflow: 'hidden',
-  },
-  heroProgressBarFill: {
-    height: '100%',
-    backgroundColor: '#34D399',
-    borderRadius: 3.5,
-  },
-
-  // Stats Grid (Responsive 2 Columns or 4 on Wide)
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
-  },
-  statCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  },
-  statIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statContentCol: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  statTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-  statSubtitle: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-  },
-
-  // Quick Action Bar
-  quickActionBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 18,
-  },
-  quickActionButton: {
-    alignItems: 'center',
-    flex: 1,
-    paddingHorizontal: 2,
-  },
-  quickActionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 5,
-  },
-  quickActionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-
-  // Section Headers
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  sectionSubtitle: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  sectionActionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-
-  // Material Card
-  materialCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  },
-  materialCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  materialMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    flexWrap: 'wrap',
-    gap: 6,
-    marginRight: 8,
-  },
-  materialCourseTag: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    flexShrink: 1,
-  },
-  checkCircleButton: {
-    padding: 2,
-  },
-  materialTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    lineHeight: 19,
-    marginBottom: 4,
-  },
-  materialTopicText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginBottom: 3,
-  },
-  materialFileMeta: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginBottom: 10,
-  },
-  materialCardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.divider,
-    paddingTop: 10,
-    gap: 8,
-  },
-  actionPillAi: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.accentLight,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 4,
-  },
-  actionPillAiText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#7C3AED',
-  },
-  actionPillNotes: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primaryLight,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 4,
-  },
-  actionPillNotesText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  actionDeleteButton: {
-    marginLeft: 'auto',
-    padding: 5,
-  },
-
-  // Course Card
-  courseCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  },
-  courseCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  courseMainInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  courseBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  courseCodeBadge: {
-    fontSize: 11,
-    fontWeight: '800',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  courseSksText: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
-  courseNameText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 3,
-  },
-  courseLecturerText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  courseSchedulePill: {
-    alignItems: 'flex-end',
-    flexShrink: 0,
-  },
-  courseDayText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  courseTimeText: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-  courseRoomText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  courseProgressContainer: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.divider,
-    paddingTop: 8,
-  },
-  courseProgressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  courseProgressLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  courseProgressValue: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  progressBarBg: {
-    height: 5,
-    backgroundColor: COLORS.inputBackground,
-    borderRadius: 2.5,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 2.5,
-  },
-
-  // Task Item Card
-  taskItemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 9,
-  },
-  taskItemCardCompleted: {
-    opacity: 0.65,
-    backgroundColor: '#F8FAFC',
-  },
-  taskCheckboxTouch: {
-    padding: 4,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-  },
-  taskDetailsCol: {
-    flex: 1,
-    paddingHorizontal: 8,
-  },
-  taskTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  taskTitleCompleted: {
-    textDecorationLine: 'line-through',
-    color: COLORS.textMuted,
-  },
-  taskCourseSubtitle: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-  taskDescText: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  taskMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 6,
-  },
-  taskDeleteTouch: {
-    padding: 6,
-  },
-
-  // Materials Screen Wrapper
-  materialsHeaderWrapper: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  searchBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBackground,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 42,
-    marginBottom: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    marginLeft: 8,
-  },
-  filterPillRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-    flexWrap: 'wrap',
-  },
-  statusFilterPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 18,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  statusFilterPillActive: {
-    backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primary,
-  },
-  statusFilterText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  statusFilterTextActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
-  },
-  horizontalFilterScroll: {
-    marginBottom: 8,
-  },
-  courseFilterChip: {
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginRight: 8,
-  },
-  courseFilterChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  courseFilterChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  courseFilterChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  meetingFilterScroll: {
-    marginBottom: 8,
-  },
-  meetingFilterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    backgroundColor: COLORS.inputBackground,
-    marginRight: 6,
-  },
-  meetingFilterChipActive: {
-    backgroundColor: COLORS.textPrimary,
-  },
-  meetingFilterChipText: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-  },
-  meetingFilterChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  listHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  listCountText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  addMaterialSmallBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  addMaterialSmallBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  // Screen Banner & Add Button
-  screenBannerRow: {
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  screenBannerText: {
-    flex: 1,
-    fontSize: 11,
-    color: COLORS.primaryDark,
-    lineHeight: 16,
-    marginRight: 8,
-  },
-  primaryAddButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-    gap: 3,
-  },
-  primaryAddButtonText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Empty State
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 20,
-  },
-  emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 3,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    lineHeight: 17,
-    marginBottom: 12,
-  },
-  emptyActionButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  emptyActionText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  allClearCard: {
-    backgroundColor: COLORS.emeraldLight,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  allClearTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#065F46',
-    marginTop: 4,
-  },
-  allClearSubtitle: {
-    fontSize: 11,
-    color: '#047857',
-    marginTop: 2,
-  },
-
-  // Profile & Schedule Screen
-  profileHeroCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 14,
-  },
-  profileAvatarBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileAvatarInitials: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  profileInfoCol: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  profileNameText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  profileNimText: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-  profileMajorText: {
-    fontSize: 11,
-    color: COLORS.primary,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  profileCampusText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-  },
-  scheduleUploadCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 14,
-  },
-  scheduleIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scheduleUploadTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  scheduleUploadDesc: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  uploadScheduleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 10,
-    paddingVertical: 9,
-    gap: 6,
-    marginTop: 6,
-  },
-  uploadScheduleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  scheduleItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 8,
-  },
-  scheduleDayBadge: {
-    width: 50,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scheduleDayText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  scheduleCourseName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  scheduleTimeRoom: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-  settingsContainer: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-  },
-  settingDivider: {
-    height: 1,
-    backgroundColor: COLORS.divider,
-  },
-  settingLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  settingDesc: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-
-  // Modal Common Styles
-  modalSafeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: COLORS.card,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardBorder,
-  },
-  modalHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  modalHeaderSubtitle: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 1,
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalScrollBody: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-
-  // AI Assistant Modal Styles
-  aiBadgeIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiTabContainer: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.card,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardBorder,
-  },
-  aiTabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-    gap: 5,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  aiTabButtonActive: {
-    borderBottomColor: COLORS.primary,
-  },
-  aiTabText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  aiTabTextActive: {
-    color: COLORS.primary,
-    fontWeight: '800',
-  },
-  aiContentCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 14,
-  },
-  aiBannerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.accentLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    gap: 4,
-    marginBottom: 8,
-  },
-  aiBannerPillText: {
-    fontSize: 11,
-    color: '#7C3AED',
-    fontWeight: '700',
-  },
-  aiSummaryTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-  },
-  aiSectionSubtitle: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginBottom: 12,
-    lineHeight: 16,
-  },
-  aiSummaryParagraph: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  aiNoteCallout: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: 10,
-    padding: 10,
-    gap: 6,
-    marginBottom: 12,
-  },
-  aiNoteCalloutText: {
-    flex: 1,
-    fontSize: 11,
-    color: COLORS.primaryDark,
-    lineHeight: 16,
-  },
-  aiShareButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 9,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    gap: 6,
-  },
-  aiShareButtonText: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  keyPointRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-    gap: 8,
-  },
-  keyPointBullet: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  keyPointBulletText: {
-    color: COLORS.primary,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  keyPointContent: {
-    flex: 1,
-    fontSize: 12,
-    color: COLORS.textPrimary,
-    lineHeight: 18,
-  },
-  quizCard: {
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    padding: 11,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  quizQuestionText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    lineHeight: 19,
-    marginBottom: 8,
-  },
-  quizOptionBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
-    padding: 8,
-    marginBottom: 5,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  quizOptionCorrect: {
-    borderColor: COLORS.emerald,
-    backgroundColor: COLORS.emeraldLight,
-  },
-  quizOptionLetter: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-    width: 20,
-  },
-  quizOptionLetterCorrect: {
-    color: '#065F46',
-  },
-  quizOptionLabel: {
-    fontSize: 11,
-    color: COLORS.textPrimary,
-    flex: 1,
-  },
-  quizOptionLabelCorrect: {
-    color: '#065F46',
-    fontWeight: '700',
-  },
-  quizRevealButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 7,
-    gap: 5,
-    marginTop: 4,
-  },
-  quizRevealButtonText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  quizExplanationBox: {
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
-    padding: 9,
-    marginTop: 6,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-  },
-  quizExplanationTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: COLORS.primary,
-    marginBottom: 2,
-  },
-  quizExplanationText: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    lineHeight: 15,
-  },
-
-  // Notes Modal Styles
-  notesContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  notesInstructionText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    lineHeight: 17,
-    marginBottom: 10,
-  },
-  notesTextInput: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    lineHeight: 20,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 12,
-  },
-  saveNotesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 6,
-  },
-  saveNotesButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  // Form Components & Modals
-  formLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 5,
-    marginTop: 6,
-  },
-  formInput: {
-    backgroundColor: COLORS.card,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 12,
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-  },
-  filePickerButton: {
-    backgroundColor: COLORS.primaryLight,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: COLORS.primary,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  filePickerButtonTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.primaryDark,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  filePickerButtonSub: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  formCourseOption: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginRight: 6,
-  },
-  formCourseOptionActive: {
-    backgroundColor: COLORS.primaryLight,
-  },
-  formCourseOptionText: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-  },
-  fileTypeChoice: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    alignItems: 'center',
-  },
-  fileTypeChoiceActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  fileTypeChoiceText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  fileTypeChoiceTextActive: {
-    color: '#FFFFFF',
-  },
-  priorityOptionBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    alignItems: 'center',
-  },
-  priorityOptionBtnActive: {
-    backgroundColor: COLORS.textPrimary,
-    borderColor: COLORS.textPrimary,
-  },
-  priorityOptionBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  priorityOptionBtnTextActive: {
-    color: '#FFFFFF',
-  },
-  dayChoiceBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginRight: 6,
-  },
-  dayChoiceBtnActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  dayChoiceBtnText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  dayChoiceBtnTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  formSubmitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 6,
-    marginTop: 12,
-  },
-  formSubmitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  // Schedule Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  scheduleModalBox: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: COLORS.card,
-    borderRadius: 18,
-    padding: 18,
-    elevation: 8,
-  },
-  scheduleModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  scheduleModalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  scheduleModalSubtitle: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    lineHeight: 16,
-    marginBottom: 14,
-  },
-  uploadOptionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-  uploadOptionBtn: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    padding: 14,
-    alignItems: 'center',
-  },
-  uploadOptionBtnTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  uploadOptionBtnSub: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  parsingIndicatorBox: {
-    paddingVertical: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  parsingStatusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.primary,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  scheduleCancelBtn: {
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  scheduleCancelBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-  },
-
-  // Notification Modal Styles
-  notifCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 11,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    marginBottom: 8,
-  },
-  notifCardUnread: {
-    backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primary + '40',
-  },
-  notifIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifItemTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  notifItemTime: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-  },
-  notifItemMsg: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  markAllReadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    gap: 6,
-    marginTop: 6,
-  },
-  markAllReadBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-
-  // Bottom Navigation Bar (Anggota 3)
-  bottomNavContainer: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.card,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.cardBorder,
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: -2 },
-    shadowRadius: 5,
-  },
-  bottomNavItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    position: 'relative',
-  },
-  bottomNavLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  bottomNavLabelActive: {
-    color: COLORS.primary,
-    fontWeight: '800',
-  },
-
-  // =================================================================
-  // WEEK 6 STYLES: Offline Banner, Error Card, Loading Indicator
-  // =================================================================
-  offlineBannerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
-  offlineBannerTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  offlineBannerSubtitle: {
-    fontSize: 11,
-    color: '#92400E',
-    marginTop: 2,
-  },
-  offlineRetryButton: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FCD34D',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  offlineRetryText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-
-  apiErrorCardContainer: {
-    backgroundColor: '#FFF1F2',
-    borderWidth: 1,
-    borderColor: '#FECDD3',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    marginVertical: 12,
-  },
-  apiErrorIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FFE4E6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  apiErrorTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.rose,
-    marginBottom: 4,
-  },
-  apiErrorMessage: {
-    fontSize: 13,
-    color: '#9F1239',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  apiErrorRetryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.rose,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  apiErrorRetryText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-
-  inlineLoadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 8,
-  },
-  inlineLoadingText: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
-
-  // =================================================================
-  // WEEK 7 – DEVICE SENSORS & SMART MATERIAL SCANNER STYLES
-  // =================================================================
-
-  // Scan Button in Materials Header
-  scanMaterialBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#7C3AED',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    gap: 5,
-  },
-  scanMaterialBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  // Material Card Scanned Thumbnail
-  materialPhotoThumbBox: {
-    position: 'relative',
-    height: 140,
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginTop: 8,
-    marginBottom: 4,
-    backgroundColor: '#0F172A',
-  },
-  materialPhotoThumbImage: {
-    width: '100%',
-    height: '100%',
-  },
-  materialPhotoThumbOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-  },
-  materialPhotoThumbBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  materialPhotoThumbBadgeText: {
-    color: '#EDE9FE',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  materialPhotoExpandBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#7C3AED',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  materialPhotoExpandText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-
-  // Footer Action Pill for Scan
-  actionPillScan: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EDE9FE',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    gap: 4,
-  },
-  actionPillScanText: {
-    color: '#7C3AED',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Camera Permission Box
-  cameraPermissionBox: {
-    flex: 1,
-    backgroundColor: '#090D16',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 28,
-  },
-  cameraPermissionIconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: COLORS.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  cameraPermissionTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  cameraPermissionSubtitle: {
-    fontSize: 14,
-    color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 28,
-  },
-  cameraPermissionGrantBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  cameraPermissionGrantBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  cameraPermissionBackBtn: {
-    paddingVertical: 14,
-    marginTop: 10,
-  },
-  cameraPermissionBackBtnText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Camera Live Viewfinder
-  cameraLiveTopBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-  },
-  cameraCircleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cameraLiveTitleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(124, 58, 237, 0.8)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  cameraLiveTitleText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  cameraViewfinderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cameraViewfinderFrame: {
-    width: '84%',
-    height: '65%',
-    position: 'relative',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-  },
-  cornerGuide: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderColor: '#A78BFA',
-  },
-  cornerTL: {
-    top: -2,
-    left: -2,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    borderTopLeftRadius: 16,
-  },
-  cornerTR: {
-    top: -2,
-    right: -2,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    borderTopRightRadius: 16,
-  },
-  cornerBL: {
-    bottom: -2,
-    left: -2,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    borderBottomLeftRadius: 16,
-  },
-  cornerBR: {
-    bottom: -2,
-    right: -2,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    borderBottomRightRadius: 16,
-  },
-  cameraGuideBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    marginTop: 18,
-  },
-  cameraGuideText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cameraLiveBottomBar: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  cameraShutterOuter: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  cameraShutterInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#FFFFFF',
-  },
-  cameraShutterHintText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 8,
-  },
-
-  // Camera Preview Screen
-  cameraPreviewTopBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#0F172A',
-  },
-  cameraPreviewTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  cameraPreviewImageWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 12,
-  },
-  cameraPreviewImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 12,
-  },
-  cameraPreviewBottomBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    backgroundColor: '#0F172A',
-    gap: 12,
-  },
-  cameraRetakeBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#475569',
-    gap: 6,
-  },
-  cameraRetakeBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  cameraUsePhotoBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-    gap: 6,
-  },
-  cameraUsePhotoBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  // Camera Info Form
-  cameraFormWrapper: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  cameraFormHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardBorder,
-    backgroundColor: COLORS.card,
-  },
-  cameraFormBackBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBackground,
-  },
-  cameraFormHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  cameraFormScroll: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  cameraFormPhotoCard: {
-    position: 'relative',
-    height: 160,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#0F172A',
-    marginBottom: 16,
-  },
-  cameraFormPhotoThumb: {
-    width: '100%',
-    height: '100%',
-  },
-  cameraFormPhotoBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  cameraFormPhotoBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cameraFormRetakeFloatBtn: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(124, 58, 237, 0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  cameraFormRetakeFloatText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  scannerFormLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-  },
-  scannerFormInput: {
-    backgroundColor: COLORS.card,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    marginBottom: 14,
-  },
-  scannerCourseChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    backgroundColor: COLORS.card,
-  },
-  scannerCourseChipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  scannerMeetingChip: {
-    width: 44,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    backgroundColor: COLORS.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scannerMeetingChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  scannerMeetingChipText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  scannerMeetingChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  scannerStorageInfoCard: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.primaryLight,
-    padding: 12,
-    borderRadius: 12,
-    gap: 10,
-    alignItems: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    marginBottom: 10,
-  },
-  scannerStorageInfoTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.primary,
-    marginBottom: 2,
-  },
-  scannerStorageInfoDesc: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    lineHeight: 16,
-  },
-  scannerCancelBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scannerCancelBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  scannerSubmitBtn: {
-    flex: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-    gap: 6,
-  },
-  scannerSubmitBtnText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-
-  // Full-Screen Photo Viewer
-  photoViewerTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-  },
-  photoViewerTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  photoViewerSubtitle: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 1,
-  },
-  photoViewerImageWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 8,
-  },
-  photoViewerImage: {
-    width: '100%',
-    height: '100%',
-  },
-  photoViewerBottomBar: {
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  photoViewerBottomMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  photoViewerBottomTopic: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  photoViewerNotesText: {
-    fontSize: 12,
-    color: '#CBD5E1',
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  photoViewerStorageBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 2,
-  },
-  photoViewerStorageText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-
-  // Floating Toast for Shake to Refresh
-  shakeFloatingToast: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    zIndex: 9999,
-    backgroundColor: '#0F172AEB',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  shakeFloatingToastText: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-
-  // =================================================================
-  // WEEK 8 – ANGGOTA 3: Edit Profile Modal & Profile Card Styles
-  // =================================================================
-  editProfilePillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  editProfilePillBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  editProfileContainer: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  editProfileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-  },
-  editProfileHeaderBtn: {
-    padding: 6,
-  },
-  editProfileHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  editProfileSaveBtn: {
-    backgroundColor: '#4F46E5',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-    minWidth: 64,
-    alignItems: 'center',
-  },
-  editProfileSaveBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  editProfileAvatarSection: {
-    alignItems: 'center',
-    marginVertical: 18,
-  },
-  editProfileAvatarWrapper: {
-    position: 'relative',
-  },
-  editProfileAvatarImage: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    borderWidth: 3,
-    borderColor: '#4F46E5',
-  },
-  editProfileAvatarPlaceholder: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#4F46E5',
-  },
-  editProfileAvatarPlaceholderText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#4F46E5',
-  },
-  editProfileAvatarBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#4F46E5',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  editProfileChangePhotoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 20,
-  },
-  editProfileChangePhotoBtnText: {
-    color: '#4F46E5',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  editProfilePreviewBadge: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '600',
-  },
-  editProfileFormGroup: {
-    marginBottom: 16,
-  },
-  editProfileSectionHeader: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 12,
-    marginTop: 8,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.primaryLight,
-  },
-  editProfileLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 6,
-  },
-  editProfileInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
-    color: '#0F172A',
-  },
-  editProfileHelperText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 4,
-    lineHeight: 15,
-  },
-  editProfileMainSubmitBtn: {
-    backgroundColor: '#4F46E5',
-    paddingVertical: 14,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  editProfileMainSubmitBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  editProfileCancelBtn: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editProfileCancelBtnText: {
-    color: '#475569',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-});
